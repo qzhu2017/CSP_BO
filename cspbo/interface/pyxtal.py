@@ -1,42 +1,60 @@
 import os
+import shutil
+import numpy as np
+import warnings
 from warnings import warn
 from random import randint
 
 from ase import Atoms
+from ase.db import connect
 from spglib import get_symmetry_dataset
 from pyxtal.interface.gulp import GULP
 from pyxtal.crystal import random_crystal
+warnings.filterwarnings("ignore")
 
 
-def PyXtal(n, sg="random", species=["C"], numIons=[16], factor=1.0, calculator="GULP", potential="tersoff.lib"):
+def PyXtal(n, sg="random", species=["C"], numIons=[16], factor=1.0, calculator="GULP",
+           potential="tersoff.lib", optimization="conp", directory="OUTPUTs/",
+           filename="PyXtal.db", restart=False, verbose=True):
     """ Parameters """
-    file = "POSCARs"
-    if os.path.exists(file):
-        os.remove(file)
+    if not restart:
+        if os.path.exists(directory):
+            shutil.rmtree(directory, ignore_errors=True)
+            os.mkdir(directory)
+        else:
+            os.mkdir(directory)
+    db = connect(directory+filename)
 
-    for i in range(n):
+    count, energies = 0, []
+    while count < n:
         _sg = spacegroup_generator(sg)
         struc = random_crystal(_sg, species, numIons, factor)
+
         if struc.valid:
-            calc = Calculator(calculator, struc, potential)
+            calc = Calculator(calculator, struc, potential, optimization=optimization)
             calc.run()
-            s = Atoms(struc.sites, scaled_positions=calc.positions, cell=calc.cell)
+
+            if optimization == "single":
+                s = struc.to_ase()
+            else:
+                s = Atoms(calc.sites, scaled_positions=calc.positions, cell=calc.cell, pbc=True)
+            #print(s)
             info = get_symmetry_dataset(s, symprec=1e-1)
-            s.write("1.vasp", format='vasp', vasp5=True, direct=True)
-            os.system("cat 1.vasp >> " + file)
+            energy = calc.energy
 
-            print(calc.energy)
-            print("{:4d} {:8.3f} {:s}".format(i, calc.energy, info['international']))
-            print("\n")
+            db.write(s, data={'energy': energy})
+            count += 1
+            if verbose:
+                print("{:4d} {:8.5f} {:s}".format(count, energy/len(s), info['international']))
 
-        else:
-            print("Structure is invalid.")
-            print("\n")
+        #else:
+        #    print("Structure is invalid.")
 
-
-def Calculator(calculator, structure, potential):
+    
+def Calculator(calculator, structure, potential, optimization='conp'):
+    """ The calculator for energy minimization. """
     if calculator == "GULP":
-        return GULP(structure, ff=potential)
+        return GULP(structure, ff=potential, opt=optimization, dump='struc.cif')
     else:
         raise NotImplementedError("The package {calculator} is not implemented.")           
     
@@ -78,5 +96,5 @@ def spacegroup_generator(sg):
               "Random space group will be generated instead."
         warn(msg)
         spacegroup = randint(2, 230)
-
+    
     return spacegroup

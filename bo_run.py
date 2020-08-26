@@ -15,30 +15,6 @@ from spglib import get_symmetry_dataset
 from warnings import catch_warnings, simplefilter
 from sklearn.gaussian_process import GaussianProcessRegressor
 
-# Random structure search
-print("\nRunning random structure search... \n")
-
-n = 10
-sg = "random"
-species = ["C"]
-numIons = [4]
-factor = 1.0
-potential = "tersoff.lib"
-
-# This will provide initial training data set for BO.
-# The initial training structures will be saved in BayesCSP/initial_structures.db
-# The ASE database is used.
-directory, filename = "BayesCSP/", "initial_structures.db"
-PyXtal(n, sg=sg, species=species, numIons=numIons, 
-       factor=factor, potential=potential, optimization="conp",
-       directory=directory, filename=filename)
-
-############## Bayesian Optimization Scheme ################
-
-# Note:
-# To get structure: db.get_atoms(unique_id=ids[0]))
-# To get energy: db.get(unique_id=ids[0]).data["initial_energy"]
-
 def opt_acquisition(descriptors, model, directory, filename, trial=10):
     print(f"Searching for the next best candidate out of {trial} trial structures.")
     sg = "random"
@@ -110,62 +86,86 @@ def surrogate(model, descriptors, std=True):
         else:
             return model.predict(descriptors, return_cov=True)
 
-# Randomly select candidate for BO training
+n = 10
+sg = "random"
+species = ["C"]
+numIons = [4]
+factor = 1.0
+potential = "tersoff.lib"
 
-db = connect(directory+filename)
-total_structures = len(db)
-print(f"Total initial random structures: {total_structures}\n")
+counts = []
+for a in range(200):
+    # Random structure search
+    print(f"\nRunning random structure search {a}... \n")
 
-structures, energies = [], []
-for i, row in enumerate(db.select()):
-    structure = db.get_atoms(row.id)
-    calc = Calculator("GULP", structure, potential, optimization="conp")
-    calc.run()
-    energies.append([calc.energy/len(structure)])
+    # This will provide initial training data set for BO.
+    # The initial training structures will be saved in BayesCSP/initial_structures.db
+    # The ASE database is used.
+    directory, filename = f"BayesCSP{a}/", "initial_structures.db"
+    PyXtal(n, sg=sg, species=species, numIons=numIons, 
+           factor=factor, potential=potential, optimization="conp",
+           directory=directory, filename=filename)
 
-    opt_structure = AseAtomsAdaptor().get_structure(
-                    Atoms(structure.symbols, scaled_positions=calc.positions, cell=calc.cell, pbc=True))
-    _des = RDF(opt_structure, R_max=10).RDF[1]
-    if i == 0:
-        columns = _des.shape[0]
-        descriptors = np.zeros([total_structures, columns])
-        descriptors[0] = _des
-    else:
-        descriptors[i] = _des
+    ############## Bayesian Optimization Scheme ################
 
-# Define the surrogate model
-model = GaussianProcessRegressor()
-model.fit(descriptors, energies)
+    # Randomly select candidate for BO training
 
-count, counts, ground_state = 0, [], False
-while not ground_state:
-    best_structure, best_descriptor = opt_acquisition(descriptors, model, directory=directory, filename=f"trial_{count}.db")
-    calc = Calculator("GULP", best_structure, potential, optimization="conp")
-    calc.run()
-    optimal_energy = calc.energy/len(best_structure)
-    optimal_descriptor = RDF(AseAtomsAdaptor().get_structure(Atoms(calc.sites, scaled_positions=calc.positions, cell=calc.cell, pbc=True)), 
-                             R_max=10).RDF[1]
-    
-    info = get_symmetry_dataset(best_structure, symprec=1e-1)
-    print('  Optimized structures information:')
-    print("    {:4d} {:8.6f} {:s}".format(count, optimal_energy, info['international']))
+    db = connect(directory+filename)
+    total_structures = len(db)
+    print(f"Total initial random structures: {total_structures}\n")
 
-    est, _ = surrogate(model, [optimal_descriptor])
-    print('    predicted energy = %3f, actual energy = %.3f \n' % (est[0][0], optimal_energy))
+    structures, energies = [], []
+    for i, row in enumerate(db.select()):
+        structure = db.get_atoms(row.id)
+        calc = Calculator("GULP", structure, potential, optimization="conp")
+        calc.run()
+        energies.append([calc.energy/len(structure)])
 
-    descriptors = np.vstack((descriptors, [optimal_descriptor]))
-    energies.append([optimal_energy])
+        opt_structure = AseAtomsAdaptor().get_structure(
+                        Atoms(structure.symbols, scaled_positions=calc.positions, cell=calc.cell, pbc=True))
+        _des = RDF(opt_structure, R_max=10).RDF[1]
+        if i == 0:
+            columns = _des.shape[0]
+            descriptors = np.zeros([total_structures, columns])
+            descriptors[0] = _des
+        else:
+            descriptors[i] = _des
 
+    # Define the surrogate model
+    model = GaussianProcessRegressor()
     model.fit(descriptors, energies)
-    count += 1
 
-    if info['international'] == 'P6_3/mmc' and round(optimal_energy,5) == -7.39552:
-        ground_state = True
-        print("Ground state is found.")
-        print("{:4d} {:8.6f} {:s}".format(count, optimal_energy, info['international']))
-        counts.append(count)
+    count, counts, ground_state = 0, [], False
+    while not ground_state:
+        best_structure, best_descriptor = opt_acquisition(descriptors, model, directory=directory, filename=f"trial_{count}.db")
+        calc = Calculator("GULP", best_structure, potential, optimization="conp")
+        calc.run()
+        optimal_energy = calc.energy/len(best_structure)
+        optimal_descriptor = RDF(AseAtomsAdaptor().get_structure(Atoms(calc.sites, scaled_positions=calc.positions, cell=calc.cell, pbc=True)), 
+                                 R_max=10).RDF[1]
+        
+        info = get_symmetry_dataset(best_structure, symprec=1e-1)
+        print('  Optimized structures information:')
+        print("    {:4d} {:8.6f} {:s}".format(count, optimal_energy, info['international']))
 
-print(count)
+        est, _ = surrogate(model, [optimal_descriptor])
+        print('    predicted energy = %3f, actual energy = %.3f \n' % (est[0][0], optimal_energy))
+
+        descriptors = np.vstack((descriptors, [optimal_descriptor]))
+        energies.append([optimal_energy])
+
+        model.fit(descriptors, energies)
+        count += 1
+
+        if info['international'] == 'P6_3/mmc' and round(optimal_energy,5) == -7.39552:
+            ground_state = True
+            print("Ground state is found.")
+            print("{:4d} {:8.6f} {:s}".format(count, optimal_energy, info['international']))
+            counts.append(count)
+    
+    counts.append(count)
+    print(count)
+print(counts)
             
     
 

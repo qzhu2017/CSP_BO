@@ -3,45 +3,42 @@
 import os
 import numpy as np
 from time import time
-from ase.db import connect
-from spglib import get_symmetry_dataset
 import matplotlib.pyplot as plt
-from cspbo.interface.pyxtal import PyXtal, Calculator
+from cspbo.interface.pyxtal import PyXtal, process
+import pymatgen.analysis.structure_matcher as sm
+from pymatgen.io.ase import AseAtomsAdaptor
 
-ground_state = False
-
-N, counts = 200, []
-
-n = 1
-sg = "random"
-species = ["C"]
+N, counts = 10, []
+sgs = range(1,231)
+species = ["Si"]
 numIons = [4]
-factor = 1.0
-potential = "tersoff.lib"
+ff = "edip_si.lib" #"tersoff.lib"
 
+#compute the reference ground state
+from ase.lattice import bulk
+ref = bulk('Si', 'diamond', a=5.459, cubic=True)
+struc, eng, _, spg = process(ref, "GULP", ff) 
+ref_eng = eng/len(struc)
+ref_pmg = AseAtomsAdaptor().get_structure(struc)
+print("The reference structure is {:8.5f} eV/atom in {:s}".format(ref_eng, spg))
+
+#Random search
 t0 = time()
 for p in range(N):
-    count = 0
     print(f"Random search #{p+1}")
-    while not ground_state:
-        PyXtal(n, sg=sg, species=species, numIons=numIons, 
-               factor=factor, potential=potential, optimization="conp",
-               verbose=False)
+    count = 0
+    while True:
+        struc = PyXtal(sgs, species, numIons)
+        struc, eng, runtime, spg = process(struc, "GULP", ff, p, filename='random.db')
+        count += 1
+        print("{:4d} {:8.5f} {:8.2f} seconds {:s}".format(count, eng/len(struc), runtime, spg))
+        if abs(eng/len(struc) - ref_eng) < 1e-2: 
+            s_pmg = AseAtomsAdaptor().get_structure(struc)
+            if sm.StructureMatcher().fit(s_pmg, ref_pmg):
+                print("Ground State is found at trial {}\n".format(count))
+                break
 
-        db = connect("OUTPUTs/PyXtal.db")
-        for i, row in enumerate(db.select()):
-            structure = db.get_atoms(row.id)
-            energy = row.data["energy"]
-            info = get_symmetry_dataset(structure, symprec=1e-1)
-            structure.write("OUTPUTs/"+f"{i}.vasp", format='vasp', vasp5=True, direct=True)
-            print("{:4d} {:8.6f} {:s}".format(count, energy/len(structure), info['international']))
-            count += 1
-
-            if info['international'] == 'P6_3/mmc' and round(energy/len(structure),5) == -7.39552:
-                ground_state = True
-                print(f" Ground State is found at trial #{count}.\n")
     counts.append(count)
-    ground_state = False
 
 t1 = time()
 print(t1-t0, " s")

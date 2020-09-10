@@ -1,57 +1,31 @@
 import os
 import numpy as np
-
 from time import time
 from scipy.stats import norm
-import random
-from ase import Atoms
-from ase.db import connect
-from ase.geometry import Cell
-from pymatgen.core.structure import Structure
 from pymatgen.io.ase import AseAtomsAdaptor
 from cspbo.descriptors.rdf import RDF
-from cspbo.interface.pyxtal import PyXtal, Calculator
-
-from spglib import get_symmetry_dataset
+from cspbo.interface.pyxtal import PyXtal, process
 from warnings import catch_warnings, simplefilter
 from sklearn.gaussian_process import GaussianProcessRegressor
+import pymatgen.analysis.structure_matcher as sm
 
-def opt_acquisition(descriptors, model, directory, filename, trial=10):
-    print(f"Searching for the next best candidate out of {trial} trial structures.")
-    sg = "random"
-    species = ["C"]
-    numIons = [4]
-    factor = 1.0
-    potential = "tersoff.lib"
-
-    PyXtal(n=trial, sg=sg, species=species, numIons=numIons,
-           factor=factor, potential=potential, optimization="single",
-           directory=directory, filename=filename, restart=True)
-
-    structures = []
-    db = connect(directory+filename)
-    for i, row in enumerate(db.select()):
-        struc = db.get_atoms(row.id)
-        structures.append(struc)
-        struc = AseAtomsAdaptor().get_structure(db.get_atoms(row.id))
-
-        _des = RDF(struc, R_max=10).RDF[1]
-        
+def opt_acquisition(descriptors, model, sg, species, numIons, trial=10):
+    
+    # Here we only generate 10 structures, no optimization
+    strucs = []
+    for i in range(trial):
+        struc = PyXtal(sg, species, numIons)
+        pmg_struc = struc.to_pymatgen()
+        _des = RDF(pmg_struc, R_max=10).RDF[1]
+        strucs.append(struc)
         if i == 0:
             columns = _des.shape[0]
             _descriptors = np.zeros([trial, columns])
-            _descriptors[0] = _des
-        else:
-            _descriptors[i] = _des
+        _descriptors[i] = _des
 
     ix = acquisition(descriptors, _descriptors, model, style="Thompson")
 
-    info = get_symmetry_dataset(structures[ix], symprec=1e-1)
-    print("  Raw structure information:")
-    print("   ", structures[ix])
-    print("    space group: {:s}".format(info['international']))
-
-    return structures[ix], _descriptors[ix]
+    return strucs[ix], _descriptors[ix]
 
 def acquisition(descriptors, _descriptors, model, style="PI"):
     if style == "PI":
@@ -82,85 +56,70 @@ def surrogate(model, descriptors, std=True):
             return model.predict(descriptors, return_cov=True)
 
 n = 10
-sg = "random"
-species = ["C"]
+N = 10 # number of BO runs
+sgs = range(1,231)
+species = ["Si"]
 numIons = [4]
-factor = 1.0
-potential = "tersoff.lib"
+ff = "edip_si.lib" #"tersoff.lib"
+
+#compute the reference ground state
+from ase.lattice import bulk
+ref = bulk(species[0], 'diamond', a=5.459, cubic=True)
+struc, eng, _, spg = process(ref, "GULP", ff) 
+ref_eng = eng/len(struc)
+ref_pmg = AseAtomsAdaptor().get_structure(struc)
+print("The reference structure is {:8.5f} eV/atom in {:s}".format(ref_eng, spg))
 
 counts, times = [], []
-for a in range(191, 200):
+for p in range(N):
     t0 = time()
-    # Random structure search
-    print(f"\nRunning random structure search {a}... \n")
-
-    # This will provide initial training data set for BO.
-    # The initial training structures will be saved in BayesCSP/initial_structures.db
-    # The ASE database is used.
-    directory, filename = f"BayesCSP{a}/", "initial_structures.db"
-    PyXtal(n, sg=sg, species=species, numIons=numIons, 
-           factor=factor, potential=potential, optimization="conp",
-           directory=directory, filename=filename)
-
-    ############## Bayesian Optimization Scheme ################
-
-    # Randomly select candidate for BO training
-
-    db = connect(directory+filename)
-    total_structures = len(db)
-    print(f"Total initial random structures: {total_structures}\n")
-
-    structures, energies = [], []
-    for i, row in enumerate(db.select()):
-        structure = db.get_atoms(row.id)
-        calc = Calculator("GULP", structure, potential, optimization="conp")
-        calc.run()
-        energies.append([calc.energy/len(structure)])
-
-        opt_structure = AseAtomsAdaptor().get_structure(
-                        Atoms(structure.symbols, scaled_positions=calc.positions, cell=calc.cell, pbc=True))
-        _des = RDF(opt_structure, R_max=10).RDF[1]
+    # Random structure search to build the first surrogate model
+    print(f"\nRunning random structure search {p}... \n")
+    energies = []
+    for i in range(n):
+        struc = PyXtal(sgs, species, numIons)
+        struc, eng, spg, _ = process(struc, "GULP", ff, p, "bo.db")
+        pmg_struc = AseAtomsAdaptor().get_structure(struc)
+        _des = RDF(pmg_struc, R_max=10).RDF[1]
         if i == 0:
             columns = _des.shape[0]
-            descriptors = np.zeros([total_structures, columns])
-            descriptors[0] = _des
-        else:
-            descriptors[i] = _des
+            descriptors = np.zeros([n, columns])
+
+        descriptors[i] = _des
+        energies.append(eng/len(struc))
 
     # Define the surrogate model
     model = GaussianProcessRegressor()
     model.fit(descriptors, energies)
 
-    count, ground_state = 0, False
-    while not ground_state:
-        best_structure, best_descriptor = opt_acquisition(descriptors, model, directory=directory, filename=f"trial_{count}.db")
-        calc = Calculator("GULP", best_structure, potential, optimization="conp")
-        calc.run()
-        optimal_energy = calc.energy/len(best_structure)
-        optimal_descriptor = RDF(AseAtomsAdaptor().get_structure(Atoms(calc.sites, scaled_positions=calc.positions, cell=calc.cell, pbc=True)), 
+    count = 0
+    while True:
+        _struc, _ = opt_acquisition(descriptors, model, sgs, species, numIons)
+        struc, eng, _, spg = process(_struc, "GULP", ff, p, "bo.db") 
+        opt_eng = eng/len(struc)
+        opt_des = RDF(AseAtomsAdaptor().get_structure(struc), 
                                  R_max=10).RDF[1]
         
-        info = get_symmetry_dataset(best_structure, symprec=1e-1)
-        print('  Optimized structures information:')
-        print("    {:4d} {:8.6f} {:s}".format(count, optimal_energy, info['international']))
+        est, _ = surrogate(model, [opt_des])
+        print("{:4d} {:8.5f} <- {:8.5f} {:12s} ".format(count, opt_eng, est[0], spg))
 
-        est, _ = surrogate(model, [optimal_descriptor])
-        print('    predicted energy = %3f, actual energy = %.3f \n' % (est[0][0], optimal_energy))
-
-        descriptors = np.vstack((descriptors, [optimal_descriptor]))
-        energies.append([optimal_energy])
-
+        #descriptors = np.vstack((descriptors, [optimal_descriptor]))
+        #energies.append([optimal_energy])
+        #print(descriptors.shape)
+        #print(len(energies))
+        descriptors = np.vstack((descriptors, opt_des))
+        energies.append(opt_eng)
         model.fit(descriptors, energies)
         count += 1
 
-        if info['international'] == 'P6_3/mmc' and round(optimal_energy,5) == -7.39552:
-            ground_state = True
-            print("Ground state is found.")
-            print("{:4d} {:8.6f} {:s}".format(count, optimal_energy, info['international']))
-            #counts.append(count)
+        if abs(eng/len(struc) - ref_eng) < 1e-2: 
+            s_pmg = AseAtomsAdaptor().get_structure(struc)
+            if sm.StructureMatcher().fit(s_pmg, ref_pmg):
+                print("Ground State is found at trial {}\n".format(count))
+                break
+
     t1 = time()
     counts.append(count)
     times.append(t1-t0)
-    print(t1-t0, " s")
-    print(count, " BO trials")
+    print("{:.2f} s in {:d} BO trials".format(t1-t0, count))
 print(counts)

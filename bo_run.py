@@ -7,6 +7,7 @@ from cspbo.descriptors.rdf import RDF
 from cspbo.interface.pyxtal import PyXtal, process
 from warnings import catch_warnings, simplefilter
 from sklearn.gaussian_process import GaussianProcessRegressor
+import sklearn.gaussian_process as gp
 import pymatgen.analysis.structure_matcher as sm
 
 def opt_acquisition(descriptors, model, sg, species, numIons, trial=10):
@@ -16,7 +17,7 @@ def opt_acquisition(descriptors, model, sg, species, numIons, trial=10):
     for i in range(trial):
         struc = PyXtal(sg, species, numIons)
         pmg_struc = struc.to_pymatgen()
-        _des = RDF(pmg_struc, R_max=10).RDF[1]
+        _des = RDF(pmg_struc, R_max=Rmax).RDF[1]
         strucs.append(struc)
         if i == 0:
             columns = _des.shape[0]
@@ -56,7 +57,8 @@ def surrogate(model, descriptors, std=True):
             return model.predict(descriptors, return_cov=True)
 
 n = 10
-N = 10 # number of BO runs
+N = 100 # number of BO runs
+Rmax = 10
 sgs = range(1,231)
 species = ["Si"]
 numIons = [4]
@@ -70,6 +72,8 @@ ref_eng = eng/len(struc)
 ref_pmg = AseAtomsAdaptor().get_structure(struc)
 print("The reference structure is {:8.5f} eV/atom in {:s}".format(ref_eng, spg))
 
+kernel = gp.kernels.Matern()
+
 counts, times = [], []
 for p in range(N):
     t0 = time()
@@ -80,7 +84,7 @@ for p in range(N):
         struc = PyXtal(sgs, species, numIons)
         struc, eng, spg, _ = process(struc, "GULP", ff, p, "bo.db")
         pmg_struc = AseAtomsAdaptor().get_structure(struc)
-        _des = RDF(pmg_struc, R_max=10).RDF[1]
+        _des = RDF(pmg_struc, R_max=Rmax).RDF[1]
         if i == 0:
             columns = _des.shape[0]
             descriptors = np.zeros([n, columns])
@@ -89,7 +93,7 @@ for p in range(N):
         energies.append(eng/len(struc))
 
     # Define the surrogate model
-    model = GaussianProcessRegressor()
+    model = GaussianProcessRegressor(kernel)
     model.fit(descriptors, energies)
 
     count = 0
@@ -97,11 +101,10 @@ for p in range(N):
         _struc, _ = opt_acquisition(descriptors, model, sgs, species, numIons)
         struc, eng, _, spg = process(_struc, "GULP", ff, p, "bo.db") 
         opt_eng = eng/len(struc)
-        opt_des = RDF(AseAtomsAdaptor().get_structure(struc), 
-                                 R_max=10).RDF[1]
-        
+        pmg_struc = AseAtomsAdaptor().get_structure(struc)
+        opt_des = RDF(pmg_struc, R_max=Rmax).RDF[1]
         est, _ = surrogate(model, [opt_des])
-        print("{:4d} {:8.5f} <- {:8.5f} {:12s} ".format(count, opt_eng, est[0], spg))
+        print("{:4d} {:12s} {:8.5f} -> {:8.5f} {:8.5f} ".format(count, spg, opt_eng, est[0], opt_eng-est[0]))
 
         #descriptors = np.vstack((descriptors, [optimal_descriptor]))
         #energies.append([optimal_energy])
@@ -111,6 +114,9 @@ for p in range(N):
         energies.append(opt_eng)
         model.fit(descriptors, energies)
         count += 1
+        #if abs(eng/len(struc) + 1.46946) < 1e-2: 
+        #    #print(pmg_struc.to(fmt='poscar'))
+        #    print(opt_des)
 
         if abs(eng/len(struc) - ref_eng) < 1e-2: 
             s_pmg = AseAtomsAdaptor().get_structure(struc)

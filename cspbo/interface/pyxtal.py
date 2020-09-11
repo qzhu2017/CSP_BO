@@ -63,7 +63,7 @@ def Calculator(calculator, struc, potential):
         from pyxtal.interface.gulp import optimize
         if not isinstance(struc, Atoms):
             struc = struc.to_ase()
-        return optimize(struc, ff=potential)
+        return optimize(struc, ff=potential, exe='timeout -k 10 120 gulp')
     else:
         raise NotImplementedError("The package {calculator} is not implemented.")           
     

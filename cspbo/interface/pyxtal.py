@@ -3,6 +3,7 @@ import warnings
 from ase.db import connect
 from spglib import get_symmetry_dataset
 from pyxtal.crystal import random_crystal
+#from pyxtal.lattice import cellsize
 from random import choice
 from ase import Atoms
 warnings.filterwarnings("ignore")
@@ -24,20 +25,26 @@ def process(struc, calculator="GULP", potential="reaxff.lib", label=None, filena
     """
     if not isinstance(struc, Atoms):
         init_struc = struc.to_ase()
-    s, energy, time = Calculator(calculator, struc, potential)
-    spg = get_symmetry_dataset(s, symprec=1e-1)['international']
+    s, energy, time, error = optimize(calculator, struc, potential)
+    if error:
+        spg = 'N/A'
+    else:
+        try:
+            spg = get_symmetry_dataset(s, symprec=1e-1)['international']
+        except:
+            spg = 'N/A'
 
     #save structures
-    if filename is not None:
-        with connect(filename) as db:
-            db.write(s, data={'energy': energy, 
-                              'symmetry': spg,
-                              'init_struc': init_struc,
-                              'gen_id': label,
-                              'time': time,
-                              })
+        if filename is not None:
+            with connect(filename) as db:
+                db.write(s, data={'energy': energy, 
+                                  'symmetry': spg,
+                                  'init_struc': init_struc,
+                                  'gen_id': label,
+                                  'time': time,
+                                  })
         
-    return s, energy, time, spg
+    return s, energy, time, spg, error
  
 
 def PyXtal(sgs, species, numIons):
@@ -57,7 +64,7 @@ def PyXtal(sgs, species, numIons):
         if struc.valid:
             return struc
     
-def Calculator(calculator, struc, potential):
+def optimize(calculator, struc, potential):
     """ The calculator for energy minimization. """
     if calculator == "GULP":
         from pyxtal.interface.gulp import optimize

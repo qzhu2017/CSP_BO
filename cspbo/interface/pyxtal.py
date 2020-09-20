@@ -37,12 +37,8 @@ def process(struc, calculator="GULP", potential="reaxff.lib", label=None, filena
     #save structures
         if filename is not None:
             with connect(filename) as db:
-                db.write(s, data={'energy': energy, 
-                                  'symmetry': spg,
-                                  'init_struc': init_struc,
-                                  'gen_id': label,
-                                  'time': time,
-                                  })
+                kvp = {"spg": spg, "ff_energy": energy/len(s)}
+                db.write(s, key_value_pairs=kvp)
         
     return s, energy, time, spg, error
  
@@ -62,7 +58,7 @@ def PyXtal(sgs, species, numIons):
     while True:
         struc = random_crystal(choice(sgs), species, numIons)
         if struc.valid:
-            return struc
+            return struc.to_ase()
     
 def optimize(calculator, struc, potential):
     """ The calculator for energy minimization. """

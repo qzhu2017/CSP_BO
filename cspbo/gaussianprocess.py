@@ -2,24 +2,72 @@ import math
 import numpy as np
 import torch
 from .lbfgsb import LBFGSScipy 
-#torch.set_default_tensor_type(torch.DoubleTensor)
+torch.set_default_tensor_type(torch.DoubleTensor)
+
+class RBF():
+    def __init__(self, para=[10., 10.], bounds=[[5e-1, 1e+4], [1e-1, 1e+4]]):
+        """ d is no of descriptors """
+        super().__init__()
+        self.bounds = bounds
+        self.update_parameters(para)
+
+    def covariance(self, x1, x2):
+        D = torch.sum(x1*x1, axis=1, keepdims=True) + torch.sum(x2*x2, axis=1) - 2*x1@x2.T
+        E = torch.exp(-0.5 * D / self.sigmaL ** 2)
+        
+        return self.sigmaF ** 2 * E
+
+    def __str__(self):
+        return "RBF(length={:.3f}, coef={:.3f})".format(self.sigmaL.item(), self.sigmaF.item())
+ 
+    def parameters(self):
+        return [self.sigmaL, self.sigmaF]
+ 
+    def update_parameters(self, para):
+        # I wonder if I can combine sigmaF and sigmaL in one Tensor.
+        self.sigmaF = torch.DoubleTensor([para[0]])
+        self.sigmaF.requires_grad_()
+
+        # Init the shapes of the RBF kernel as normal distribution
+        self.sigmaL= torch.DoubleTensor([para[1]])
+        self.sigmaL.requires_grad_()
+
+class Dot():
+    def __init__(self, para=[10.], bounds=[[1e-2, 1e+4]]):
+        """ d is no of descriptors """
+        super().__init__()
+        self.bounds = bounds
+        self.update_parameters(para)
+
+    def covariance(self, x1, x2):
+        #D = torch.sum(x1@x2.T**2)
+        D = torch.sum(x1@x2.T)
+        return self.sigma0**2 + D
+
+    def __str__(self):
+        return "Dot(sigma_0={:.3f})".format(self.sigma0.item())
+ 
+    def parameters(self):
+        return [self.sigma0]
+ 
+    def update_parameters(self, para):
+        self.sigma0 = torch.DoubleTensor(para)
+        self.sigma0.requires_grad_()
 
 class GaussianProcess():
     """ Gaussian Process Regressor. """
-    def __init__(self, noise=1e-4, para=[100, 10], device='cpu'):
+    def __init__(self, noise=1e-4, kernel=Dot(para=[10.])):
         self.noise = noise
-        self.para = para
         self.x = None
-        self.models = {'model': RBFKernel(para=self.para, device=device)}
+        #self.models = {'model': RBF(para=self.para, device=device)}
+        self.models = {'model': kernel}
         #print("Initial parameters:", str(self.models['model']))
 
-    def fit(self, TrainData, para=[10, 10], bounds=[[5e-1, 1e+4], [1e-2, 1e+1]]):
+    def fit(self, TrainData):
         # Set up optimizer to train the GPR
-        if para is not None:
-            self.models['model'].update_parameters(para)
         print("Strart Training: ", str(self.models['model']))
         params = self.models['model'].parameters()
-        self.optimizer = LBFGSScipy(params, bounds=bounds)
+        self.optimizer = LBFGSScipy(params, bounds=self.models['model'].bounds)
         self.unpack_data(TrainData)
         def closure():
             loss = self.log_marginal_likelihood(self.x, self.y)
@@ -117,43 +165,5 @@ class GaussianProcess():
         return out
 
 
-
-class RBFKernel():
-    def __init__(self, para=None, device='cpu'):
-        """ d is no of descriptors """
-        super().__init__()
-        self.device = device
-        if para is None:
-            para = [1., 1.]
-        self.update_parameters(para)
-
-    def covariance(self, x1, x2):
-        # x1: m x d, x2: n x d, E: m x n
-        #_x1 = x1.clone()
-        #_x2 = x2.clone()
-        #_x1 /= self.sigmaL
-        #_x2 /= self.sigmaL
-        #D = torch.sum(_x1*_x1, axis=1, keepdims=True) + torch.sum(_x2*_x2, axis=1) - 2*_x1@_x2.T
-        #E = torch.exp(-0.5 * D)
-        D = torch.sum(x1*x1, axis=1, keepdims=True) + torch.sum(x2*x2, axis=1) - 2*x1@x2.T
-        E = torch.exp(-0.5 * D / self.sigmaL ** 2)
- 
-        
-        return self.sigmaF ** 2 * E
-
-    def __str__(self):
-        return "RBF(length={:.3f}, coef={:.3f})".format(self.sigmaL.item(), self.sigmaF.item())
- 
-    def parameters(self):
-        return [self.sigmaL, self.sigmaF]
- 
-    def update_parameters(self, para):
-        # I wonder if I can combine sigmaF and sigmaL in one Tensor.
-        self.sigmaF = torch.DoubleTensor([para[0]])
-        self.sigmaF.requires_grad_()
-
-        # Init the shapes of the RBF kernel as normal distribution
-        self.sigmaL= torch.DoubleTensor([para[1]])
-        self.sigmaL.requires_grad_()
 
 

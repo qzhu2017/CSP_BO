@@ -5,63 +5,131 @@ from .lbfgsb import LBFGSScipy
 torch.set_default_tensor_type(torch.DoubleTensor)
 
 class RBF():
-    def __init__(self, para=[10., 10.], bounds=[[5e-1, 1e+4], [1e-1, 1e+4]]):
+    def __init__(self, para=[5, 5.], bounds=[[1e-1, 1e+2], [5e-1, 5e+2]]):
         """ d is no of descriptors """
         super().__init__()
+        self.name = 'RBF_mb'
         self.bounds = bounds
         self.update_parameters(para)
 
     def covariance(self, x1, x2):
+        # need to normalize
         D = torch.sum(x1*x1, axis=1, keepdims=True) + torch.sum(x2*x2, axis=1) - 2*x1@x2.T
+        d1 = torch.sum(x1*x1, dim=1, keepdims=True)
+        d2 = torch.sum(x2*x2, dim=1, keepdims=True)
+        D = D/(torch.matmul(d1, d2.T)+1e-2)
         E = torch.exp(-0.5 * D / self.sigmaL ** 2)
         
-        return self.sigmaF ** 2 * E
+        
+        return torch.sum(self.sigmaF ** 2 * E)/(len(x1)*len(x2))
 
     def __str__(self):
-        return "RBF(length={:.3f}, coef={:.3f})".format(self.sigmaL.item(), self.sigmaF.item())
+        return "{:.3f}**2 *RBF(length={:.3f})".format(self.sigmaF.item(), self.sigmaL.item())
  
     def parameters(self):
-        return [self.sigmaL, self.sigmaF]
+        return [self.sigmaF, self.sigmaL]
  
     def update_parameters(self, para):
-        # I wonder if I can combine sigmaF and sigmaL in one Tensor.
         self.sigmaF = torch.DoubleTensor([para[0]])
         self.sigmaF.requires_grad_()
-
-        # Init the shapes of the RBF kernel as normal distribution
         self.sigmaL= torch.DoubleTensor([para[1]])
         self.sigmaL.requires_grad_()
 
 class Dot():
-    def __init__(self, para=[10.], bounds=[[1e-2, 1e+4]]):
+    def __init__(self, para=[1., 1.], bounds=[[1e-2, 2e+1], [1e-2, 1e+1]]):
         """ d is no of descriptors """
         super().__init__()
+        self.name = 'Dot_mb'
         self.bounds = bounds
         self.update_parameters(para)
 
     def covariance(self, x1, x2):
-        #D = torch.sum(x1@x2.T**2)
-        D = torch.sum(x1@x2.T)
-        return self.sigma0**2 + D
+        D1 = torch.sum(x1@x2.T)
+        D2 = torch.sum(x1@x1.T) + 1e-3
+        D3 = torch.sum(x2@x2.T) + 1e-3
+        return self.delta**2*(self.sigma0**2 + D1/torch.sqrt(D2*D3))
 
     def __str__(self):
-        return "Dot(sigma_0={:.3f})".format(self.sigma0.item())
+        return "{:.3f}**2 *Dot(sigma_0={:.3f})".format(self.delta.item(), self.sigma0.item())
  
     def parameters(self):
-        return [self.sigma0]
+        return [self.delta, self.sigma0]
  
     def update_parameters(self, para):
-        self.sigma0 = torch.DoubleTensor(para)
+        self.delta = torch.DoubleTensor([para[0]])
+        self.delta.requires_grad_()
+        self.sigma0 = torch.DoubleTensor([para[1]])
         self.sigma0.requires_grad_()
+
+class Combo():
+    def __init__(self, coef=0.01, para=[1.0, 1.0, 1.0], bounds=[[1e-2, 1e+3], [3e-1, 1e+2], [1e-2, 1e+2]]):
+        super().__init__()
+        self.name = 'Combo'
+        self.bounds = bounds
+        self.coef = coef
+        self.update_parameters(para)
+
+    def covariance(self, X1, X2):
+        (x1, d1), (x2, d2) = X1, X2
+        D1 = torch.sum(x1@x2.T)
+        D2 = torch.sum(x1@x1.T) + 1e-3
+        D3 = torch.sum(x2@x2.T) + 1e-3
+        K_dot = self.coef**2 *self.delta**2*(self.sigma0**2 + D1/torch.sqrt(D2*D3))
+        D = torch.sum((d1-d2)**2) 
+        E = torch.exp(-0.5 * D / self.sigmaL ** 2)
+        K_rbf = self.delta ** 2 * E
+        return K_dot/(len(x1)*len(x2)) + K_rbf
+
+    def __str__(self):
+        strs =  "{:.3f}**2 *RBF_2b(length={:.3f})".format(self.delta.item(), self.sigmaL.item())
+        strs +=  "+ {:.3f}**2 *Dot(sigma_0={:.3f})".format(self.coef*self.delta.item(), self.sigma0.item())
+        return strs
+
+    def parameters(self):
+        return [self.delta, self.sigmaL, self.sigma0]
+
+    def update_parameters(self, para):
+        self.delta = torch.DoubleTensor([para[0]])
+        self.delta.requires_grad_()
+        self.sigmaL = torch.DoubleTensor([para[1]])
+        self.sigmaL.requires_grad_()
+        self.sigma0 = torch.DoubleTensor([para[2]])
+        self.sigma0.requires_grad_()
+
+class RBF_2b():
+    def __init__(self, coef=0.01, para=[1.0, 1.0], bounds=[[1e-2, 1e+3], [3e-1, 1e+2]]):
+        super().__init__()
+        self.name = 'RBF_2b'
+        self.bounds = bounds
+        self.coef = coef
+        self.update_parameters(para)
+
+    def covariance(self, d1, d2):
+        D = torch.sum((d1-d2)**2) 
+        E = torch.exp(-0.5 * D / self.sigmaL ** 2)
+        K_rbf = self.delta ** 2 * E
+        return K_rbf
+
+    def __str__(self):
+        strs =  "{:.3f}**2 *RBF_2b(length={:.3f})".format(self.delta.item(), self.sigmaL.item())
+        return strs
+
+    def parameters(self):
+        return [self.delta, self.sigmaL]
+
+    def update_parameters(self, para):
+        self.delta = torch.DoubleTensor([para[0]])
+        self.delta.requires_grad_()
+        self.sigmaL = torch.DoubleTensor([para[1]])
+        self.sigmaL.requires_grad_()
+
 
 class GaussianProcess():
     """ Gaussian Process Regressor. """
-    def __init__(self, noise=1e-4, kernel=Dot(para=[10.])):
+    def __init__(self, noise=1e-4, kernel=None):
         self.noise = noise
         self.x = None
-        #self.models = {'model': RBF(para=self.para, device=device)}
         self.models = {'model': kernel}
-        #print("Initial parameters:", str(self.models['model']))
 
     def fit(self, TrainData):
         # Set up optimizer to train the GPR
@@ -83,8 +151,14 @@ class GaussianProcess():
     def predict(self, _X, return_std=False, return_cov=False):
         #print("Predict: ", len(_X))
         X = []
-        for x in _X:
-            X.append(torch.from_numpy(x))
+        for i, x in enumerate(_X[0]):
+            if x is None or self.models['model'].name in ["RBF_2b"]:
+                X.append(torch.from_numpy(_X[1][i]))
+            elif _X[1][i] is None or self.models['model'].name in ["RBF_mb", "Dot_mb"]:
+                X.append(torch.from_numpy(x))
+            else:
+                X.append((torch.from_numpy(x), torch.from_numpy(_X[1][i])))
+
         Ks = self.get_covariance_matrix(X, self.x)
         pred = Ks @ self.alpha
         y_mean = np.asarray(pred[:, 0].detach().numpy()) 
@@ -104,8 +178,13 @@ class GaussianProcess():
         (_X, _Y) = data
         X = []
         Y = torch.zeros([len(_Y), 1])
-        for i, x in enumerate(_X):
-            X.append(torch.from_numpy(x))
+        for i, x in enumerate(_X[0]):
+            if x is None or self.models['model'].name in ["RBF_2b"]:
+                X.append(torch.from_numpy(_X[1][i]))
+            elif _X[1][i] is None or self.models['model'].name in ["RBF_mb", "Dot_mb"]:
+                X.append(torch.from_numpy(x))
+            else:
+                X.append((torch.from_numpy(x), torch.from_numpy(_X[1][i])))
             Y[i,0] += _Y[i]
 
         self.x = X
@@ -131,9 +210,7 @@ class GaussianProcess():
         return -MLL
 
 
-    def get_covariance_matrix(self, X1, X2=None):
-        if X2 is None:
-            X2 = X1
+    def get_covariance_matrix(self, X1, X2):
         m1, m2 = len(X1), len(X2)
         models = self.models['model']
 
@@ -142,7 +219,7 @@ class GaussianProcess():
         for i, x1 in enumerate(X1):
             for j, x2 in enumerate(X2):
                 # Covariance between E_i and E_j
-                out[i, j] = torch.sum(models.covariance(x1, x2))
+                out[i, j] = models.covariance(x1, x2)
 
         return out
 
@@ -150,18 +227,11 @@ class GaussianProcess():
         m1 = len(X1)
         models = self.models['model']
         out = torch.zeros((m1, m1), dtype=torch.float64)
-        # This is not necessary true for multi=species needs to fix this in the near future.
         for i, x1 in enumerate(X1):
             for j in range(i, m1):
-                # Covariance between E_i and E_j
-                #print(i, j)
                 out[i, j] = torch.sum(models.covariance(X1[i], X1[j]))
                 if j > i:
                     out[j, i] = out[i, j]
-                #print(x1)
-                #import sys
-                #sys.exit()
-
         return out
 
 

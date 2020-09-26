@@ -84,6 +84,7 @@ class RBF():
         C = np.zeros([m1, m2])
         for i, x1 in enumerate(X1):
             for j, x2 in enumerate(X2):
+                #D = (1-distance(x1, x2))**2
                 D = 1-distance(x1, x2)**2
                 C[i, j] = np.mean(np.exp(-0.5 * D / self.sigma ** 2))
         return C*self.delta**2
@@ -97,20 +98,150 @@ class RBF():
         for i, x1 in enumerate(X1):
             for j in range(i, m1):
                 D = 1-distance(X1[i], X1[j])**2
-                mat[i, j] = D.mean()
+                tmp = self.delta**2*np.exp(-0.5*D/self.sigma**2)
+                C[i, j] = np.mean(tmp)
+                mat[i, j] = np.mean(tmp*D)
                 mat[j, i] = mat[i, j]
-                C[i, j] = np.mean(np.exp(-0.5 * D / self.sigma ** 2))
+
                 C[j, i] = C[i, j]
-        C *= self.delta**2
-        #print(C[:5,:5])
-        #import sys
-        #sys.exit()
 
         if grad:
-            # dk/d_delta
-            C_grad[:,:,0] = 2*C/self.sigma
-            # dk/ds
-            C_grad[:,:,1] = C*mat/self.sigma**3
+            C_grad[:,:,0] = 2*C/self.delta
+            C_grad[:,:,1] = mat/self.sigma**3
+
+            return C, C_grad
+        else:
+            return C
+
+class RBF_2b():
+    def __init__(self, para=[1., 1.], bounds=[[1e-2, 2e+1], [1e-1, 1e+1]]):
+        self.name = 'RBF_2b'
+        self.bounds = bounds
+        self.update(para)
+
+    def __str__(self):
+        return "{:.3f}**2 *RBF_2b(length={:.3f})".format(self.delta, self.sigma)
+ 
+    def parameters(self):
+        return [self.delta, self.sigma]
+ 
+    def update(self, para):
+        self.delta, self.sigma = para[0], para[1]
+
+    def covariance(self, X1, X2=None):
+        m1, m2 = len(X1), len(X2)
+        C = np.zeros([m1, m2])
+        for i, data1 in enumerate(X1):
+            (x1, n1) = data1
+            for j, data2 in enumerate(X2):
+                (x2, n2) = data2
+                f = np.outer(x1[1], x2[1])
+                d2 = (x1[0][:, None] - x2[0][None, :])**2
+                C[i, j] = np.sum(f*np.exp(-0.5*d2/self.sigma ** 2))
+                C[i, j] = C[i, j]/(n1*n2)
+        return C*self.delta**2
+
+    def auto_covariance(self, X1, grad=False):
+        m1 = len(X1)
+        mat = np.zeros([m1, m1])
+        C = np.zeros([m1, m1])
+        if grad:
+            C_grad = np.zeros([m1, m1, 2])
+        for i, data1 in enumerate(X1): #struc1
+            (x1, n1) = data1
+            for j in range(i, m1):  #struc2
+                (x2, n2) = X1[j]
+                f = np.outer(x1[1], x2[1])
+
+                d2 = (x1[0][:, None] - x2[0][None, :])**2
+                tmp = self.delta**2*f*np.exp(-0.5*d2/self.sigma**2)
+
+                mat[i, j] = np.sum(tmp*d2)/(n1*n2)
+                mat[j, i] = mat[i, j]
+                C[i, j] = np.sum(tmp)/(n1*n2)
+                C[j, i] = C[i, j]
+
+        if grad:
+            C_grad[:,:,0] = 2*C/self.delta
+            C_grad[:,:,1] = mat/self.sigma**3
+
+            return C, C_grad
+        else:
+            return C
+
+
+class Combo():
+    def __init__(self, para=[1., 1., 1., 1.], bounds=[(1e-1, 2e+2), (1e-1, 2e+1), (1e-1, 2e+2), (1e-1, 2e+1)]):
+        self.name = 'Combo'
+        self.bounds = bounds
+        self.update(para)
+
+    def __str__(self):
+        strs = "{:.3f}**2 *RBF_2b(length={:.3f}) + ".format(self.delta1, self.sigma1)
+        strs += "{:.3f}**2 *RBF_mb(length={:.3f})".format(self.delta2, self.sigma2)
+        return strs
+
+    def parameters(self):
+        return [self.delta1, self.sigma1, self.delta2, self.sigma2]
+ 
+    def update(self, para):
+        self.delta1, self.sigma1, self.delta2, self.sigma2 = para[0], para[1], para[2], para[3]
+
+    def covariance(self, X1, X2=None):
+        m1, m2 = len(X1), len(X2)
+        C = np.zeros([m1, m2])
+
+        for i, data1 in enumerate(X1):
+            _x1, (x1, n1) = data1
+            for j, data2 in enumerate(X2):
+                _x2, (x2, n2) = data2
+
+                f = np.outer(x1[1], x2[1])
+                tmp = x1[0][:, None] - x2[0][None, :]
+                C[i, j] += self.delta1**2*np.sum(f*np.exp(-0.5*tmp*tmp/self.sigma1 ** 2))
+
+                D = 1-distance(_x1, _x2)**2
+                C[i, j] += self.delta2**2*np.sum(np.exp(-0.5*D/self.sigma2**2))
+ 
+                C[i, j] = C[i, j]/(n1*n2)
+        return C
+
+    def auto_covariance(self, X1, grad=False):
+        m1 = len(X1)
+        mat1 = np.zeros([m1, m1])
+        mat2 = np.zeros([m1, m1])
+        C1 = np.zeros([m1, m1])
+        C2 = np.zeros([m1, m1])
+        if grad:
+            C_grad = np.zeros([m1, m1, 4])
+        for i, data1 in enumerate(X1): #struc1
+            _x1, (x1, n1) = data1
+            for j in range(i, m1):  #struc2
+                _x2, (x2, n2) = X1[j]
+
+                f = np.outer(x1[1], x2[1])
+                d1 = (x1[0][:, None] - x2[0][None, :])**2
+                tmp1 = self.delta1**2*f*np.exp(-0.5*d1/self.sigma1**2)
+
+                mat1[i, j] = np.sum(tmp1*d1)/(n1*n2)
+                mat1[j, i] = mat1[i, j]
+
+                C1[i, j] = np.sum(tmp1)/(n1*n2)
+                C1[j, i] = C1[i, j]
+
+                d2 = 1-distance(_x1, _x2)**2
+                tmp2 = self.delta2**2*np.exp(-0.5*d2/self.sigma2**2)
+
+                mat2[i, j] = np.mean(tmp2*d2)
+                mat2[j, i] = mat2[i, j]
+                C2[i, j] = np.mean(tmp2)
+                C2[j, i] = C2[i, j]
+        C = C1 + C2
+        if grad:
+            C_grad[:,:,0] = 2*C1/self.delta1
+            C_grad[:,:,1] = mat1/self.sigma1**3
+            C_grad[:,:,2] = 2*C2/self.delta2
+            C_grad[:,:,3] = mat2/self.sigma2**3
 
             return C, C_grad
         else:
@@ -130,15 +261,24 @@ class GaussianProcess():
         if show:
             print("Strart Training: ", str(self.kernel))
         self.unpack_data(TrainData)
+
         def obj_func(params, eval_gradient=True):
             if eval_gradient:
                 lml, grad = self.log_marginal_likelihood(
                     params, eval_gradient=True, clone_kernel=False)
                 if show:
-                    print("Loss: {:12.3f} {:6.3f} {:6.3f}".format(-lml, *params))
-                return -lml, -grad
+                    strs = "Loss: {:12.3f} ".format(-lml)
+                    for para in params:
+                        strs += "{:6.3f} ".format(para)
+                    #from scipy.optimize import approx_fprime
+                    #print("from: ", grad)
+                    #print("scipy", approx_fprime(params, self.log_marginal_likelihood, 1e-6))
+                    #import sys
+                    #sys.exit()
+                    print(strs)
+                return (-lml, -grad)
             else:
-                return -self.log_marginal_likelihood(theta, clone_kernel=False)
+                return -self.log_marginal_likelihood(params, clone_kernel=False)
 
         params, loss = self.optimize(obj_func, self.kernel.parameters(), self.kernel.bounds)
         self.kernel.update(params)
@@ -165,12 +305,12 @@ class GaussianProcess():
         X = []
         for i, x in enumerate(_X[0]):
             if x is None or self.kernel.name in ["RBF_2b"]:
-                X.append(_X[1][i])
+                if i < len(_X[1]):
+                    X.append(_X[1][i])
             elif _X[1][i] is None or self.kernel.name in ["RBF_mb", "Dot_mb"]:
                 X.append(x)
             else:
-                X.append(x, _X[1][i])
-
+                X.append((x, _X[1][i]))
         K_trans = self.kernel.covariance(X, self.x)
         pred = K_trans.dot(self.alpha_)
         y_mean = pred[:, 0]
@@ -207,7 +347,7 @@ class GaussianProcess():
             elif _X[1][i] is None or self.kernel.name in ["RBF_mb", "Dot_mb"]:
                 X.append(x)
             else:
-                X.append(x, _X[1][i])
+                X.append((x, _X[1][i]))
             Y[i,0] += _Y[i]
 
         self.x = X
@@ -252,9 +392,9 @@ class GaussianProcess():
 
 
     def optimize(self, fun, theta0, bounds):
-        opt_res = minimize(fun, theta0, method="L-BFGS-B", \
-            jac=True, bounds=bounds, 
-            options={'maxiter': 10, 'ftol': 1e-3})
+        opt_res = minimize(fun, theta0, method="L-BFGS-B", bounds=bounds, 
+            jac=True, options={'maxiter': 10, 'ftol': 1e-3})
+        #print(opt_res)
         return opt_res.x, opt_res.fun
 
 

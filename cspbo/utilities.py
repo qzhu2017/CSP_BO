@@ -1,4 +1,5 @@
 import numpy as np
+from ase.neighborlist import neighbor_list
 from functools import partial
 from multiprocessing import Pool, cpu_count
 from ase.db import connect
@@ -9,6 +10,12 @@ mpl.use("Agg")
 import matplotlib.pyplot as plt
 plt.style.use("ggplot")
 
+def Cosine(Rij, Rc):
+    # Rij is the norm 
+    ids = (Rij > Rc)
+    result = 0.5 * (np.cos(np.pi * Rij / Rc) + 1.)
+    result[ids] = 0
+    return result
 
 def rmse(true, predicted):
     """ Calculate root mean square error of energy or force. """
@@ -69,6 +76,14 @@ def convert_rdf(db_file, N=None):
                 break
     return ds, np.array(train_Y)
 
+def get_2b(s, rcut=5.0):
+    
+    _is, _js, _ds = neighbor_list('ijd', s, rcut)
+    #ds = []
+    #for i in range(len(s)):
+    #    ds.append(_ds[_is==i])
+    #return ds
+    return (np.vstack((_ds, Cosine(_ds, rcut))), len(s))
 
 def convert_struc(db_file, des, N=None, ncpu=1):
 
@@ -82,8 +97,7 @@ def convert_struc(db_file, des, N=None, ncpu=1):
                 eng = row.data.energy/len(s)
             train_Y.append(eng)
             structures.append(s)
-            pmg_struc = AseAtomsAdaptor().get_structure(s)
-            ds.append(RDF(pmg_struc, R_max=10).RDF[1])
+            ds.append(get_2b(s))
             if N is not None and len(train_Y) == N:
                 break
 
@@ -214,19 +228,29 @@ def write_db(data, db_filename='viz.db', permission='w'):
                    "diff_energy": abs(y_qm[i]-y_ml[i])}
             db.write(x, key_value_pairs=kvp)
  
-def plot_two_body(model, des, figname):
+def plot_two_body(model, des, kernel, figname):
     from ase import Atoms
-    rs = np.linspace(1.0, 8.0, 50)
+    rs = np.linspace(0.5, 4.9, 50)
     cell = 10*np.eye(3)
     dimers = [Atoms("2Si", positions=[[0,0,0], [r,0,0]], cell=cell) for r in rs]
     
-    xs = []
+    d1s = []
+    d2s = []
     for dimer in dimers:
-        d = des.calculate(dimer) 
-        xs.append(d['x'])
-    ds = ([None]*len(dimers), xs)
+        if kernel.name == 'RBF_2b':
+            d1s.append(None)
+            d2s.append(get_2b(dimer))
+        elif kernel.name in ['RBF_mb', 'Dot_mb']:
+            d1s.append(des.calculate(dimer)['x'])
+            d2s.append(None)
+        else:
+            d1s.append(des.calculate(dimer)['x'])
+            d2s.append(get_2b(dimer))
+
+    ds = (d1s, d2s)
     energies = model.predict(ds)
-    plt.plot(rs, 2*energies)
+    plt.plot(rs, 2*energies, '-d', label='2-body')
+    plt.legend()
     plt.xlabel('R (Angstrom)')
     plt.ylabel('Energy (eV)')
     plt.tight_layout()

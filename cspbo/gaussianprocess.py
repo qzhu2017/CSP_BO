@@ -20,7 +20,6 @@ class RBF():
         D = D/(torch.matmul(d1, d2.T)+1e-2)
         E = torch.exp(-0.5 * D / self.sigmaL ** 2)
         
-        
         return torch.sum(self.sigmaF ** 2 * E)/(len(x1)*len(x2))
 
     def __str__(self):
@@ -36,7 +35,7 @@ class RBF():
         self.sigmaL.requires_grad_()
 
 class Dot():
-    def __init__(self, para=[1., 1.], bounds=[[1e-2, 2e+1], [1e-2, 1e+1]]):
+    def __init__(self, para=[1., 1.], bounds=[[1e-2, 2e+1], [1e-1, 1e+1]]):
         """ d is no of descriptors """
         super().__init__()
         self.name = 'Dot_mb'
@@ -45,8 +44,8 @@ class Dot():
 
     def covariance(self, x1, x2):
         D1 = torch.sum(x1@x2.T)
-        D2 = torch.sum(x1@x1.T) + 1e-3
-        D3 = torch.sum(x2@x2.T) + 1e-3
+        D2 = torch.sum(x1@x1.T) + 1e-6
+        D3 = torch.sum(x2@x2.T) + 1e-6
         return self.delta**2*(self.sigma0**2 + D1/torch.sqrt(D2*D3))
 
     def __str__(self):
@@ -126,7 +125,7 @@ class RBF_2b():
 
 class GaussianProcess():
     """ Gaussian Process Regressor. """
-    def __init__(self, noise=1e-4, kernel=None):
+    def __init__(self, kernel=None, noise=1e-4):
         self.noise = noise
         self.x = None
         self.models = {'model': kernel}

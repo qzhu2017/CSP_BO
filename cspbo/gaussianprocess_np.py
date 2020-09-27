@@ -399,4 +399,114 @@ class GaussianProcess():
 
 
 
+def covariance_energy_force(X1, X2, dX1, dX2, SEQ1, SEQ2):
+    m1, m2 = len(X1), len(X2)
+    n1, n2 = 0, 0
+    
+    N1 = []
+        for i, x1 in enumerate(X1):
+            if dX1[i]:
+                N = 0
+                for ele in self.elements:
+                    l = self.atoms[ele][i]
+                    N += l
+                    n1 += l * 3
+                N1.append(N)
+            else:
+                N1.append(None)
 
+    N2 = []
+    for i, x2, in enumerate(X2):
+        if dX2[i]:
+            N = 0
+            for ele in self.elements:
+                l = self.atoms[ele][i]
+                N += l
+                n2 += l * 3
+            N2.append(N)
+        else:
+            N2.append(None)
+
+    out = torch.zeros((m1+n1, m2+n2), dtype=torch.float64)
+    dout = torch.zeros((m1+n1, m2+n2, 2), dtype=torch.float64)
+
+    ki, ni = m1, 0
+    for ele in self.elements:
+        for i, (x1, dx1, seq1, n1) in enumerate(zip(X1, dX1, SEQ1, N1)):
+            kj = m2
+            if dx1:
+                ni = len(x1[ele])*3
+            
+            for j, (x2, dx2, seq2, n2) in enumerate(zip(X2, dX2, SEQ2, N2)):
+                if dx2:
+                    nj = len(x2[ele])*3
+
+                # Covariance between E_i and E_j
+                D = np.sum(x1*x1, axis=1, keepdims=True) + np.sum(x2*x2, axis=1) - 2*x1@x2.T
+                K = self.sigmaF ** 2 * np.exp(-(0.5 / self.sigmaL ** 2) * D)
+                out[i,j] = np.sum(K)
+                
+                KeePrime = np.zeros([2,])
+                KeePrime[0] = (2 / self.sigmaF) * Kee
+                KeePrime[1] = np.sum(K * D) / self.sigmaL ** 3
+                dout[i,j,:] += KeePrime
+                
+                # Covariance between F_i and E_j
+                if dx1:
+                    shp1 = x1.shape
+                    dxdr1 = np.zeros([shp1[0], n1, shp1[1], 3])
+                    for _m in range(n1):
+                        rows = np.where(seq1[:,1]==_m)[0]
+                        dxdr1[seq1[rows, 0], _m, :, :] += dx1[rows, :, :]
+                    grad_x1 = K[:,:,None] * -1 * (x1[:,None,:] - x2)
+                    Kfe = np.einsum("ijk,ilkm->lm", grad_x1, dxdr1).ravel() / self.sigmaL ** 2
+
+                    KfePrime = np.zeros([len(Kfe), 2])
+                    KfePrime[:,0] = (2 / self.sigmaF) * Kfe
+                    kfep = (-K*D/self.sigmaL**5 + (2/self.sigmaL**3)*K)[:,:,None] * (x1[:, None, :] - x2)
+                    KfePrime[:,1] = np.einsum("ijk,ilkm->lm", kfep, dxdr1).ravel()
+
+                    out[ki:ki+ni, j], dout[ki:ki+ni, j, :] = fc * Kfe, fc * KfePrime
+
+                # Covariance between E_i and F_j
+                if dx2:
+                    shp2 = x2.shape
+                    dxdr2 = np.zeros([shp2[0], n2, shp2[1], 3])
+                    for _m in range(n2):
+                        rows = np.where(seq2[:,1]==_m)[0]
+                        dxdr2[seq2[rows, 0], _m, :, :] += dx2[rows, :, :]
+                    grad_x2 = K[:,:,None] * (x1[:,None,:]-x2)
+                    Kef = np.einsum("ijk,jlkm->lm", grad_x2, dxdr2).ravel() / self.sigmaL ** 2
+
+                    KefPrime = np.zeros([len(Kef), 2])
+                    KefPrime[:,0] = (2/self.sigmaF) * Kef
+                    kefp = (K*D/self.sigmaL**5 - (2/self.sigmaL**3)*K)[:, :, None] * (x1[:, None, :] - x2)
+                    KefPrime[:,1] = np.einsum("ijk,ilkm->lm", kefp, dxdr2).ravel()
+                    
+                    out[i, kj:kj+nj], dout[i, kj:kj+nj, :] = fc * Kef, fc * KefPrime
+
+                # Covariance betweeen F_i and F_j
+                if dx1 and dx2:
+                    M = (x1[:, None, :] - x2) / self.sigmaL ** 2
+                    Q = np.eye(shp1[1]) / self.sigmaL ** 2 - M[:,:,:,None] * M[:,:,None,:]
+                    grad_x1x2 = K[:,:,None,None] * Q
+                    grad_x1x2_dx1 = np.einsum("ijkl, ihkm->jlhm", dxdr1, grad_x1x2)
+                    Kff = np.einsum("jlhm, hnmp -> jlnp", grad_x1x2_dx1, dxdr2).reshape(ni, nj)
+
+                    KffPrime = np.zeros([ni, nj, 2])
+                    KffPrime[:,:0] = (2 / self.sigmaF) * Kff
+                    kffp = (K * D / self.sigmaL ** 3)[:,:,None,None] * Q
+                    kffp += K[:,:,None,None] * ((-2 / self.sigmaL ** 3) * np.eye(shp1[1]) + ((4 / self.sigmaL **3) * M[:,:,:None] * M[:,:,None,:]))
+                    KffPrime_dxdr1 = torch.einsum("ijkl,ihkm->jlhm", dxdr1, kffp)
+                    KffPrime[:,:,1] = torch.einsum("jlhm, hnmp -> jlnp",KffPrime1_dxdr1, dxdr2).reshape(ni, nj)
+
+                    out[ki:ki+ni, kj:kj+nj], dout[ki:ki+ni, kj:kj+nj, :] = fc**2*Kff, fc**2*KffPrime
+                                       
+                                    
+                if dx2:
+                    kj += nj
+
+            if dx1:
+                ki += ni
+        
+    return out, dout

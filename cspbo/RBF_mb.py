@@ -170,10 +170,25 @@ def kee_single_grad(x1, x2, sigma2, l2):
     kd = k*D
     return sigma2*np.mean(k), sigma2*np.mean(kd)
 
-#def kef_single(x1, x2, dx2dr, sigma2, l2):
-#    D = 1-distance(x1, x2)**2
-#    k = np.exp(-0.5*D/l2)
-#
+def kef_single(x1, x2, dx2dr, sigma2, l2):
+    D = 1-distance(x1, x2)**2
+    k = np.exp(-0.5*D/l2)
+    kd = k*D
+
+    dD_dx2_1 = np.einsum("ij,k->ikj", x1, np.linalg.norm(x2, dim=1)) # [N, d] x [M] -> [N, M, d]
+    dD_dx2_2 = (x1@x2.T)[:,:None] * (x2 / np.linalg.norm(x2, dim=1)[:,None])[:,None,:]
+    dD_dx2_3 = (np.linalg.norm(x1,dim=1))[:, None, None] * (np.linalg.norm(x2, dim=1)**2)[None, :, None]
+    dD_dx2 = (dD_dx2_1 - dD_dx2_2) / dD_dx2_3
+
+    kd_dD_dx2 = kd[:,:,None] * dD_dx2
+
+    # kd_dD_dx2 -> [N, M, D] 
+    # dx2dr -> [M, D, 3]
+
+    Kef = np.einsum("ijk, jkl->l", kd_dD_dx2, dx2dr) / sigma2 # l is for direction (x, y, z)
+
+    return Kef
+
 #def kef_single_grad():
 #    return 
 

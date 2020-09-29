@@ -52,10 +52,10 @@ def build_desc(method='SO3', rcut=5.0, lmax=4, nmax=4, alpha=2.0):
     #from pyxtal_ff.descriptors.EAMD import EAMD
     if method == "SO3":
         from pyxtal_ff.descriptors.SO3 import SO3
-        des = SO3(nmax=nmax, lmax=lmax, rcut=rcut, alpha=alpha, derivative=False)
+        des = SO3(nmax=nmax, lmax=lmax, rcut=rcut, alpha=alpha, derivative=True)
     elif method == "SO4":
         from pyxtal_ff.descriptors.SO4 import SO4_Bispectrum
-        des = SO4_Bispectrum(lmax=lmax, rcut=rcut, derivative=False) 
+        des = SO4_Bispectrum(lmax=lmax, rcut=rcut, derivative=True) 
 
     return des
 
@@ -76,16 +76,53 @@ def convert_rdf(db_file, N=None):
                 break
     return ds, np.array(train_Y)
 
-def get_2b(s, rcut=5.0):
+def smear(data, sigma=0.2):
+    """
+    Apply Gaussian smearing to spectrum y value.
+    Args:
+        sigma: Std dev for Gaussian smear function
+    """
+    diff = [data[0, i + 1] - data[0, i] for i in range(np.shape(data)[0] - 1)]
+    avg_x_per_step = np.sum(diff) / len(diff)
+    data[1, :] = gaussian_filter1d(data[1, :], sigma / avg_x_per_step)
+    return data
+
+def get_rdf(s, r_min=0.5, r_max=8.0, N_bins=40, sigma=0.2):
+    # plot atomic RDF
+    # needs a cutoff
+    rdf = np.zeros([len(s)+2, N_bins]) 
+    _is, _js, _ds = neighbor_list('ijd', s, rcut)
+    dr = (r_max-r_min)/(N_bins-1)
+    bins = np.arange(r_min, r_max, R_bin)
+    cutoff = Cosine(neighbors, bins)
+
+    for i in range(len(s)):
+        neighbors = _ds[_is == i]
+        des = np.histogram(neighbors, bins=bins)
+        rdf[i, :] = smear(np.vstack(bins, des), sigma)[1, :]
+    rdf /= s.get_volume()
+    rdf[-2,:] = bins
+    rdf[-1,:] = Cosine(bins, r_max)
+    return rdf
+
+
+
+def get_2b(s, rcut=4.0, kernel='all'):
     
     _is, _js, _ds = neighbor_list('ijd', s, rcut)
-    #ds = []
-    #for i in range(len(s)):
-    #    ds.append(_ds[_is==i])
-    #return ds
-    return (np.vstack((_ds, Cosine(_ds, rcut))), len(s))
+    if kernel == 'atom':
+        des_2b = np.zeros([len(s), 30, 2])
+        for i in range(len(s)):
+            neighbors = _ds[_is == i]
+            cutoff = Cosine(neighbors, rcut)
+            des_2b[i, :len(neighbors), 0] = neighbors 
+            des_2b[i, :len(neighbors), 1] = cutoff
+        return des_2b
+    else:
+        return (np.vstack((_ds, Cosine(_ds, rcut))), len(s))
 
-def convert_struc(db_file, des, N=None, ncpu=1):
+def convert_struc(db_file, des, N=None, ncpu=1, kernel='all'):
+#def convert_struc(db_file, des, N=None, ncpu=1, kernel='atom'):
 
     structures, train_Y, ds = [], [], []
     with connect(db_file) as db:
@@ -97,7 +134,7 @@ def convert_struc(db_file, des, N=None, ncpu=1):
                 eng = row.data.energy/len(s)
             train_Y.append(eng)
             structures.append(s)
-            ds.append(get_2b(s))
+            ds.append(get_2b(s, kernel=kernel))
             if N is not None and len(train_Y) == N:
                 break
 
@@ -106,9 +143,8 @@ def convert_struc(db_file, des, N=None, ncpu=1):
         for i, struc in enumerate(structures):
             strs = '\rDescriptor calculation: {:4d} out of {:4d}'.format(i+1, len(structures))
             print(strs, flush=False, end='')
-            
             d = des.calculate(struc) 
-            xs.append(d['x'])
+            xs.append(d)
     else:
         print('---Parallel mode is on, {} cores with be used'.format(ncpu))
         import tqdm
@@ -120,12 +156,13 @@ def convert_struc(db_file, des, N=None, ncpu=1):
             xs = p.map(func, structures)
             p.close()
             p.join()
-    train_x = (xs, ds) 
+    train_x = xs #(xs, ds) 
 
     return train_x, np.array(train_Y)
 
 def fea(des, struc):
-    return des.calculate(struc)['x']
+    #return des.calculate(struc)['x']
+    return des.calculate(struc)
 
 def normalize(x_train, x_test):
     from sklearn.preprocessing import StandardScaler  
@@ -230,7 +267,7 @@ def write_db(data, db_filename='viz.db', permission='w'):
  
 def plot_two_body(model, des, kernel, figname):
     from ase import Atoms
-    rs = np.linspace(0.5, 4.9, 50)
+    rs = np.linspace(0.5, 5.0, 50)
     cell = 10*np.eye(3)
     dimers = [Atoms("2Si", positions=[[0,0,0], [r,0,0]], cell=cell) for r in rs]
     

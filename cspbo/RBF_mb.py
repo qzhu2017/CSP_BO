@@ -1,6 +1,6 @@
 import numpy as np
 import numba as nb
-
+from .test_derivatives import *
 class RBF_mb():
     def __init__(self, para=[1., 1.], bounds=[[1e-2, 2e+1], [1e-1, 1e+1]]):
         self.name = 'RBF_mb'
@@ -163,31 +163,31 @@ def kee_single(x1, x2, sigma2, l2):
     """
     D = 1-distance(x1, x2)**2
     k = np.exp(-0.5*D/l2)
-    return sigma2*np.mean(k)
+    #return sigma2*np.mean(k)
+    return sigma2*np.sum(k)
 
 def kee_single_grad(x1, x2, sigma2, l2):
     D = 1-distance(x1, x2)**2
     k = np.exp(-0.5*D/l2)
     kd = k*D
-    return sigma2*np.mean(k), sigma2*np.mean(kd)
+    #return sigma2*np.mean(k), sigma2*np.mean(kd)
+    return sigma2*np.sum(k), sigma2*np.sum(kd)
 
 def kef_single(x1, x2, dx2dr, sigma2, l2):
-    D = 1-distance(x1, x2)**2
-    k = np.exp(-0.5*D/l2)
-    kd = k*D
-
-    dD_dx2_1 = np.einsum("ij,k->ikj", x1, np.linalg.norm(x2, axis=1)) # [N,d] x [M] -> [N, M, d]
-    dD_dx2_2 = (x1@x2.T)[:,:,None] * (x2 / np.linalg.norm(x2, axis=1)[:, None])[None,:,:]
-    dD_dx2_3 = (np.linalg.norm(x1,axis=1))[:, None, None] * (np.linalg.norm(x2, axis=1)**2)[None, :, None]
-    dD_dx2 = (dD_dx2_1 - dD_dx2_2) / dD_dx2_3
-
-    kd_dD_dx2 = kd[:,:,None] * dD_dx2
-
-    # kd_dD_dx2 -> [N, M, D] 
-    # dx2dr -> [M, D, 3]
-    Kef = np.einsum("ijk, jkl->l", kd_dD_dx2, dx2dr) / sigma2 # l is for direction (x, y, z)
-    
-    return Kef/len(x1)
+    """
+    Args:
+        x1: N*d
+        x2: M*d
+        dx2dr: M*d*3
+    Returns:
+        Kef: 3
+    """
+    x1_norm = np.linalg.norm(x1, axis=1)
+    x2_norm = np.linalg.norm(x2, axis=1)
+    _, d1 = fun_D(x1, x2, x1_norm, x2_norm)
+    dk_dx2 = fun_dk_dx2(x1, x2, x1_norm, x2_norm, d1, sigma2, l2)  
+    Kef = -np.einsum("ij, ijk->k", dk_dx2, dx2dr) # [m,d], [m,d,3] -> 3
+    return Kef
 
 #def kef_single_grad():
 #    return 

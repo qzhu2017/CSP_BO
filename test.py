@@ -5,12 +5,12 @@ from cspbo.utilities import build_desc, convert_struc, plot_two_body
 import numpy as np
 
 #N1, N2, cpu = 50, 50, 8
-N1, N2, cpu = None, None, 8
+N1, N2, cpu = 100, None, 8
 des = build_desc("SO3")
 print(des)
 X, Y = convert_struc(sys.argv[1], des, N=N1, ncpu=cpu)
 #test_X, test_Y = convert_struc(sys.argv[2], des, N=N2, ncpu=cpu)
-N_train = 200
+N_train = 80
 
 
 train_data = {"energy": [(x['x'], y) for (x, y) in zip(X[:N_train], Y["energy"][:N_train])]}
@@ -24,9 +24,10 @@ test_Y1  = np.array(Y["energy"][N_train:])
 #build the test pts for forces
 test_Y2 = None
 force_data = []
-for (x, y) in zip(X[N_train:], Y["forces"][N_train:]):
+#for (x, y) in zip(X[N_train:], Y["forces"][N_train:]):
+for (x, y) in zip(X[-4:], Y["forces"][-4:]):
     # sample the force for atom 1
-    for i in range(4,5):
+    for i in range(1,30,2):
         ids = np.argwhere(x['seq'][:,1]==i).flatten()
         _i = x['seq'][ids, 0] #.flatten()
         force_data.append((x['x'][_i,:], x['dxdr'][ids]))

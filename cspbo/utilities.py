@@ -19,14 +19,17 @@ def Cosine(Rij, Rc):
 
 def rmse(true, predicted):
     """ Calculate root mean square error of energy or force. """
+    true, predicted = np.array(true), np.array(predicted)
     return np.sqrt(sum((true-predicted) ** 2 /len(true)))
 
 def mae(true, predicted):
     """ Calculate mean absolute error of energy or force. """
+    true, predicted = np.array(true), np.array(predicted)
     return sum(abs(true-predicted)/len(true))
 
 def r2(true, predicted):
     """ Calculate the r square of energy or force. """
+    true, predicted = np.array(true), np.array(predicted)
     t_bar = sum(true)/len(true)
     square_error = sum((true-predicted) ** 2)
     true_variance = sum((true-t_bar) ** 2)
@@ -122,20 +125,19 @@ def get_2b(s, rcut=4.0, kernel='all'):
         return (np.vstack((_ds, Cosine(_ds, rcut))), len(s))
 
 def convert_struc(db_file, des, N=None, ncpu=1, kernel='all'):
-#def convert_struc(db_file, des, N=None, ncpu=1, kernel='atom'):
-
-    structures, train_Y, ds = [], [], []
+    structures, train_Y = [], {"energy":[], "forces": []}
     with connect(db_file) as db:
         for row in db.select():
             s = db.get_atoms(id=row.id)
             if hasattr(row, 'ff_energy'):
                 eng = row.ff_energy
             else:
-                eng = row.data.energy/len(s)
-            train_Y.append(eng)
+                #eng = row.data.ff_energy/len(s)
+                eng = row.data.ff_energy#/len(s)
+            train_Y['energy'].append(eng)
+            train_Y['forces'].append(row.data.ff_forces)
             structures.append(s)
-            ds.append(get_2b(s, kernel=kernel))
-            if N is not None and len(train_Y) == N:
+            if N is not None and len(structures) == N:
                 break
 
     if ncpu == 1:
@@ -156,9 +158,9 @@ def convert_struc(db_file, des, N=None, ncpu=1, kernel='all'):
             xs = p.map(func, structures)
             p.close()
             p.join()
-    train_x = xs #(xs, ds) 
+    train_x = xs 
 
-    return train_x, np.array(train_Y)
+    return train_x, train_Y
 
 def fea(des, struc):
     #return des.calculate(struc)['x']

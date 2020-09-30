@@ -4,28 +4,30 @@ from cspbo.utilities import convert_rdf, metrics, plot
 from cspbo.utilities import build_desc, convert_struc, plot_two_body
 import numpy as np
 
-N1, N2 = 20, 20 #None, None
+N1, N2 = 10, 10 
+N1, N2 = None, None
 des = build_desc("SO4")
 print(des)
-train_X, train_Y = convert_struc(sys.argv[1], des, N=N1, ncpu=4)
-test_X, test_Y = convert_struc(sys.argv[2], des, N=N2, ncpu=4)
-train_data = {"energy": [(x['x'], y) for (x, y) in zip(train_X, train_Y)]}
-
+train_X, train_Y = convert_struc(sys.argv[1], des, N=N1, ncpu=8)
+test_X, test_Y = convert_struc(sys.argv[2], des, N=N2, ncpu=8)
+train_data = {"energy": [(x['x'], y) for (x, y) in zip(train_X, train_Y["energy"])]}
 train_pt  = {"energy": [x['x'] for x in train_X]}
-test_pt1   = {"energy": [x['x'] for x in test_X]}
-
+test_pt1  = {"energy": [x['x'] for x in test_X]}
+test_Y1  = np.array(test_Y["energy"])
 #build the test pts for forces
+test_Y2 = None
 force_data = []
-for x in test_X[:3]:
+for (x, y) in zip(test_X[:10], test_Y["forces"]):
     # sample the force for atom 1
-    ids = np.argwhere(x['seq'][:,1]==1)
-    _i = x['seq'][ids, 0]
-    #print("sampling atom 1")
-    #print(_i.T)
-    #print(ids.T)
-    force_data.append((x['x'][_i], x['dxdr'][ids]))
-test_pt2   = {"force": force_data}
-
+    for i in range(10):
+        ids = np.argwhere(x['seq'][:,1]==i).flatten()
+        _i = x['seq'][ids, 0] #.flatten()
+        force_data.append((x['x'][_i,:], x['dxdr'][ids]))
+        if test_Y2 is None:
+            test_Y2 = y[i, :]
+        else:
+            test_Y2 = np.hstack((test_Y2, y[i,:]))
+test_pt2 = {"force": force_data}
 
 from cspbo.gaussianprocess_ef import GaussianProcess as gpr
 from cspbo.RBF_mb import RBF_mb
@@ -37,9 +39,10 @@ model = gpr(kernel=kernel)
 model.fit(train_data)
 train_pred = model.predict(train_pt)
 test_pred = model.predict(test_pt1)
-#test_pred = model.predict(test_pt2)
+labels = metrics(train_Y["energy"], test_Y1, train_pred, test_pred, "MB")
+test_pred = model.predict(test_pt2)
+labels = metrics(train_Y["energy"], test_Y2, train_pred, test_pred, "MB")
 
 print("elapsed time: ", time()-t0)
-labels = metrics(train_Y, test_Y, train_pred, test_pred, "MB")
-plot((train_Y, test_Y), (train_pred, test_pred), labels, kernel.name+'-fit.png')
+#plot((train_Y, test_Y), (train_pred, test_pred), labels, kernel.name+'-fit.png')
 #plot_two_body(model, des, kernel, kernel.name+'-2-body.png')

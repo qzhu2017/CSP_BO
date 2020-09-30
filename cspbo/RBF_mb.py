@@ -30,8 +30,9 @@ class RBF_mb():
                         C_ee = self.kee_many(data1[key1], data2[key2], same=same)
                     elif key1 == 'energy' and key2 == 'force':
                         C_ef = self.kef_many(data1[key1], data2[key2])
+                    elif key1 == 'force' and key2 == 'energy':
                         if not same:
-                            C_fe = self.kef_many(data1[key2], data2[key1]) 
+                            C_fe = self.kef_many(data2[key2], data1[key1]).T
                         else:
                             C_fe = C_ef.T 
                     elif key1 == 'force' and key2 == 'force':
@@ -106,37 +107,37 @@ class RBF_mb():
         else:
             return C
 
-    #def kef_many(self, X1, X2, grad=False):
-    #    """
-    #    Compute the energy-force kernel between structures and atoms
-    #    Args:
-    #        X1: list of 2D arrays (each N*d)
-    #        X2: list of tuples ([X, dXdR])
-    #        grad: output gradient if true
-    #    Returns:
-    #        C: M*N 2D array
-    #        C_grad:
-    #    """
-    #    sigma, sigma2, l2, l3 = self.sigma, self.sigma**2, self.l**2, self.l**3
-    #    m1, m2 = len(X1), len(X2)
-    #    C = np.zeros([m1, 3*m2])
-    #    kd = np.zeros([m1, m2])
+    def kef_many(self, X1, X2, grad=False):
+        """
+        Compute the energy-force kernel between structures and atoms
+        Args:
+            X1: list of 2D arrays (each N*d)
+            X2: list of tuples ([X, dXdR])
+            grad: output gradient if true
+        Returns:
+            C: M*N 2D array
+            C_grad:
+        """
+        sigma, sigma2, l2, l3 = self.sigma, self.sigma**2, self.l**2, self.l**3
+        m1, m2 = len(X1), len(X2)
+        C = np.zeros([m1, 3*m2])
+        kd = np.zeros([m1, m2])
 
-    #    for i, x1 in enumerate(X1):
-    #        for j, data in enumerate(X2):
-    #            (x2, dx2dr) = data
-    #            if grad:
-    #                C[i, j], kd[i, j] = kef_single_grad(x1, x2, dx2/dr, sigma2, l2)
-    #            else:
-    #                C[i, j] = kef_single(x1, x2, dx2/dr, sigma2, l2)
-    #    if grad:
-    #        C_grad = np.zeros([m1, m2, 2])
-    #        C_grad[:,:,0] = 2*C/sigma
-    #        C_grad[:,:,1] = kd/l3
+        for i, x1 in enumerate(X1):
+            for j, data in enumerate(X2):
+                (x2, dx2dr) = data
+                if grad:
+                    C[i, j], kd[i, j] = kef_single_grad(x1, x2, dx2dr, sigma2, l2)
+                else:
+                    C[i, j*3:(j+1)*3] = kef_single(x1, x2, dx2dr, sigma2, l2)
+        if grad:
+            C_grad = np.zeros([m1, m2, 2])
+            C_grad[:,:,0] = 2*C/sigma
+            C_grad[:,:,1] = kd/l3
 
-    #        return C, C_grad                   
-    #    else:
-    #        return C
+            return C, C_grad                   
+        else:
+            return C
 
 
 def distance(x1, x2):
@@ -175,19 +176,19 @@ def kef_single(x1, x2, dx2dr, sigma2, l2):
     k = np.exp(-0.5*D/l2)
     kd = k*D
 
-    dD_dx2_1 = np.einsum("ij,k->ikj", x1, np.linalg.norm(x2, dim=1)) # [N, d] x [M] -> [N, M, d]
-    dD_dx2_2 = (x1@x2.T)[:,:None] * (x2 / np.linalg.norm(x2, dim=1)[:,None])[:,None,:]
-    dD_dx2_3 = (np.linalg.norm(x1,dim=1))[:, None, None] * (np.linalg.norm(x2, dim=1)**2)[None, :, None]
+    dD_dx2_1 = np.einsum("ij,k->ikj", x1, np.linalg.norm(x2, axis=1)) # [N, d] x [M] -> [N, M, d]
+    #dD_dx2_2 = (x1@x2.T)[:,:,None] * (x2 / np.linalg.norm(x2, dim=1)[:,None])[:,None,:]
+    dD_dx2_2 = (x1@x2.T)[:,:,None] * (x2 / np.linalg.norm(x2, axis=1)[:, None])[None,:,:]
+    dD_dx2_3 = (np.linalg.norm(x1,axis=1))[:, None, None] * (np.linalg.norm(x2, axis=1)**2)[None, :, None]
     dD_dx2 = (dD_dx2_1 - dD_dx2_2) / dD_dx2_3
 
     kd_dD_dx2 = kd[:,:,None] * dD_dx2
 
     # kd_dD_dx2 -> [N, M, D] 
     # dx2dr -> [M, D, 3]
-
     Kef = np.einsum("ijk, jkl->l", kd_dD_dx2, dx2dr) / sigma2 # l is for direction (x, y, z)
-
-    return Kef
+    
+    return Kef/len(x1)
 
 #def kef_single_grad():
 #    return 

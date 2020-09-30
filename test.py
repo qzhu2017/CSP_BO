@@ -4,12 +4,13 @@ from cspbo.utilities import convert_rdf, metrics, plot
 from cspbo.utilities import build_desc, convert_struc, plot_two_body
 import numpy as np
 
-N1, N2 = 10, 10 
-N1, N2 = None, None
+#N1, N2, cpu = 50, 50, 8
+N1, N2, cpu = None, None, 8
 des = build_desc("SO4")
 print(des)
-train_X, train_Y = convert_struc(sys.argv[1], des, N=N1, ncpu=8)
-test_X, test_Y = convert_struc(sys.argv[2], des, N=N2, ncpu=8)
+train_X, train_Y = convert_struc(sys.argv[1], des, N=N1, ncpu=cpu)
+test_X, test_Y = train_X, train_Y
+#test_X, test_Y = convert_struc(sys.argv[2], des, N=N2, ncpu=cpu)
 train_data = {"energy": [(x['x'], y) for (x, y) in zip(train_X, train_Y["energy"])]}
 train_pt  = {"energy": [x['x'] for x in train_X]}
 test_pt1  = {"energy": [x['x'] for x in test_X]}
@@ -17,16 +18,16 @@ test_Y1  = np.array(test_Y["energy"])
 #build the test pts for forces
 test_Y2 = None
 force_data = []
-for (x, y) in zip(test_X[:10], test_Y["forces"]):
+for (x, y) in zip(test_X[:100], test_Y["forces"]):
     # sample the force for atom 1
-    for i in range(10):
+    for i in range(5):
         ids = np.argwhere(x['seq'][:,1]==i).flatten()
         _i = x['seq'][ids, 0] #.flatten()
         force_data.append((x['x'][_i,:], x['dxdr'][ids]))
         if test_Y2 is None:
-            test_Y2 = y[i, :]
+            test_Y2 = y[i]
         else:
-            test_Y2 = np.hstack((test_Y2, y[i,:]))
+            test_Y2 = np.hstack((test_Y2, y[i]))
 test_pt2 = {"force": force_data}
 
 from cspbo.gaussianprocess_ef import GaussianProcess as gpr

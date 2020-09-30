@@ -129,13 +129,10 @@ def convert_struc(db_file, des, N=None, ncpu=1, kernel='all'):
     with connect(db_file) as db:
         for row in db.select():
             s = db.get_atoms(id=row.id)
-            if hasattr(row, 'ff_energy'):
-                eng = row.ff_energy
-            else:
-                #eng = row.data.ff_energy/len(s)
-                eng = row.data.ff_energy#/len(s)
-            train_Y['energy'].append(eng)
-            train_Y['forces'].append(row.data.ff_forces)
+            train_Y['energy'].append(row.data.energy/len(s))
+            #train_Y['forces'].append(row.data.forces)
+            #print(row.data.force)
+            train_Y['forces'].append(row.data.force)
             structures.append(s)
             if N is not None and len(structures) == N:
                 break

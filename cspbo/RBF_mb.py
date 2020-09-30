@@ -176,8 +176,7 @@ def kef_single(x1, x2, dx2dr, sigma2, l2):
     k = np.exp(-0.5*D/l2)
     kd = k*D
 
-    dD_dx2_1 = np.einsum("ij,k->ikj", x1, np.linalg.norm(x2, axis=1)) # [N, d] x [M] -> [N, M, d]
-    #dD_dx2_2 = (x1@x2.T)[:,:,None] * (x2 / np.linalg.norm(x2, dim=1)[:,None])[:,None,:]
+    dD_dx2_1 = np.einsum("ij,k->ikj", x1, np.linalg.norm(x2, axis=1)) # [N,d] x [M] -> [N, M, d]
     dD_dx2_2 = (x1@x2.T)[:,:,None] * (x2 / np.linalg.norm(x2, axis=1)[:, None])[None,:,:]
     dD_dx2_3 = (np.linalg.norm(x1,axis=1))[:, None, None] * (np.linalg.norm(x2, axis=1)**2)[None, :, None]
     dD_dx2 = (dD_dx2_1 - dD_dx2_2) / dD_dx2_3

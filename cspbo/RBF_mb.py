@@ -1,6 +1,6 @@
 import numpy as np
-import numba as nb
-from .test_derivatives import *
+from .derivatives import *
+
 class RBF_mb():
     def __init__(self, para=[1., 1.], bounds=[[1e-2, 2e+1], [1e-1, 1e+1]]):
         self.name = 'RBF_mb'

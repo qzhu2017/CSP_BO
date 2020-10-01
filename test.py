@@ -5,12 +5,12 @@ from cspbo.utilities import build_desc, convert_struc, plot_two_body
 import numpy as np
 
 #N1, N2, cpu = 50, 50, 8
-N1, N2, cpu = 100, None, 8
+N1, N2, cpu = None, None, 8
 des = build_desc("SO3")
 print(des)
 X, Y = convert_struc(sys.argv[1], des, N=N1, ncpu=cpu)
 #test_X, test_Y = convert_struc(sys.argv[2], des, N=N2, ncpu=cpu)
-N_train = 80
+N_train = 219
 
 
 train_data = {"energy": [(x['x'], y) for (x, y) in zip(X[:N_train], Y["energy"][:N_train])]}

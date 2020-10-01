@@ -131,7 +131,7 @@ class RBF_mb():
                     C_grad = np.zeros([m1, 3*m2])
                     C[i, j*3:(j+1)*3] = kef_single(x1, x2, dx2dr, sigma2, l2)
                     C_grad[i, j*3:(j+1)*3, 0] = (2/sigma) * C
-                    C_grad[i, j*3:(j+1)*3, 1] = kef_single_grad(x1, x2, dx2dr, sigma2, l2)
+                    C_grad[i, j*3:(j+1)*3, 1] = kef_single_grad(x1, x2, dx2dr, sigma2, self.l)
                     
                     #C[i, j], kd[i, j] = kef_single_grad(x1, x2, dx2dr, sigma2, l2)
                 else:
@@ -159,7 +159,7 @@ class RBF_mb():
                         C_grad = np.zeros([m1*3, m2])
                         C[i*3:(i+1)*3, j] = kfe_single(x1, x2, dx1dr, sigma2, l2)
                         C_grad[i*3:(i+1)*3, j, 0] = (2/sigma) * C
-                        C_grad[i*3:(i+1)*3, j, 1] = kfe_single_grad(x1, x2, dx1dr, sigma2, l)
+                        C_grad[i*3:(i+1)*3, j, 1] = kfe_single_grad(x1, x2, dx1dr, sigma2, self.l)
 
                         #C[i, j], kd[i, j] = kfe_single_grad(x1, x2, dx1dr, sigma2, l2)
                     else:
@@ -234,7 +234,7 @@ def kef_single(x1, x2, dx2dr, sigma2, l2):
 
     return Kef
 
-def kef_single_grad(x1, x2, dx2dr, sigma2, l2):
+def kef_single_grad(x1, x2, dx2dr, sigma2, l):
     """ Get the derivative of Kef with respect to sigma. """ 
     x1_norm = np.linalg.norm(x1, axis=1)
     x2_norm = np.linalg.norm(x2, axis=1)
@@ -253,6 +253,9 @@ def kef_single_grad(x1, x2, dx2dr, sigma2, l2):
     dKef_dl = -np.einsum("ijk, jkl->l", dKef_dl_2, dx2dr)
 
     return dKef_dl
+
+
+def kff_single(x1, x2, dx1dr, dx2dr, sigma2, l2):
 
 
 def kfe_single(x1, x2, dx1dr, sigma2, l2):

@@ -128,14 +128,19 @@ class RBF_mb():
             for j, data in enumerate(X2):
                 (x2, dx2dr) = data
                 if grad:
-                    C[i, j], kd[i, j] = kef_single_grad(x1, x2, dx2dr, sigma2, l2)
+                    C_grad = np.zeros([m1, 3*m2])
+                    C[i, j*3:(j+1)*3] = kef_single(x1, x2, dx2dr, sigma2, l2)
+                    C_grad[i, j*3:(j+1)*3, 0] = (2/sigma) * C
+                    C_grad[i, j*3:(j+1)*3, 1] = kef_single_grad(x1, x2, dx2dr, sigma2, l2)
+                    
+                    #C[i, j], kd[i, j] = kef_single_grad(x1, x2, dx2dr, sigma2, l2)
                 else:
                     C[i, j*3:(j+1)*3] = kef_single(x1, x2, dx2dr, sigma2, l2)
+        
         if grad:
-            C_grad = np.zeros([m1, m2, 2])
-            C_grad[:,:,0] = 2*C/sigma
-            C_grad[:,:,1] = kd/l3
-
+            #C_grad = np.zeros([m1, m2, 2])
+            #C_grad[:,:,0] = 2*C/sigma
+            #C_grad[:,:,1] = kd/l3
             return C, C_grad                   
         else:
             return C
@@ -151,19 +156,22 @@ class RBF_mb():
                 for j, x2 in enumerate(X2):
                     (x1, dx1dr) = data
                     if grad:
-                        C[i, j], kd[i, j] = kfe_single_grad(x1, x2, dx1dr, sigma2, l2)
+                        C_grad = np.zeros([m1*3, m2])
+                        C[i*3:(i+1)*3, j] = kfe_single(x1, x2, dx1dr, sigma2, l2)
+                        C_grad[i*3:(i+1)*3, j, 0] = (2/sigma) * C
+                        C_grad[i*3:(i+1)*3, j, 1] = kfe_single_grad(x1, x2, dx1dr, sigma2, l)
+
+                        #C[i, j], kd[i, j] = kfe_single_grad(x1, x2, dx1dr, sigma2, l2)
                     else:
                         C[i*3:(i+1)*3, j] = kfe_single(x1, x2, dx1dr, sigma2, l2)
 
             if grad:
-                C_grad = np.zeros([m1, m2, 2])
-                C_grad[:,:,0] = 2*C/sigma
-                C_grad[:,:,1] = kd/l3
+                #C_grad = np.zeros([m1, m2, 2])
+                #C_grad[:,:,0] = 2*C/sigma
+                #C_grad[:,:,1] = kd/l3
                 return C, C_grad
             else:
                 return C
-
-
 
 def distance(x1, x2):
     """
@@ -226,8 +234,25 @@ def kef_single(x1, x2, dx2dr, sigma2, l2):
 
     return Kef
 
-#def kef_single_grad():
-#    return 
+def kef_single_grad(x1, x2, dx2dr, sigma2, l2):
+    """ Get the derivative of Kef with respect to sigma. """ 
+    x1_norm = np.linalg.norm(x1, axis=1)
+    x2_norm = np.linalg.norm(x2, axis=1)
+    d = distance(x1, x2)
+    d2 = d**2
+    k = sigma2 * np.exp(-(0.5/l**2)*(1-d2))
+
+    dKef_dl_1 = k * ((1-d2)/l**5 - (2/l**3)) * D
+
+    dD_dx2_1 = np.einsum("ij,k->ikj", x1, x2_norm)
+    dD_dx2_2 = (x1@x2.T)[:,:,None] * (x2 / x2_norm[:, None])[None, :, :]
+    dD_dx2_3 = x1_norm[:, None, None] * (x2_norm**2)[None,:,None]
+    dD_dx2 = (dD_dx2_1 - dD_dx2_2) / dD_dx2_3
+
+    dKef_dl_2 = dKef_dl_1[:, :, None] * dD_dx2
+    dKef_dl = -np.einsum("ijk, jkl->l", dKef_dl_2, dx2dr)
+
+    return dKef_dl
 
 
 def kfe_single(x1, x2, dx1dr, sigma2, l2):
@@ -246,8 +271,27 @@ def kfe_single(x1, x2, dx1dr, sigma2, l2):
 
     kd_dD_dx1 = kd[:, :, None] * dD_dx1
     Kfe = -np.einsum("ijk,ikl->l", kd_dD_dx1, dx1dr)
-
     return Kfe
+
+
+def kfe_single_grad(x1, x2, dx1dr, sigma2, l):
+    """ Get the derivative of Kfe with respect to sigma. """
+    x1_norm = np.linalg.norm(x1, axis=1)
+    x2_norm = np.linalg.norm(x2, axis=1)
+    d = distance(x1, x2)
+    d2 = d**2
+    k = sigma2 * np.exp(-(0.5/l**2)*(1-d2))
+
+    dKfe_dl_1 = k * ((1-d2)/l**5 - (2/l**3)) * D
+
+    dD_dx1_1 = np.einsum("ij,k->kij", x2, x1_norm)
+    dD_dx1_2 = (x1@x2.T)[:, :, None] * (x1 / x1_norm[:, None])[:, None, :]
+    dD_dx1_3 = (x1_norm ** 2)[:, None, None] * x2_norm[None, :, None]
+    dD_dx1 = (dD_dx1_1 - dD_dx1_2) / dD_dx1_3
+
+    dKfe_dl_2 = dKfe_dl_1[:, :, None] * dD_dx1
+    dKfe_dl = -np.einsum("ijk, ikl->l", dKfe_dl_2, dx1dr)
+    return dKfe_dl
 
 
 def build_covariance(c_ee, c_ef, c_fe, c_ff):
@@ -271,5 +315,3 @@ def build_covariance(c_ee, c_ef, c_fe, c_ff):
         return c_ff
     elif exist == [False, False, True, False]: # F in train, E in predict 
         return c_fe
-
-

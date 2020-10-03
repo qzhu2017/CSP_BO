@@ -39,10 +39,17 @@ def acquisition(descriptors, _descriptors, model, style="PI"):
         ix = np.argmax(probs)
 
     elif style == "Thompson":
-        alpha = 1
+        alpha = 0 #1
         mu, cov = surrogate(model, _descriptors, std=False)
         mu_1d = mu.ravel()
+        print(mu_1d)
         score = np.random.multivariate_normal(mu_1d, cov * alpha ** 2, 1)
+        print(score)
+        alpha = 1
+        score = np.random.multivariate_normal(mu_1d, cov * alpha ** 2, 1)
+        print(score)
+        import sys
+        sys.exit()
         score = score[0, :]
         ix = np.argmax(score)   
         
@@ -61,8 +68,8 @@ N = 100 # number of BO runs
 Rmax = 10
 sgs = range(1,231)
 species = ["Si"]
-numIons = [4]
-ff = "edip_si.lib" #"tersoff.lib"
+numIons = [8]
+ff = "edip_si.lib" 
 
 #compute the reference ground state
 from ase.lattice import bulk
@@ -82,9 +89,11 @@ for p in range(N):
     energies = []
     for i in range(n):
         struc = PyXtal(sgs, species, numIons)
-        struc, eng, spg, _ = process(struc, "GULP", ff, p, "bo.db")
+        struc, eng, _, spg = process(struc, "GULP", ff, p, "bo.db")
         pmg_struc = AseAtomsAdaptor().get_structure(struc)
         _des = RDF(pmg_struc, R_max=Rmax).RDF[1]
+
+        print("{:4d} {:12s} {:8.5f}".format(i, spg, eng/len(struc)))
         if i == 0:
             columns = _des.shape[0]
             descriptors = np.zeros([n, columns])
@@ -104,19 +113,12 @@ for p in range(N):
         pmg_struc = AseAtomsAdaptor().get_structure(struc)
         opt_des = RDF(pmg_struc, R_max=Rmax).RDF[1]
         est, _ = surrogate(model, [opt_des])
-        print("{:4d} {:12s} {:8.5f} -> {:8.5f} {:8.5f} ".format(count, spg, opt_eng, est[0], opt_eng-est[0]))
+        print("{:4d} {:12s} {:8.5f} -> {:8.5f} {:8.5f} ".format(count, spg, est[0], opt_eng, opt_eng-est[0]))
 
-        #descriptors = np.vstack((descriptors, [optimal_descriptor]))
-        #energies.append([optimal_energy])
-        #print(descriptors.shape)
-        #print(len(energies))
         descriptors = np.vstack((descriptors, opt_des))
         energies.append(opt_eng)
         model.fit(descriptors, energies)
         count += 1
-        #if abs(eng/len(struc) + 1.46946) < 1e-2: 
-        #    #print(pmg_struc.to(fmt='poscar'))
-        #    print(opt_des)
 
         if abs(eng/len(struc) - ref_eng) < 1e-2: 
             s_pmg = AseAtomsAdaptor().get_structure(struc)

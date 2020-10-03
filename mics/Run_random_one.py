@@ -12,6 +12,7 @@ from sklearn.gaussian_process import GaussianProcessRegressor
 import sklearn.gaussian_process as gp
 from scipy.spatial.distance import cdist
 from pyxtal.interface.gulp import GULP
+from pyxtal_ff.descriptors.SO3 import SO3
 from warnings import catch_warnings, simplefilter
 
 def parse_ref(struc, eng, ref, ref_eng):
@@ -22,8 +23,7 @@ def parse_ref(struc, eng, ref, ref_eng):
 
     return False
 
-def opt_acquisition(descriptors, model, sg, species, numIons, ff, trial=5):
-    
+def opt_acquisition(descriptors, model, sg, species, numIons, ff, trial=10):   
     # Here we only generate 10 structures, no optimization
     strucs = []
     energies = np.zeros(trial)
@@ -81,15 +81,21 @@ def surrogate(model, descriptors, std=True):
             return model.predict(descriptors, return_cov=True)
 
 
+from sklearn.preprocessing import StandardScaler  
+scaler = StandardScaler()  
 
 N = 2000
 n = 10
 sgs = range(1,231)
 species = ["Si"]
 numIons = [8]
-Rmax = 10
+Rmax = 10.0
 ff = "edip_si.lib" #"tersoff.lib"
-kernel = gp.kernels.Matern()
+#kernel = gp.kernels.Matern()
+#kernel = 1.0*gp.kernels.DotProduct() #+ gp.kernels.WhiteKernel()
+kernel = 1.0*gp.kernels.RBF() #+ gp.kernels.WhiteKernel()
+nmax, lmax, rcut = 4, 4, 5.0
+des = SO3(nmax=nmax, lmax=lmax, rcut=rcut, derivative=False)
 
 #compute the reference ground state
 from ase.lattice import bulk
@@ -134,9 +140,10 @@ ground_bo = 0
 print(f"\nRunning BO\n")
 energies = []
 descriptors = []
+
 for i in range(n):
     struc = PyXtal(sgs, species, numIons)
-    struc, eng, runtime, spg, error = process(struc, "GULP", ff)
+    struc, eng, runtime, spg, error = process(struc, "GULP", ff, filename='BO.db')
     if not error:
         eng = eng/len(struc)
         strs = "{:4d} {:8.4f} {:8.2f} seconds {:12s} ".format(i, eng, runtime, spg)
@@ -150,14 +157,18 @@ for i in range(n):
             
         pmg_struc = AseAtomsAdaptor().get_structure(struc)
         _des = RDF(pmg_struc, R_max=Rmax).RDF[1]
+        #_des = np.mean(des.calculate(struc)['x'], axis=0) 
         descriptors.append(_des)
         energies.append(eng)
         engs_bo.append(eng)
 
 # Define the surrogate model
 descriptors = np.array(descriptors)
-model = GaussianProcessRegressor(kernel)
+#scaler.fit(descriptors)
+#descriptors = scaler.transform(descriptors) 
+model = GaussianProcessRegressor(kernel, n_restarts_optimizer=4)
 model.fit(descriptors, energies)
+print(model.kernel_)
 
 for i in range(n, N):
     _struc, _ = opt_acquisition(descriptors, model, sgs, species, numIons, ff)
@@ -166,9 +177,11 @@ for i in range(n, N):
         eng = eng/len(struc)
         engs_bo.append(eng)
         pmg_struc = AseAtomsAdaptor().get_structure(struc)
-        opt_des = RDF(pmg_struc, R_max=Rmax).RDF[1]
+        opt_des = [RDF(pmg_struc, R_max=Rmax).RDF[1]]
+        #opt_des = np.mean(des.calculate(struc)['x'], axis=0) 
+        #opt_des = scaler.transform([opt_des]) 
         res = parse_ref(struc, eng, ref, ref_eng)
-        est, _ = surrogate(model, [opt_des])
+        est, _ = surrogate(model, opt_des)
         strs = "{:4d}/{:4d} {:8.4f} -> {:8.4f} {:8.2f} seconds {:12s} ".format(i, len(energies), est[0], eng, runtime, spg)
         if res:
             print(strs+'+++++++')
@@ -180,8 +193,12 @@ for i in range(n, N):
         if abs(est[0]-eng) > 0.1: 
             descriptors = np.vstack((descriptors, opt_des))
             energies.append(eng)
+            #scaler.fit(descriptors)
+            #descriptors = scaler.transform(descriptors) 
+            #model.kernel = model.kernel_
             model.fit(descriptors, energies)
-            print(strs + "update GP model")
+            print(strs + str(model.kernel_))
+            struc, eng, runtime, spg, error = process(struc, "GULP", ff, filename='BO.db')
         else:
             print(strs)
 t1 = time()
@@ -190,8 +207,8 @@ print("Complete in {:.3f}s".format(t1-t0))
 #print(engs_bo)
 #print(engs_random)
 bins = np.linspace(ref_eng - 0.1, ref_eng + 3.0, 150)
-label1 = "Random: {:d}/{:d}".format(ground_rand, len(engs_random))
-label2 = "BO: {:d}/{:d}".format(ground_bo, len(engs_bo))
+label1 = "Random: {:d}/{:d}".format(ground_rand, N)
+label2 = "BO: {:d}/{:d}".format(ground_bo, N)
 plt.hist(engs_random, bins, alpha=0.5, label=label1)
 plt.hist(engs_bo, bins, alpha=0.5, label=label2)
 plt.xlabel("Energy (eV/atom)")

@@ -269,21 +269,11 @@ def plot_two_body(model, des, kernel, figname):
     cell = 10*np.eye(3)
     dimers = [Atoms("2Si", positions=[[0,0,0], [r,0,0]], cell=cell) for r in rs]
     
-    d1s = []
-    d2s = []
+    xs = []
     for dimer in dimers:
-        if kernel.name == 'RBF_2b':
-            d1s.append(None)
-            d2s.append(get_2b(dimer))
-        elif kernel.name in ['RBF_mb', 'Dot_mb']:
-            d1s.append(des.calculate(dimer)['x'])
-            d2s.append(None)
-        else:
-            d1s.append(des.calculate(dimer)['x'])
-            d2s.append(get_2b(dimer))
-
-    ds = (d1s, d2s)
-    energies = model.predict(ds)
+        xs.append(des.calculate(dimer)['x'])
+    data = {"energy": xs}
+    energies = model.predict(data)
     plt.plot(rs, 2*energies, '-d', label='2-body')
     plt.legend()
     plt.xlabel('R (Angstrom)')

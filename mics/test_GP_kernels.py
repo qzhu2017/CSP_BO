@@ -17,7 +17,7 @@ def decompose(descriptors, ids):
 #f_train, N_train, f_test, N_test = "database/Si_200_DFT.db", 200, "database/Si_44_DFT.db", 44
 f_train, N_train, f_test, N_test = "database/Si-Tersoff-8atoms-1000.db", 250, "database/Si-Tersoff-8atoms-500.db", 100
 nmax, lmax, rcut = 4, 3, 4.9
-des1 = SO3(nmax=nmax, lmax=lmax, rcut=rcut, derivative=False)
+des1 = SO3(nmax=nmax, lmax=lmax, rcut=rcut, alpha=0.5, derivative=False)
 des2 = SO4(lmax=lmax, rcut=rcut, derivative=False)
 
 for des in [des1, des2]:

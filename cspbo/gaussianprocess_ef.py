@@ -25,7 +25,7 @@ class GaussianProcess():
                         strs += "{:6.3f} ".format(para)
                     from scipy.optimize import approx_fprime
                     print("from: ", grad)
-                    print("scipy", approx_fprime(params, self.log_marginal_likelihood, 1e-6))
+                    print("scipy", approx_fprime(params, self.log_marginal_likelihood, 1e-7))
                     #import sys
                     #sys.exit()
                     print(strs)
@@ -135,6 +135,12 @@ class GaussianProcess():
             kernel.update(params)
         if eval_gradient:
             K, K_gradient = kernel.k_total_with_grad(self.train_x)
+            #print(K[:3,:3])
+            #print(K[3:,3:])
+            #print(K[:3,3:])
+            #print(K[3:,:3])
+            #import sys
+            #sys.exit()
         else:
             K = kernel.k_total(self.train_x)
         K[np.diag_indices_from(K)] += self.noise

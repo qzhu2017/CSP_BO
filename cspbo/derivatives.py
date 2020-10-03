@@ -19,14 +19,55 @@ def fun_dk_dD(x1, x2, x1_norm, x2_norm, sigma2, l2):
     _k, _ = fun_k(x1, x2, x1_norm, x2_norm, sigma2, l2)
     return -0.5*_k/l2
 
-def fun_d2k_dDdsigma(x1, x2, x1_norm, x2_norm, sigma, l):
-    _k, _ = fun_k(x1, x2, x1_norm, x2_norm, sigma**2, l**2)
-    return -_k/sigma/l**2
+def fun_d2k_dDdsigma(x1, x2, x1_norm, x2_norm, sigma2, l2):
+    _k, _ = fun_k(x1, x2, x1_norm, x2_norm, sigma2, l2)
+    return -_k/np.sqrt(sigma2)/l2
 
-def fun_d2k_dDdl(x1, x2, x1_norm, x2_norm, sigma, l):
+def fun_d2k_dDdl(x1, x2, x1_norm, x2_norm, sigma2, l2):
+    l3 = np.sqrt(l2)*l2
     D, _ = fun_D(x1, x2, x1_norm, x2_norm)
-    _k, _ = fun_k(x1, x2, x1_norm, x2_norm, sigma**2, l**2)
-    return _k*(-0.5*D/l**2 + 1)/l**3
+    k = sigma2*np.exp(-0.5*D/l2)
+    return k/l3*(-0.5*D/l2 + 1)
+
+def K_ff(x1, x2, x1_norm, x2_norm, dx1dr, dx2dr, d, sigma2, l2, grad=False):
+    dk_dD = fun_dk_dD(x1, x2, x1_norm, x2_norm, sigma2, l2) #m, n
+    d2D_dx1dx2 = fun_d2D_dx1dx2(x1, x2, x1_norm, x2_norm, d) #m, n, d1, d2
+    dD_dx1, _ = fun_dD_dx1(x1, x2, x1_norm, x2_norm, d)        #m, n, d1
+    dD_dx2, _ = fun_dD_dx2(x1, x2, x1_norm, x2_norm, d)        #m, n, d2
+    tmp = d2D_dx1dx2 - 0.5/l2*dD_dx1[:,:,:,None]*dD_dx2[:,:,None,:] # m, n, d1, d2
+    
+    K_ff_0 = np.einsum("ijkl,ikm->ijlm", tmp, dx1dr) # m, n, d2, 3
+    K_ff_0 = np.einsum("ijkl,jkm->ijlm", K_ff_0, dx2dr) # m, n, 3, 3
+    
+    Kff = np.einsum("ijkl,ij->kl", K_ff_0, dk_dD) # 3, 3
+
+    if grad:
+        d2k_dDdsigma = fun_d2k_dDdsigma(x1, x2, x1_norm, x2_norm, sigma2, l2) #m,n
+        d2k_dDdl = fun_d2k_dDdl(x1, x2, x1_norm, x2_norm, sigma2, l2) #m, n
+        dKff_dsigma = np.einsum("ijkl,ij->kl", K_ff_0, d2k_dDdsigma) 
+        dKff_dl     = np.einsum("ijkl,ij->kl", K_ff_0, d2k_dDdl)
+        return Kff, dKff_dsigma, dKff_dl
+    else:
+        return Kff
+
+def K_ef(x1, x2, x1_norm, x2_norm, dx2dr, d, sigma2, l2, grad=False):
+    dk_dD = fun_dk_dD(x1, x2, x1_norm, x2_norm, sigma2, l2) #m, n
+    dD_dx2, _ = fun_dD_dx2(x1, x2, x1_norm, x2_norm, d) #m, n, d2
+
+    K_ef_0 = -np.einsum("ijk,jkl->ijl", dD_dx2, dx2dr) # [m, n, d2] [n, d2, 3] -> [m,n,3]
+    Kef = np.einsum("ijk,ij->k", K_ef_0, dk_dD) # 3
+
+    if grad:
+        d2k_dDdsigma = fun_d2k_dDdsigma(x1, x2, x1_norm, x2_norm, sigma2, l2) #m,n
+        d2k_dDdl = fun_d2k_dDdl(x1, x2, x1_norm, x2_norm, sigma2, l2) #m, n
+        dKef_dsigma = np.einsum("ijk,ij->k", K_ef_0, d2k_dDdsigma) 
+        dKef_dl     = np.einsum("ijk,ij->k", K_ef_0, d2k_dDdl)
+        return Kef, dKef_dsigma, dKef_dl
+    else:
+        return Kef
+
+
+
 
 def fun_dd_dx1(x1, x2, x1_norm, x2_norm):  
     # x1: m,d
@@ -60,7 +101,6 @@ def fun_d2d_dx1dx2(x1, x2, x1_norm, x2_norm):
 
     tmp3 = np.eye(x2.shape[1])[None,:,:] - np.einsum('ij,ik->ijk',x2,x2)/x2_norm2[:,None,None] # n*d1*d2
     out2 = tmp3[None, :, :, :]/x1_norm[:,None, None,None]/x2_norm[None,:,None,None]
-    #out2 = tmp3[None, :, :]/x1_norm[:,None,None]/x2_norm[None,:,None] #[m,n,d2]
 
     return out2 - out1
 
@@ -97,19 +137,13 @@ def fun_dk_dx2(x1, x2, x1_norm, x2_norm, d, sigma2, l2):
     
 def fun_d2k_dx1dx2(x1, x2, x1_norm, x2_norm, d, sigma2, l2):
     dk_dD = fun_dk_dD(x1, x2, x1_norm, x2_norm, sigma2, l2) #m, n
-    
     d2D_dx1dx2 = fun_d2D_dx1dx2(x1, x2, x1_norm, x2_norm, d) #m, n, d, d
+    #d2D_dx1dx2 = np.transpose(d2D_dx1dx2, axes=(0,1,3,2))
     dD_dx1, _ = fun_dD_dx1(x1, x2, x1_norm, x2_norm, d)        #m, n, d1
     dD_dx2, _ = fun_dD_dx2(x1, x2, x1_norm, x2_norm, d)        #m, n, d2
-    tmp1 = np.einsum('ijk,ijl->ijkl', dD_dx1, dD_dx2)          #m, n, d1, d2
-    #_, dD_dx1 = fun_dD_dx1(x1, x2, x1_norm, x2_norm, d)        #m, d1
-    #_, dD_dx2 = fun_dD_dx2(x1, x2, x1_norm, x2_norm, d)        #m, d2
-    #tmp2 = np.einsum('ik,jl->ijkl', dD_dx1, dD_dx2)  #m, n, d1, d2
-
-    tmp = d2D_dx1dx2 - 0.5/l2*tmp1 #m, n, d1, d2
+    tmp = d2D_dx1dx2 - 0.5/l2*dD_dx1[:,:,:,None]*dD_dx2[:,:,None,:] # m, n, d1, d2
+    #tmp = np.transpose(tmp, axes=(0,1,3,2))
     return tmp*dk_dD[:,:,None,None], tmp
-
-
 
 if __name__ == "__main__":
    
@@ -126,15 +160,8 @@ if __name__ == "__main__":
         k = sigma2*(torch.exp(-0.5*D/l2).sum())
         return k 
  
-    def test_fun(target="d"):
-        m, n, k, sigma2, l2 = 2, 2, 3, 1.1, 0.9
-        x1 = np.random.random([m, k])
-        x2 = np.random.random([n, k])
-        x1_norm = np.linalg.norm(x1, axis=1)
-        x2_norm = np.linalg.norm(x2, axis=1)
-        D1, d1 = fun_D(x1, x2, x1_norm, x2_norm)
 
-
+    def test_fun(x1, x2, x1_norm, x2_norm, D1, d1, target="d"):
         if target == "d":
             fun_df_dx1 = fun_dd_dx1
             fun_df_dx2 = fun_dd_dx2
@@ -164,6 +191,7 @@ if __name__ == "__main__":
 
         print("testing ", target)
            
+
         print("df_dx1 from np")
         print(df_dx1_np)
         print("df_dx2 from np")
@@ -201,7 +229,41 @@ if __name__ == "__main__":
                 grad2 = torch.autograd.grad(d2, t_x1)
                 print(((grad2[0]-grad1[0])/eps).numpy())
 
-    test_fun("d")
-    test_fun("D")
-    test_fun("k")
+    m, n, k, sigma2, l2 = 2, 2, 3, 0.81, 2.1
+    x1 = np.random.random([m, k])
+    x2 = np.random.random([n, k])
+    x1_norm = np.linalg.norm(x1, axis=1)
+    x2_norm = np.linalg.norm(x2, axis=1)
+    D1, d1 = fun_D(x1, x2, x1_norm, x2_norm)
 
+    test_fun(x1, x2, x1_norm, x2_norm, D1, d1, "d")
+    test_fun(x1, x2, x1_norm, x2_norm, D1, d1, "d")
+    test_fun(x1, x2, x1_norm, x2_norm, D1, d1, "d")
+    
+    _x1 = torch.tensor(x1, requires_grad=True)
+    _x2 = torch.tensor(x2, requires_grad=True)
+
+    sigma = np.sqrt(sigma2)
+    l = np.sqrt(l2)
+
+    D = D_torch(_x1, _x2)
+    k = sigma**2*torch.exp(-0.5*D/l**2).sum()
+    print("dKdD")
+    print(torch.autograd.grad(k, D)[0])
+    print(fun_dk_dD(x1, x2, x1_norm, x2_norm, sigma2, l2))
+
+    def dkdD_torch(x1, x2, sigma, l):
+        k = k_torch(x1, x2, sigma**2, l**2)
+        return -0.5*k/l**2 
+ 
+    print("testing d2k_dDdsigma, d2kdDdl")
+    sigma = torch.tensor(sigma, requires_grad=True)
+    l = torch.tensor(l, requires_grad=True)
+    dkdD = dkdD_torch(_x1, _x2, sigma, l)
+
+    print("dkdD-torch:", dkdD)
+    print("dkdD-numpy:", np.sum(fun_dk_dD(x1, x2, x1_norm, x2_norm, sigma2, l2)))
+    print("d2k_dDdl-torch:", torch.autograd.grad(dkdD, l, retain_graph=True)[0])
+    print("d2k_dDdl-numpy:", np.sum(fun_d2k_dDdl(x1, x2, x1_norm, x2_norm, sigma2, l2)))
+    print("d2k_dDds-torch:", torch.autograd.grad(dkdD, sigma)[0])
+    print("d2k_dDds-numpy:", np.sum(fun_d2k_dDdsigma(x1, x2, x1_norm, x2_norm, sigma2, l2)))

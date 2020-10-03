@@ -14,17 +14,18 @@ def extract(train_X, train_Y, db_ids):
 
 des = build_desc()
 print(des)
-train_X, train_Y = convert_struc(sys.argv[1], des, N=5000, ncpu=4)
+train_X, train_Y = convert_struc(sys.argv[1], des, N=None, ncpu=4)
 test_X, test_Y = convert_struc(sys.argv[2], des, N=None, ncpu=4)
 t0 = time()
 
 from cspbo.gaussianprocess_np import GaussianProcess as gpr
-from cspbo.gaussianprocess_np import Dot, RBF
+from cspbo.kernels import RBF_mb
 
-kernel = RBF(para=[1, 0.5])
+kernel = RBF_mb(para=[1, 0.5])
 model = gpr(kernel=kernel)
 
-N = 25
+N = 100
+de = 0.1
 db_ids = [id for id in range(N)]
 pool_ids = range(N, len(train_Y), N)  
 train_X0, train_Y0 = extract(train_X, train_Y, db_ids)
@@ -41,7 +42,7 @@ for id in pool_ids:
     for m, y0 in enumerate(trail_Y):
         y1 = pred[m]
         strs = "{:4d} {:6.3f} -> {:6.3f} {:6.3f}  ".format(id+m, y0, y1, y0-y1)
-        if abs(y0-y1) > 0.05:
+        if abs(y0-y1) > de:
             try:
                 to_add.append(ids[m])
             except:
@@ -55,14 +56,17 @@ for id in pool_ids:
         strs += " update GP [{:d}] {:s}".format(len(db_ids), str(model.kernel))
         print(strs)
 
-    if id%100 == 0:
+    if (id+m+1)%200 == 0:
         train_pred = model.predict(train_X)
         test_pred = model.predict(test_X)
-        labels = metrics(train_Y, test_Y, train_pred, test_pred, kernel.name)
+        labels = metrics(train_Y, test_Y, train_pred, test_pred, kernel.name+"-"+str(len(db_ids)))
         fig = "out/MB-{:d}.png".format(id)
         fig1 = "out/2-body-{:d}.png".format(id)
         plot((train_Y, test_Y), (train_pred, test_pred), labels, fig)
-        plot_two_body(model, des, fig1)
+        plot_two_body(model, des, kernel, fig1)
 
 print("elapsed time: ", time()-t0)
+np.savetxt('ids.txt', np.array(db_ids))
+
+
 

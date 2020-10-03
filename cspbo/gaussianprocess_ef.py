@@ -23,9 +23,9 @@ class GaussianProcess():
                     strs = "Loss: {:12.3f} ".format(-lml)
                     for para in params:
                         strs += "{:6.3f} ".format(para)
-                    #from scipy.optimize import approx_fprime
-                    #print("from: ", grad)
-                    #print("scipy", approx_fprime(params, self.log_marginal_likelihood, 1e-6))
+                    from scipy.optimize import approx_fprime
+                    print("from: ", grad)
+                    print("scipy", approx_fprime(params, self.log_marginal_likelihood, 1e-6))
                     #import sys
                     #sys.exit()
                     print(strs)
@@ -49,7 +49,6 @@ class GaussianProcess():
                         "GaussianProcessRegressor estimator."
                         % self.kernel,) + exc.args
             raise
-
         self.alpha_ = cho_solve((self.L_, True), self.y_train)  # Line 3
         return self
 
@@ -91,8 +90,18 @@ class GaussianProcess():
                     self.add_train_pts_force(force_data)
 
         # convert self.train_y to 1D numpy array
-        y_train = np.array([x for x in self.train_y["energy"]])
-        self.y_train=y_train.reshape((y_train.shape[0],1))       
+        Npt_E = len(self.train_y["energy"])
+        Npt_F = 3*len(self.train_y["force"])
+        y_train = np.zeros([Npt_E+Npt_F, 1])
+        count = 0
+        for i in range(len(y_train)):
+            if Npt_E > 0 and i < Npt_E:
+                y_train[i,0] = self.train_y["energy"][i]
+            else:
+                if (i-Npt_E)%3 == 0:
+                    y_train[i:i+3,0] = self.train_y["force"][count] 
+                    count += 1
+        self.y_train=y_train
 
     def add_train_pts_energy(self, energy_data):
         """
@@ -105,7 +114,7 @@ class GaussianProcess():
         self.train_x['energy'].append(X)
         self.train_y['energy'].append(E)
     
-    def add_train_pts_forces(self, force_data):
+    def add_train_pts_force(self, force_data):
         """
         force_data is a list of tuples (X, dXdR, F)
         X: the descriptors for a given structure: N2*d
@@ -116,7 +125,6 @@ class GaussianProcess():
         (X, dXdR, F) = force_data
         self.train_x['force'].append((X, dXdR))
         self.train_y['force'].append(F)
-
 
     def log_marginal_likelihood(self, params, eval_gradient=False, clone_kernel=False):
         

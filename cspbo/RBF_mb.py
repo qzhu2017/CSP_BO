@@ -60,7 +60,6 @@ class RBF_mb():
 
                     elif key1 == 'force' and key2 == 'force':
                         C_ff, C_ff_s, C_ff_l = self.kff_many(data1[key1], data2[key2], True, True)
-                        #print(C_ff)
         C = build_covariance(C_ee, C_ef, C_fe, C_ff)
         C_s = build_covariance(C_ee_s, C_ef_s, C_fe_s, C_ff_s)
         C_l = build_covariance(C_ee_l, C_ef_l, C_fe_l, C_ff_l)

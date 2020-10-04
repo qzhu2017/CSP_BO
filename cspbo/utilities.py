@@ -50,6 +50,15 @@ def metrics(y_train, y_test, y_train_pred, y_test_pred, header):
     print(str2)
     return (str1, str2)
 
+def metric_single(y_train, y_train_pred, header):
+    r2_train = 'R2 {:6.4f}'.format(r2(y_train, y_train_pred))
+    mae_train  = 'MAE {:6.3f}'.format(mae(y_train, y_train_pred))
+    rmse_train = 'RMSE {:6.3f}'.format(rmse(y_train, y_train_pred))
+    str1 = "{:s} [{:4d}]: {:s} {:s} {:s}".format(\
+            header, len(y_train), r2_train, mae_train, rmse_train)
+    print(str1)
+    return str1
+
 def build_desc(method='SO3', rcut=5.0, lmax=4, nmax=4, alpha=2.0):
     #from pyxtal_ff.descriptors.ACSF import ACSF
     #from pyxtal_ff.descriptors.EAMD import EAMD

@@ -1,7 +1,7 @@
 from copy import deepcopy
 import numpy as np
 import sys
-from cspbo.utilities import convert_rdf, metrics, plot
+from cspbo.utilities import metric_single, plot
 from cspbo.utilities import build_desc, convert_struc, plot_two_body
 from cspbo.gaussianprocess_ef import GaussianProcess as gpr
 from cspbo.RBF_mb import RBF_mb
@@ -29,15 +29,14 @@ def get_data(X, Y, lists, Nmax=None):
 
     return train_data, train_pt_E, train_pt_F, train_Y_E, train_Y_F
 
-N1, N2, cpu = 10, None, 8
-des = build_desc("SO3")
+N1, N2, cpu = None, None, 8
+des = build_desc("SO3", lmax=4, nmax=4, rcut=5.0)
 print(des)
 X, Y = convert_struc(sys.argv[1], des, N=N1, ncpu=cpu)
 N_train = int(len(X)*0.8)
 
 train_data, train_pt_E, train_pt_F, train_Y_E, train_Y_F = get_data(X, Y, list(range(0, N_train)), Nmax=10)
 test_data, test_pt_E, test_pt_F, test_Y_E, test_Y_F = get_data(X, Y, list(range(N_train, len(X))))
-#train_data["energy"] = []
 
 print("------------------Tranining Energy only--------------------------")
 train_data1 = deepcopy(train_data)
@@ -46,13 +45,13 @@ train_data1["force"] = []
 kernel = RBF_mb(para=[1.0, 1.0])
 model = gpr(kernel=kernel)
 model.fit(train_data1)
-train_pred = model.predict(train_pt_E)
-test_pred = model.predict(test_pt_E)
-labels = metrics(train_Y_E, test_Y_E, train_pred, test_pred, "Energy")
 
-#train_pred = model.predict(train_pt_F)
+train_pred = model.predict(train_pt_E)
+metric_single(train_Y_E, train_pred, "Train Energy")
+test_pred = model.predict(test_pt_E)
+metric_single(test_Y_E, test_pred, "Test  Energy")
 test_pred = model.predict(test_pt_F)
-labels = metrics(train_Y_E, test_Y_F, train_pred, test_pred, "Forces")
+metric_single(test_Y_F, test_pred, "Test  Forces")
 
 print("------------------Tranining Force only--------------------------")
 train_data1 = deepcopy(train_data)
@@ -63,11 +62,14 @@ model = gpr(kernel=kernel)
 model.fit(train_data1)
 
 train_pred = model.predict(train_pt_F)
+metric_single(train_Y_F, train_pred, "Train Forces")
+
 test_pred = model.predict(test_pt_E)
-labels = metrics(train_Y_F, test_Y_E, train_pred, test_pred, "Energy")
+metric_single(test_Y_E, test_pred, "Test  Energy")
 
 test_pred = model.predict(test_pt_F)
-labels = metrics(train_Y_F, test_Y_F, train_pred, test_pred, "Forces")
+metric_single(test_Y_F, test_pred, "Test  Forces")
+
 
 print("------------------Tranining both E and F--------------------------")
 train_data1 = deepcopy(train_data)
@@ -77,10 +79,14 @@ model = gpr(kernel=kernel)
 model.fit(train_data1)
 
 train_pred = model.predict(train_pt_E)
+metric_single(train_Y_E, train_pred, "Train Energy")
+
 test_pred = model.predict(test_pt_E)
-labels = metrics(train_Y_E, test_Y_E, train_pred, test_pred, "Energy")
+metric_single(test_Y_E, test_pred, "Test  Energy")
 
 train_pred = model.predict(train_pt_F)
+metric_single(train_Y_F, train_pred, "Train Forces")
+
 test_pred = model.predict(test_pt_F)
-labels = metrics(train_Y_F, test_Y_F, train_pred, test_pred, "Forces")
+metric_single(test_Y_F, test_pred, "Test  Forces")
 

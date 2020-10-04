@@ -42,7 +42,7 @@ print("------------------Tranining Energy only--------------------------")
 train_data1 = deepcopy(train_data)
 train_data1["force"] = []
 
-kernel = RBF_mb(para=[1.0, 1.0])
+kernel = RBF_mb(para=[5.0, 0.2])
 model = gpr(kernel=kernel)
 model.fit(train_data1)
 

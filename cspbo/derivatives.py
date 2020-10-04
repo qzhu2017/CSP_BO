@@ -33,6 +33,19 @@ def fun_d2k_dDdl(x1, x2, x1_norm, x2_norm, sigma2, l2):
     k = sigma2*np.exp(-0.5*D/l2)
     return -0.5*D*k/l2/l3 + k/l3
 
+def K_ee(x1, x2, x1_norm, x2_norm, sigma2, l2, grad=False):
+    D, _ = fun_D(x1, x2, x1_norm, x2_norm)
+    Kee0 = sigma2*np.exp(-0.5*D/l2)
+    Kee = np.sum(Kee0)
+
+    if grad:
+        l3 = np.sqrt(l2)*l2
+        dKee_dsigma = 2*Kee/np.sqrt(sigma2)
+        dKee_dl = np.sum(Kee0*D)/l3
+        return Kee, dKee_dsigma, dKee_dl
+    else:
+        return Kee
+
 def K_ff(x1, x2, x1_norm, x2_norm, dx1dr, dx2dr, d, sigma2, l2, grad=False):
     dk_dD = fun_dk_dD(x1, x2, x1_norm, x2_norm, sigma2, l2) #m, n
     d2D_dx1dx2 = fun_d2D_dx1dx2(x1, x2, x1_norm, x2_norm, d) #m, n, d1, d2
@@ -74,6 +87,7 @@ def K_ef(x1, x2, x1_norm, x2_norm, dx2dr, d, sigma2, l2, grad=False):
         return Kef, dKef_dsigma, dKef_dl
     else:
         return Kef
+
 
 def fun_dd_dx1(x1, x2, x1_norm, x2_norm):  
     # x1: m,d

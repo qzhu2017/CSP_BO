@@ -32,7 +32,7 @@ def r2(true, predicted):
     true, predicted = np.array(true), np.array(predicted)
     t_bar = sum(true)/len(true)
     square_error = sum((true-predicted) ** 2)
-    true_variance = sum((true-t_bar) ** 2)
+    true_variance = sum((true-t_bar) ** 2) + 1e-8
     return 1 - square_error / true_variance
 
 def metrics(y_train, y_test, y_train_pred, y_test_pred, header):

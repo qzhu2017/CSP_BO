@@ -139,6 +139,8 @@ class RBF_mb():
                     C_l[j*3:(j+1)*3, i*3:(i+1)*3] = dKff_l.T
                 else:
                     C[i*3:(i+1)*3, j*3:(j+1)*3] = kff_single(x1, x2, dx1dr, dx2dr, sigma2, l2)
+                    if i%50==0 and j%10==0:
+                        print("kff", i, j)
                 if same:
                     C[j*3:(j+1)*3, i*3:(i+1)*3] = C[i*3:(i+1)*3, j*3:(j+1)*3].T
         if grad:

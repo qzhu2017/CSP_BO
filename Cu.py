@@ -12,6 +12,7 @@ from cspbo.RBF_mb import RBF_mb
 import os
 import numpy as np
 from cspbo.utilities import metric_single, plot
+from time import time
 
 def save_db(db_filename, strucs):
     if os.path.exists(db_filename):
@@ -86,7 +87,7 @@ for i in range(20):
 
 db_name = "train.db"
 save_db(db_name, strucs)
-train_data, train_pt_E, train_pt_F, train_Y_E, train_Y_F = get_data(db_name, des, Nmax=30)
+train_data, train_pt_E, train_pt_F, train_Y_E, train_Y_F = get_data(db_name, des, Nmax=5)
 
 
 kernel = RBF_mb(para=[1.0, 1.0])
@@ -99,9 +100,10 @@ train_pred = model.predict(train_pt_F)
 metric_single(train_Y_F, train_pred, "Train Forces")
 
 
-for i in range(20):
+for i in range(30):
+    t0 = time()
     strucs = []
-    for i in range(20):
+    for i in range(10):
         dyn.run(steps=10)
         printenergy(atoms)
         strucs.append(atoms.copy())
@@ -113,4 +115,5 @@ for i in range(20):
     metric_single(test_Y_E, test_pred, "Test Energy")
     test_pred = model.predict(test_pt_F)
     metric_single(test_Y_F, test_pred, "Test Forces")
+    print("\n=================={:6.2f} seconds elapsed================\n".format(time()-t0))
 

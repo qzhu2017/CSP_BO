@@ -29,7 +29,7 @@ def get_data(X, Y, lists, Nmax=None):
 
     return train_data, train_pt_E, train_pt_F, train_Y_E, train_Y_F
 
-N1, N2, cpu = None, None, 8
+N1, N2, cpu = 100, None, 8
 des = build_desc("SO3", lmax=4, nmax=4, rcut=5.0)
 print(des)
 X, Y = convert_struc(sys.argv[1], des, N=N1, ncpu=cpu)

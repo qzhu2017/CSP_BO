@@ -10,7 +10,7 @@ def fun_k(x1, x2, x1_norm, x2_norm, sigma2, l2):
     _k = sigma2*np.exp(-0.5*D/l2)
     return _k, _k.sum()
 
-def fun_D(x1, x2, x1_norm, x2_norm, eps=0):
+def fun_D(x1, x2, x1_norm, x2_norm, eps=1e-6):
     d = x1@x2.T/(eps+np.outer(x1_norm, x2_norm))
     D = 1 - d**2
     return D, d
@@ -99,10 +99,10 @@ def fun_dd_dx1(x1, x2, x1_norm, x2_norm):
     return out, out.sum(axis=1)
 
 
-def fun_dd_dx2(x1, x2, x1_norm, x2_norm):
+def fun_dd_dx2(x1, x2, x1_norm, x2_norm, eps=1e-6):
     tmp1 = np.einsum("ij,k->ikj", x1, x2_norm) # [m,d] x [n] -> [m, n, d]
     tmp2 = (x1@x2.T)[:,:,None] * (x2/x2_norm[:, None])[None,:,:]
-    tmp3 = x1_norm[:, None, None] * (x2_norm**2)[None, :, None]
+    tmp3 = x1_norm[:, None, None] * (x2_norm**2)[None, :, None] + eps
     out = (tmp1-tmp2)/tmp3  # m,n,d
     return out, out.sum(axis=0)
 

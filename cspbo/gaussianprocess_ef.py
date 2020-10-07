@@ -23,9 +23,9 @@ class GaussianProcess():
                     strs = "Loss: {:12.3f} ".format(-lml)
                     for para in params:
                         strs += "{:6.3f} ".format(para)
-                    from scipy.optimize import approx_fprime
-                    print("from ", grad)
-                    print("scipy", approx_fprime(params, self.log_marginal_likelihood, 1e-5))
+                    #from scipy.optimize import approx_fprime
+                    #print("from ", grad)
+                    #print("scipy", approx_fprime(params, self.log_marginal_likelihood, 1e-5))
                     #import sys
                     #sys.exit()
                     print(strs)

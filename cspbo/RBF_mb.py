@@ -1,5 +1,6 @@
 import numpy as np
 from .derivatives import *
+from .derivatives_many import K_ff_multi
 
 class RBF_mb():
     def __init__(self, para=[1., 1.], bounds=[[1e-2, 2e+1], [1e-1, 1e+1]]):
@@ -16,7 +17,36 @@ class RBF_mb():
     def update(self, para):
         self.sigma, self.l = para[0], para[1]
 
-    def k_total(self, data1, data2=None):
+    def diag(self, data):
+        """
+        Returns the diagonal of the kernel k(X, X)
+        used foor the prediction of std
+        """
+        sigma2, l2= self.sigma**2, self.l**2
+        
+        C_ee, C_ff = None, None
+
+        if "energy" in data:
+            N_E = len(data["energy"])
+            C_ee = np.zeros(N_E)
+            for i, x1 in enumerate(data["energy"]):
+                C_ee[i] += kee_single(x1, x1, sigma2, l2)
+
+        if "force" in data:
+            N_F = len(data["force"])
+            C_ff = np.zeros(3*N_F)
+            for i, data1 in enumerate(data["force"]):
+                (x1, dx1dr) = data1
+                C_ff[i*3:(i+1)*3] += np.diag(kff_single(x1, x1, dx1dr, dx1dr, sigma2, l2))
+        if C_ee is None:
+            return C_ff
+        elif C_ff is None:
+            return C_ee
+        else:
+            return np.hstack((C_ee, C_ff))
+
+
+    def k_total(self, data1, data2=None, kff_quick=False):
         if data2 is None:
             data2 = data1
             same = True
@@ -36,7 +66,10 @@ class RBF_mb():
                         else:
                             C_fe = C_ef.T 
                     elif key1 == 'force' and key2 == 'force':
-                        C_ff = self.kff_many(data1[key1], data2[key2], same=same)
+                        if kff_quick:
+                            C_ff = self.kff_quick(data1[key1], data2[key2])
+                        else:
+                            C_ff = self.kff_many(data1[key1], data2[key2], same=same)
         return build_covariance(C_ee, C_ef, C_fe, C_ff)
         
     def k_total_with_grad(self, data1):
@@ -65,7 +98,7 @@ class RBF_mb():
         C_l = build_covariance(C_ee_l, C_ef_l, C_fe_l, C_ff_l)
         return C, np.dstack((C_s, C_l))
 
-    def kee_many(self, X1, X2, same=False, grad=False):
+    def kee_many(self, X1, X2, same=False, grad=False, diag=False):
         """
         Compute the energy-energy kernel for many structures
         Args:
@@ -104,7 +137,7 @@ class RBF_mb():
         else:
             return C
 
-    def kff_many(self, X1, X2, same=False, grad=False):
+    def kff_many(self, X1, X2, same=False, grad=False, diag=False):
         """
         Compute the energy-force kernel between structures and atoms
         Args:
@@ -139,8 +172,8 @@ class RBF_mb():
                     C_l[j*3:(j+1)*3, i*3:(i+1)*3] = dKff_l.T
                 else:
                     C[i*3:(i+1)*3, j*3:(j+1)*3] = kff_single(x1, x2, dx1dr, dx2dr, sigma2, l2)
-                    if i%50==0 and j%10==0:
-                        print("kff", i, j)
+                    #if i%100==0 and j%10==0:
+                    #    print("kff", i, j)
                 if same:
                     C[j*3:(j+1)*3, i*3:(i+1)*3] = C[i*3:(i+1)*3, j*3:(j+1)*3].T
         if grad:
@@ -148,6 +181,41 @@ class RBF_mb():
         else:
             return C
 
+
+    def kff_quick(self, _X1, _X2):
+        """
+        Compute the force-force kernel between structures and atoms
+        Args:
+            X1: list of tuples ([X, dXdR])
+            X2: list of tuples ([X, dXdR])
+        Returns:
+            C: M*N 2D array
+        """
+        sigma2, l2 = self.sigma**2, self.l**2
+        m1, m2, n, d = len(_X1), len(_X2), 20, _X1[0][0].shape[1]
+        X1 = np.zeros([m1, n, d])
+        X2 = np.zeros([m2, n, d])
+        dX1dr = np.zeros([m1, n, d, 3]) 
+        dX2dr = np.zeros([m2, n, d, 3]) 
+
+        for i, data in enumerate(_X1):
+            (x1, dx1dr) = data
+            N_atom = len(x1)
+            X1[i,:N_atom, :] += x1
+            dX1dr[i,:N_atom, :, :] += dx1dr
+            
+        for i, data in enumerate(_X2):
+            (x1, dx1dr) = data
+            N_atom = len(x1)
+            X2[i,:N_atom, :] += x1
+            dX2dr[i,:N_atom, :, :] += dx1dr
+
+        ans = K_ff_multi(X1, X2, dX1dr, dX2dr, sigma2, l2)
+        Kff = np.zeros([3*m1, 3*m2])
+        for i in range(m1):
+            for j in range(m2):
+                Kff[i*3:(i+1)*3,j*3:(j+1)*3] = ans[i,j,:,:]
+        return Kff
 
     def kef_many(self, X1, X2, grad=False):
         """

@@ -50,12 +50,15 @@ def metrics(y_train, y_test, y_train_pred, y_test_pred, header):
     print(str2)
     return (str1, str2)
 
-def metric_single(y_train, y_train_pred, header):
+def metric_single(y_train, y_train_pred, header, show_max=False):
     r2_train = 'R2 {:6.4f}'.format(r2(y_train, y_train_pred))
     mae_train  = 'MAE {:6.3f}'.format(mae(y_train, y_train_pred))
     rmse_train = 'RMSE {:6.3f}'.format(rmse(y_train, y_train_pred))
     str1 = "{:s} [{:4d}]: {:s} {:s} {:s}".format(\
             header, len(y_train), r2_train, mae_train, rmse_train)
+    if show_max:
+        max_diff = np.max(np.abs(y_train_pred-y_train))
+        str1 += '  Max {:6.4f}'.format(max_diff)
     print(str1)
     return str1
 

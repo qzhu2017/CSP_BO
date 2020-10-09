@@ -1,6 +1,7 @@
 import numpy as np
 from scipy.linalg import cholesky, cho_solve, solve_triangular
 from scipy.optimize import minimize
+import warnings
 
 class GaussianProcess():
     """ Gaussian Process Regressor. """
@@ -9,11 +10,25 @@ class GaussianProcess():
         self.x = None
         self.kernel = kernel
 
-    def fit(self, TrainData, show=True):
+    def __str__(self):
+        s = "------Gaussian Process Regression------\n"
+        s += "Kernel: {:s}".format(str(self.kernel))
+        if hasattr(self, "train_x"):
+            s += " {:d} energy ".format(len(self.train_x["energy"]))
+            s += " {:d} forces\n".format(len(self.train_x["force"]))
+        return s
+
+    def __repr__(self):
+        return str(self)
+
+
+    def fit(self, TrainData=None, show=True):
         # Set up optimizer to train the GPR
+        if TrainData is not None:
+            self.set_train_pts(TrainData)
+
         if show:
-            print("Strart Training: ", str(self.kernel))
-        self.set_train_pts(TrainData)
+            print(self)
 
         def obj_func(params, eval_gradient=True):
             if eval_gradient:
@@ -52,8 +67,8 @@ class GaussianProcess():
         self.alpha_ = cho_solve((self.L_, True), self.y_train)  # Line 3
         return self
 
-    def predict(self, X, return_std=False, return_cov=False):
-        K_trans = self.kernel.k_total(X, self.train_x)
+    def predict(self, X, kff_quick=False, return_std=False, return_cov=False):
+        K_trans = self.kernel.k_total(X, self.train_x, kff_quick=kff_quick)
         pred = K_trans.dot(self.alpha_)
         y_mean = pred[:, 0]
 
@@ -65,13 +80,13 @@ class GaussianProcess():
             if self._K_inv is None:
                 L_inv = solve_triangular(self.L_.T, np.eye(self.L_.shape[0]))
                 self._K_inv = L_inv.dot(L_inv.T)
-            y_var = self.kernel_.diag(X)
+            y_var = self.kernel.diag(X)
             y_var -= np.einsum("ij,ij->i", np.dot(K_trans, self._K_inv), K_trans)
             y_var_negative = y_var < 0
             # Check if any of the variances is negative because of
             # numerical issues. If yes: set the variance to 0.
             if np.any(y_var_negative):
-                 warnings.warn("Predicted variances smaller than 0. "
+                warnings.warn("Predicted variances smaller than 0. "
                                 "Setting those variances to 0.")
             y_var[y_var_negative] = 0.0
             return y_mean, np.sqrt(y_var)
@@ -88,7 +103,9 @@ class GaussianProcess():
             elif key == 'force':
                 for force_data in data[key]:
                     self.add_train_pts_force(force_data)
-
+        self.update_y_train()
+    
+    def update_y_train(self):
         # convert self.train_y to 1D numpy array
         Npt_E = len(self.train_y["energy"])
         Npt_F = 3*len(self.train_y["force"])
@@ -103,6 +120,33 @@ class GaussianProcess():
                     count += 1
         self.y_train=y_train
 
+    def validate_data(self, test_data=None, return_std=False):
+        if test_data is None:
+            test_X_E = {"energy": self.train_x['energy']}
+            test_X_F = {"force": self.train_x['force']}
+            E = self.y_train[:len(test_X_E['energy'])].flatten()
+            F = self.y_train[len(test_X_E['energy']):].flatten()
+        else:
+            test_X_E = {"energy": [data[0] for data in test_data['energy']]}
+            test_X_F = {"force": [(data[0], data[1]) for data in test_data['force']]}
+            E = np.array([data[1] for data in test_data['energy']])
+            F = np.array([data[2] for data in test_data['force']]).flatten()
+
+        E_Pred, E_std, F_Pred, F_std = None, None, None, None
+        if return_std:
+            if len(test_X_E) > 0:
+                E_Pred, E_std = self.predict(test_X_E, return_std=True)  
+            if len(test_X_F) > 0:
+                F_Pred, F_std = self.predict(test_X_F, return_std=True)
+            return E, E_Pred, E_std, F, F_Pred, F_std
+        else:
+            if len(test_X_E) > 0:
+                E_Pred = self.predict(test_X_E)  
+            if len(test_X_F) > 0:
+                F_Pred = self.predict(test_X_F)
+            return E, E_Pred, F, F_Pred
+
+
     def add_train_pts_energy(self, energy_data):
         """
         energy_data is a list of tuples (X, E)
@@ -113,7 +157,8 @@ class GaussianProcess():
         (X, E) = energy_data
         self.train_x['energy'].append(X)
         self.train_y['energy'].append(E)
-    
+        self.update_y_train()
+
     def add_train_pts_force(self, force_data):
         """
         force_data is a list of tuples (X, dXdR, F)
@@ -125,6 +170,7 @@ class GaussianProcess():
         (X, dXdR, F) = force_data
         self.train_x['force'].append((X, dXdR))
         self.train_y['force'].append(F)
+        self.update_y_train()
 
     def log_marginal_likelihood(self, params, eval_gradient=False, clone_kernel=False):
         

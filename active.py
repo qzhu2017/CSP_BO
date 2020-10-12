@@ -37,17 +37,17 @@ des = build_desc("SO3", lmax=4, nmax=4, rcut=4.5)
 print(des)
 
 t0 = time()
-N_start, N_step, N_max, zeta = 50, 50, 5000, 2
+N_start, N_step, N_max, zeta = 50, 50, 2000, 2
 
-kernel = RBF_mb(para=[1, 0.5], zeta=zeta)
-model = gpr(kernel=kernel, noise_e=0.02, noise_f=0.10)
+kernel = RBF_mb(para=[1, 0.5], zeta=zeta, ncpu=8)
+model = gpr(kernel=kernel, noise_e=0.02, f_coef=30)
 
 db_file = sys.argv[1]
 
 db_ids = range(N_start)
 pool_ids = range(0, N_max, N_step)  
 
-train_data = get_data(db_file, des, N_force=15, lists=db_ids, select=True)
+train_data = get_data(db_file, des, N_force=5, lists=db_ids, select=True)
 
 model.fit(train_data)
 E, E1, F, F1 = model.validate_data()
@@ -75,15 +75,16 @@ for id in pool_ids:
         diff_E = E[i] - E1[i]
         _F = F[F_count:F_count+Num]
         _F1 = F1[F_count:F_count+Num]
-        print("{:d} ML Energy: {:8.3f} -> {:8.3f} {:8.3f}  Variance: {:8.3f}  F_mae: {:8.3f} ".format(\
-                id+i, E[i], E1[i], diff_E, E_std[i], mae(_F, _F1)))
+        _std = F_std[F_count:F_count+Num]
+        print("{:d} ML Energy: {:8.3f} -> {:8.3f} {:8.3f}  Var-E: {:8.3f} F: {:8.3f} F_mae: {:8.3f} ".format(\
+                id+i, E[i], E1[i], diff_E, E_std[i], np.max(_std), mae(_F, _F1)))
         F_count += Num
 
     update = False
     
     #diffs_E = np.abs(E-E1)
     for e_id, std in enumerate(E_std):
-        if E_std[e_id] > Ev_tol:
+        if E_std[e_id] > 2*model.noise_e: #Ev_tol:
             #print("add energy data to GP model", e_id)
             model.add_train_pts_energy(test_data['energy'][e_id])
             update=True
@@ -93,7 +94,8 @@ for id in pool_ids:
     s_ids = []
     for id in range(len(F_std)):
         s_id = F_in_s[id]
-        if np.max(F_std[id]) > Fv_tol and s_id not in s_ids:
+        #if np.max(F_std[id]) > Fv_tol and s_id not in s_ids:
+        if np.max(F_std[id]) > 2*model.noise_f and s_id not in s_ids:
             print("add force data to GP model", F_std[id])
             update=True
             model.add_train_pts_force(test_data["force"][id])

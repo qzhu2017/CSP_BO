@@ -5,23 +5,24 @@ import warnings
 
 class GaussianProcess():
     """ Gaussian Process Regressor. """
-    def __init__(self, kernel=None, noise_e=1e-3, noise_f=5e-2):
+    def __init__(self, kernel=None, f_coef=10, noise_e=1e-3, bounds=[5e-3,1e-1]):
         self.noise_e = noise_e
-        self.noise_f = noise_f
+        self.f_coef = f_coef
+        self.noise_f = self.f_coef*self.noise_e
         self.x = None
         self.kernel = kernel
+        self.noise_bounds = bounds
 
     def __str__(self):
         s = "------Gaussian Process Regression------\n"
         s += "Kernel: {:s}".format(str(self.kernel))
         if hasattr(self, "train_x"):
-            s += " {:d} energy ".format(len(self.train_x["energy"]))
-            s += " {:d} forces\n".format(len(self.train_x["force"]))
+            s += " {:d} energy ({:.3f})".format(len(self.train_x["energy"]), self.noise_e)
+            s += " {:d} forces ({:.3f})\n".format(len(self.train_x["force"]), self.noise_f)
         return s
 
     def __repr__(self):
         return str(self)
-
 
     def fit(self, TrainData=None, show=True):
         # Set up optimizer to train the GPR
@@ -50,9 +51,12 @@ class GaussianProcess():
                 return (-lml, -grad)
             else:
                 return -self.log_marginal_likelihood(params, clone_kernel=False)
-
-        params, loss = self.optimize(obj_func, self.kernel.parameters(), self.kernel.bounds)
-        self.kernel.update(params)
+        hyper_params = self.kernel.parameters() + [self.noise_e]
+        hyper_bounds = self.kernel.bounds + [self.noise_bounds]
+        params, loss = self.optimize(obj_func, hyper_params, hyper_bounds)
+        self.kernel.update(params[:-1])
+        self.noise_e = params[-1]
+        self.noise_f = self.f_coef*params[-1]
         K = self.kernel.k_total(self.train_x)
 
         # add noise matrix
@@ -60,7 +64,7 @@ class GaussianProcess():
         noise = np.eye(len(K))
         NE = len(self.train_x['energy'])
         noise[:NE,:NE] *= self.noise_e**2
-        noise[NE:,NE:] *= self.noise_f**2
+        noise[NE:,NE:] *= (self.f_coef*self.noise_e)**2
         K += noise
 
         try:
@@ -210,10 +214,10 @@ class GaussianProcess():
     def log_marginal_likelihood(self, params, eval_gradient=False, clone_kernel=False):
         
         if clone_kernel:
-            kernel = self.kernel.update(params)
+            kernel = self.kernel.update(params[:-1])
         else:
             kernel = self.kernel
-            kernel.update(params)
+            kernel.update(params[:-1])
         if eval_gradient:
             K, K_gradient = kernel.k_total_with_grad(self.train_x)
             #print(K[:3,:3])
@@ -228,11 +232,9 @@ class GaussianProcess():
         #K[np.diag_indices_from(K)] += self.noise
         noise = np.eye(len(K))
         NE = len(self.train_x['energy'])
-        noise[:NE,:NE] *= self.noise_e**2
-        noise[NE:,NE:] *= self.noise_f**2
+        noise[:NE,:NE] *= params[-1]**2
+        noise[NE:,NE:] *= (self.f_coef*params[-1])**2
         K += noise
-
-
 
         try:
             L = cholesky(K, lower=True)
@@ -250,6 +252,10 @@ class GaussianProcess():
         MLL = ll_dims.sum(-1)  #sum over dimensions
 
         if eval_gradient:  # compare Equation 5.9 from GPML
+            base = np.zeros([len(K), len(K), 1]) #for energy and force noise
+            base[:NE,:NE, 0] += 2*params[-1]*np.eye(NE)
+            base[NE:,NE:, 0] += 2*self.f_coef**2*params[-1]*np.eye(len(K)-NE)
+            K_gradient = np.concatenate((K_gradient, base), axis=2)
             tmp = np.einsum("ik,jk->ijk", alpha, alpha)  # k: output-dimension
             tmp -= cho_solve((L, True), np.eye(K.shape[0]))[:, :, np.newaxis]
             llg_dims = 0.5 * np.einsum("ijl,jik->kl", tmp, K_gradient)

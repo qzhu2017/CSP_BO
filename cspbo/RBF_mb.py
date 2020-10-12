@@ -1,14 +1,16 @@
 import numpy as np
 from .derivatives import *
 from .derivatives_many import K_ff_multi
+from functools import partial
+from multiprocessing import Pool, cpu_count
 
 class RBF_mb():
-    def __init__(self, para=[1., 1.], bounds=[[1e-2, 2e+1], [1e-1, 1e+1]], zeta=3):
+    def __init__(self, para=[1., 1.], bounds=[[1e-2, 2e+1], [1e-1, 1e+1]], zeta=3, ncpu=1):
         self.name = 'RBF_mb'
         self.bounds = bounds
         self.update(para)
         self.zeta = zeta
-
+        self.ncpu = ncpu
     def __str__(self):
         return "{:.3f}**2 *RBF(length={:.3f})".format(self.sigma, self.l)
  
@@ -157,27 +159,56 @@ class RBF_mb():
         C_s = np.zeros([3*m1, 3*m2])
         C_l = np.zeros([3*m1, 3*m2])
 
-        for i, data1 in enumerate(X1):
-            (x1, dx1dr) = data1
-            if same:
-                start = i
-            else:
-                start = 0
-            for j in range(start, len(X2)):
+        # This loop is rather expansive, a simple way is to do multi-process
+        if same:
+            indices = np.triu_indices(m1)
+            (_is, _js) = indices
+        else:
+            indices = np.indices((m1, m2))
+            _is = indices[0].flatten()
+            _js = indices[1].flatten()
+
+        #from time import time
+        #t0 = time()
+
+        if self.ncpu == 1:
+            results = []
+            for i, j in zip(_is, _js):
+                (x1, dx1dr) = X1[i]
                 (x2, dx2dr) = X2[j]
-                if grad:
-                    Kff, dKff_sigma, dKff_l = kff_single(x1, x2, dx1dr, dx2dr, sigma2, l2, zeta, True)
-                    C[i*3:(i+1)*3, j*3:(j+1)*3] = Kff
-                    C_s[i*3:(i+1)*3, j*3:(j+1)*3] = dKff_sigma
-                    C_s[j*3:(j+1)*3, i*3:(i+1)*3] = dKff_sigma.T
-                    C_l[i*3:(i+1)*3, j*3:(j+1)*3] = dKff_l
-                    C_l[j*3:(j+1)*3, i*3:(i+1)*3] = dKff_l.T
-                else:
-                    C[i*3:(i+1)*3, j*3:(j+1)*3] = kff_single(x1, x2, dx1dr, dx2dr, sigma2, l2, zeta)
-                    #if i%100==0 and j%10==0:
-                    #    print("kff", i, j)
-                if same:
-                    C[j*3:(j+1)*3, i*3:(i+1)*3] = C[i*3:(i+1)*3, j*3:(j+1)*3].T
+                results.append(kff_single(x1, x2, dx1dr, dx2dr, sigma2, l2, zeta, grad))
+        else:
+            #print("Parallel version is on: ")
+            fun_vars = []
+            for i, j in zip(_is, _js):
+                (x1, dx1dr) = X1[i]
+                (x2, dx2dr) = X2[j]
+                fun_vars.append((x1, x2, dx1dr, dx2dr))
+
+            with Pool(self.ncpu) as p:
+                func = partial(kff_para, (sigma2, l2, zeta, grad))
+                results = p.map(func, fun_vars)
+                p.close()
+                p.join()
+
+        # unpack the results
+        for i, j, res in zip(_is, _js, results):
+            if grad:
+                Kff, dKff_sigma, dKff_l = res
+                C[i*3:(i+1)*3, j*3:(j+1)*3] = Kff
+                C_s[i*3:(i+1)*3, j*3:(j+1)*3] = dKff_sigma
+                C_s[j*3:(j+1)*3, i*3:(i+1)*3] = dKff_sigma.T
+                C_l[i*3:(i+1)*3, j*3:(j+1)*3] = dKff_l
+                C_l[j*3:(j+1)*3, i*3:(i+1)*3] = dKff_l.T
+            else:
+                C[i*3:(i+1)*3, j*3:(j+1)*3] = res
+            if same and (i != j):
+                C[j*3:(j+1)*3, i*3:(i+1)*3] = C[i*3:(i+1)*3, j*3:(j+1)*3].T
+
+        #print("================", time()-t0, self.ncpu, len(_is))
+        #import sys
+        #sys.exit()
+
         if grad:
             return C, C_s, C_l                  
         else:
@@ -295,6 +326,14 @@ def kff_single(x1, x2, dx1dr, dx2dr, sigma2, l2, zeta, grad=False):
     D1, d1 = fun_D(x1, x2, x1_norm, x2_norm, zeta)
     return K_ff(x1, x2, x1_norm, x2_norm, dx1dr, dx2dr, d1, sigma2, l2, zeta, grad) 
     
+def kff_para(args, data): 
+    """
+    para version
+    """
+    (x1, x2, dx1dr, dx2dr) = data
+    (sigma2, l2, zeta, grad) = args
+    return kff_single(x1, x2, dx1dr, dx2dr, sigma2, l2, zeta, grad)
+ 
 def build_covariance(c_ee, c_ef, c_fe, c_ff):
     exist = []
     for x in (c_ee, c_ef, c_fe, c_ff):

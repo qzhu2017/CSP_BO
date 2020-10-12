@@ -3,10 +3,11 @@ from .derivatives import *
 from .derivatives_many import K_ff_multi
 
 class RBF_mb():
-    def __init__(self, para=[1., 1.], bounds=[[1e-2, 2e+1], [1e-1, 1e+1]]):
+    def __init__(self, para=[1., 1.], bounds=[[1e-2, 2e+1], [1e-1, 1e+1]], zeta=3):
         self.name = 'RBF_mb'
         self.bounds = bounds
         self.update(para)
+        self.zeta = zeta
 
     def __str__(self):
         return "{:.3f}**2 *RBF(length={:.3f})".format(self.sigma, self.l)
@@ -20,31 +21,32 @@ class RBF_mb():
     def diag(self, data):
         """
         Returns the diagonal of the kernel k(X, X)
-        used foor the prediction of std
         """
-        sigma2, l2= self.sigma**2, self.l**2
-        
+        sigma2, l2, zeta = self.sigma**2, self.l**2, self.zeta
         C_ee, C_ff = None, None
-
+               
         if "energy" in data:
-            N_E = len(data["energy"])
-            C_ee = np.zeros(N_E)
-            for i, x1 in enumerate(data["energy"]):
-                C_ee[i] += kee_single(x1, x1, sigma2, l2)
+            NE = len(data["energy"])
+            C_ee = np.zeros(NE)
+            for i in range(NE):
+                x1 = data["energy"][i]
+                C_ee[i] = kee_single(x1, x1, sigma2, l2, zeta) 
 
         if "force" in data:
-            N_F = len(data["force"])
-            C_ff = np.zeros(3*N_F)
-            for i, data1 in enumerate(data["force"]):
-                (x1, dx1dr) = data1
-                C_ff[i*3:(i+1)*3] += np.diag(kff_single(x1, x1, dx1dr, dx1dr, sigma2, l2))
-        if C_ee is None:
-            return C_ff
-        elif C_ff is None:
+            NF = len(data["force"])
+            C_ff = np.zeros(3*NF)
+            for i in range(NF):
+                (x1, dx1dr) = data["force"][i]
+                C_ff[i*3:(i+1)*3] = np.diag(kff_single(x1, x1, dx1dr, dx1dr, sigma2, l2, zeta))
+
+        if C_ff is None:
             return C_ee
+        elif C_ee is None:
+            return C_ff
         else:
             return np.hstack((C_ee, C_ff))
 
+        #return np.ones(N)*sigma2
 
     def k_total(self, data1, data2=None, kff_quick=False):
         if data2 is None:
@@ -98,7 +100,7 @@ class RBF_mb():
         C_l = build_covariance(C_ee_l, C_ef_l, C_fe_l, C_ff_l)
         return C, np.dstack((C_s, C_l))
 
-    def kee_many(self, X1, X2, same=False, grad=False, diag=False):
+    def kee_many(self, X1, X2, same=False, grad=False):
         """
         Compute the energy-energy kernel for many structures
         Args:
@@ -110,7 +112,7 @@ class RBF_mb():
             C: M*N 2D array
             C_grad:
         """
-        sigma2, l2= self.sigma**2, self.l**2
+        sigma2, l2, zeta = self.sigma**2, self.l**2, self.zeta
         m1, m2 = len(X1), len(X2)
         C = np.zeros([m1, m2])
         C_s = np.zeros([m1, m2])
@@ -124,12 +126,12 @@ class RBF_mb():
             for j in range(start, len(X2)):
                 x2 = X2[j]
                 if grad:
-                    Kee, Kee_sigma, Kee_l = kee_single(x1, x2, sigma2, l2, True)
+                    Kee, Kee_sigma, Kee_l = kee_single(x1, x2, sigma2, l2, zeta, True)
                     C[i, j] = Kee
                     C_s[i, j], C_s[j, i] = Kee_sigma, Kee_sigma
                     C_l[i, j], C_l[j, i] = Kee_l, Kee_l
                 else:
-                    C[i, j] = kee_single(x1, x2, sigma2, l2)
+                    C[i, j] = kee_single(x1, x2, sigma2, l2, zeta)
                 if same:
                     C[j, i] = C[i, j]
         if grad:
@@ -137,7 +139,7 @@ class RBF_mb():
         else:
             return C
 
-    def kff_many(self, X1, X2, same=False, grad=False, diag=False):
+    def kff_many(self, X1, X2, same=False, grad=False):
         """
         Compute the energy-force kernel between structures and atoms
         Args:
@@ -149,7 +151,7 @@ class RBF_mb():
             C: M*N 2D array
             C_grad:
         """
-        sigma2, l2 = self.sigma**2, self.l**2
+        sigma2, l2, zeta = self.sigma**2, self.l**2, self.zeta
         m1, m2 = len(X1), len(X2)
         C = np.zeros([3*m1, 3*m2])
         C_s = np.zeros([3*m1, 3*m2])
@@ -164,14 +166,14 @@ class RBF_mb():
             for j in range(start, len(X2)):
                 (x2, dx2dr) = X2[j]
                 if grad:
-                    Kff, dKff_sigma, dKff_l = kff_single(x1, x2, dx1dr, dx2dr, sigma2, l2, True)
+                    Kff, dKff_sigma, dKff_l = kff_single(x1, x2, dx1dr, dx2dr, sigma2, l2, zeta, True)
                     C[i*3:(i+1)*3, j*3:(j+1)*3] = Kff
                     C_s[i*3:(i+1)*3, j*3:(j+1)*3] = dKff_sigma
                     C_s[j*3:(j+1)*3, i*3:(i+1)*3] = dKff_sigma.T
                     C_l[i*3:(i+1)*3, j*3:(j+1)*3] = dKff_l
                     C_l[j*3:(j+1)*3, i*3:(i+1)*3] = dKff_l.T
                 else:
-                    C[i*3:(i+1)*3, j*3:(j+1)*3] = kff_single(x1, x2, dx1dr, dx2dr, sigma2, l2)
+                    C[i*3:(i+1)*3, j*3:(j+1)*3] = kff_single(x1, x2, dx1dr, dx2dr, sigma2, l2, zeta)
                     #if i%100==0 and j%10==0:
                     #    print("kff", i, j)
                 if same:
@@ -228,7 +230,7 @@ class RBF_mb():
             C: M*N 2D array
             C_grad:
         """
-        sigma2, l2 = self.sigma**2, self.l**2
+        sigma2, l2, zeta = self.sigma**2, self.l**2, self.zeta
         m1, m2 = len(X1), len(X2)
         C = np.zeros([m1, 3*m2])
         C_s = np.zeros([m1, 3*m2])
@@ -238,18 +240,18 @@ class RBF_mb():
             for j, data in enumerate(X2):
                 (x2, dx2dr) = data
                 if grad:
-                    Kef, Kef_sigma, Kef_l = kef_single(x1, x2, dx2dr, sigma2, l2, True)
+                    Kef, Kef_sigma, Kef_l = kef_single(x1, x2, dx2dr, sigma2, l2, zeta, True)
                     C[i, j*3:(j+1)*3] = Kef
                     C_s[i, j*3:(j+1)*3] = Kef_sigma
                     C_l[i, j*3:(j+1)*3] = Kef_l
                 else:
-                    C[i, j*3:(j+1)*3] = kef_single(x1, x2, dx2dr, sigma2, l2)
+                    C[i, j*3:(j+1)*3] = kef_single(x1, x2, dx2dr, sigma2, l2, zeta)
         if grad:
             return C, C_s, C_l
         else:
             return C
 
-def kee_single(x1, x2, sigma2, l2, grad=False):
+def kee_single(x1, x2, sigma2, l2, zeta, grad=False):
     """
     Compute the energy-energy kernel between two structures
     Args:
@@ -261,9 +263,9 @@ def kee_single(x1, x2, sigma2, l2, grad=False):
     """
     x1_norm = np.linalg.norm(x1, axis=1)
     x2_norm = np.linalg.norm(x2, axis=1)
-    return K_ee(x1, x2, x1_norm, x2_norm, sigma2, l2, grad)
+    return K_ee(x1, x2, x1_norm, x2_norm, sigma2, l2, zeta, grad)
 
-def kef_single(x1, x2, dx2dr, sigma2, l2, grad=False):
+def kef_single(x1, x2, dx2dr, sigma2, l2, zeta, grad=False):
     """
     Args:
         x1: N*d
@@ -274,10 +276,10 @@ def kef_single(x1, x2, dx2dr, sigma2, l2, grad=False):
     """
     x1_norm = np.linalg.norm(x1, axis=1)
     x2_norm = np.linalg.norm(x2, axis=1)
-    _, d1 = fun_D(x1, x2, x1_norm, x2_norm)
-    return K_ef(x1, x2, x1_norm, x2_norm, dx2dr, d1, sigma2, l2, grad)
+    _, d1 = fun_D(x1, x2, x1_norm, x2_norm, zeta)
+    return K_ef(x1, x2, x1_norm, x2_norm, dx2dr, d1, sigma2, l2, zeta, grad)
 
-def kff_single(x1, x2, dx1dr, dx2dr, sigma2, l2, grad=False):
+def kff_single(x1, x2, dx1dr, dx2dr, sigma2, l2, zeta, grad=False):
     """
     Compute the energy-energy kernel between two structures
     Args:
@@ -290,8 +292,8 @@ def kff_single(x1, x2, dx1dr, dx2dr, sigma2, l2, grad=False):
     """
     x1_norm = np.linalg.norm(x1, axis=1)
     x2_norm = np.linalg.norm(x2, axis=1)
-    D1, d1 = fun_D(x1, x2, x1_norm, x2_norm)
-    return K_ff(x1, x2, x1_norm, x2_norm, dx1dr, dx2dr, d1, sigma2, l2, grad) 
+    D1, d1 = fun_D(x1, x2, x1_norm, x2_norm, zeta)
+    return K_ff(x1, x2, x1_norm, x2_norm, dx1dr, dx2dr, d1, sigma2, l2, zeta, grad) 
     
 def build_covariance(c_ee, c_ef, c_fe, c_ff):
     exist = []

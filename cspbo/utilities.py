@@ -136,17 +136,21 @@ def get_2b(s, rcut=4.0, kernel='all'):
     else:
         return (np.vstack((_ds, Cosine(_ds, rcut))), len(s))
 
-def convert_struc(db_file, des, N=None, ncpu=1, kernel='all'):
+def convert_struc(db_file, des, ids=None, N=None, ncpu=1):
     structures, train_Y = [], {"energy":[], "forces": []}
     with connect(db_file) as db:
         for row in db.select():
-            s = db.get_atoms(id=row.id)
-            #train_Y['energy'].append(row.data.energy/len(s))
-            train_Y['energy'].append(row.data.energy)
-            train_Y['forces'].append(row.data.force)
-            structures.append(s)
-            if N is not None and len(structures) == N:
-                break
+            include = True
+            if (ids is not None) and (row.id-1 not in ids):
+                include = False
+            if include:
+                s = db.get_atoms(id=row.id)
+                train_Y['energy'].append(row.data.energy)
+                train_Y['forces'].append(row.data.force)
+                structures.append(s)
+
+                if N is not None and len(structures) == N:
+                    break
 
     if ncpu == 1:
         xs = []
@@ -241,21 +245,22 @@ def regression(method, data, layers):
         labels=  metrics(y_train, y_test, y_train_pred, y_test_pred, "NN")
     return y_train_pred, y_test_pred, labels
 
-def plot(Xs, Ys, labels, figname='results.png'):
+def plot(Xs, Ys, labels, figname='results.png', draw_line=True):
     x_mins, x_maxs = [], []
     for x, y, label in zip(Xs, Ys, labels):
         plt.scatter(x, y, alpha=0.8, label=label, s=5)
         x_mins.append(np.min(x))
         x_maxs.append(np.max(x))
     xs = np.linspace(min(x_mins)-0.1, max(x_maxs)+0.1, 100)
-    plt.plot(xs, xs, 'b')
-    plt.plot(xs, xs+0.10, 'g--')
-    plt.plot(xs, xs-0.10, 'g--')
+    if draw_line:
+        plt.plot(xs, xs, 'g--')
+        #plt.plot(xs, xs+0.10, 'g--')
+        #plt.plot(xs, xs-0.10, 'g--')
+        plt.xlim(min(x_mins)-0.1, max(x_maxs)+0.1)
+        plt.ylim(min(x_mins)-0.1, max(x_maxs)+0.1)
     plt.xlabel('True (eV/atom)') 
     plt.ylabel('Prediction (eV/atom)')
-    plt.legend()
-    plt.xlim(min(x_mins)-0.1, max(x_maxs)+0.1)
-    plt.ylim(min(x_mins)-0.1, max(x_maxs)+0.1)
+    plt.legend(loc=2)
     plt.tight_layout() 
     plt.savefig(figname)
     plt.close()
@@ -277,7 +282,7 @@ def write_db(data, db_filename='viz.db', permission='w'):
  
 def plot_two_body(model, des, kernel, figname):
     from ase import Atoms
-    rs = np.linspace(0.5, 5.0, 50)
+    rs = np.linspace(0.5, 4.0, 50)
     cell = 10*np.eye(3)
     dimers = [Atoms("2Si", positions=[[0,0,0], [r,0,0]], cell=cell) for r in rs]
     

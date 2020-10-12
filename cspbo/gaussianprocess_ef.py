@@ -5,8 +5,9 @@ import warnings
 
 class GaussianProcess():
     """ Gaussian Process Regressor. """
-    def __init__(self, kernel=None, noise=1e-3):
-        self.noise = noise
+    def __init__(self, kernel=None, noise_e=1e-3, noise_f=5e-2):
+        self.noise_e = noise_e
+        self.noise_f = noise_f
         self.x = None
         self.kernel = kernel
 
@@ -26,6 +27,8 @@ class GaussianProcess():
         # Set up optimizer to train the GPR
         if TrainData is not None:
             self.set_train_pts(TrainData)
+        else:
+            self.update_y_train()
 
         if show:
             print(self)
@@ -51,7 +54,15 @@ class GaussianProcess():
         params, loss = self.optimize(obj_func, self.kernel.parameters(), self.kernel.bounds)
         self.kernel.update(params)
         K = self.kernel.k_total(self.train_x)
-        K[np.diag_indices_from(K)] += self.noise
+
+        # add noise matrix
+        #K[np.diag_indices_from(K)] += self.noise
+        noise = np.eye(len(K))
+        NE = len(self.train_x['energy'])
+        noise[:NE,:NE] *= self.noise_e**2
+        noise[NE:,NE:] *= self.noise_f**2
+        K += noise
+
         try:
             self.L_ = cholesky(K, lower=True)  # Line 2
             # self.L_ changed, self._K_inv needs to be recomputed
@@ -67,21 +78,41 @@ class GaussianProcess():
         self.alpha_ = cho_solve((self.L_, True), self.y_train)  # Line 3
         return self
 
-    def predict(self, X, kff_quick=False, return_std=False, return_cov=False):
+    def predict(self, X, kff_quick=False, total_E=False, return_std=False, return_cov=False):
         K_trans = self.kernel.k_total(X, self.train_x, kff_quick=kff_quick)
         pred = K_trans.dot(self.alpha_)
         y_mean = pred[:, 0]
 
+        Npts = 0
+        if 'energy' in X:
+            Npts += len(X["energy"])
+        if 'force' in X:
+            Npts += 3*len(X["force"])
+
+        factors = np.ones(Npts)
+
+        if total_E:
+            N_atoms = np.array([len(x) for x in X["energy"]]) 
+            factors[:len(N_atoms)] = N_atoms
+        y_mean *= factors
+        
         if return_cov:
             v = cho_solve((self.L_, True), K_trans.T) 
             y_cov = self.kernel.k_total(X) - K_trans.dot(v) 
-            return y_mean, y_cov.detach().numpy()
+            return y_mean, y_cov
         elif return_std:
             if self._K_inv is None:
                 L_inv = solve_triangular(self.L_.T, np.eye(self.L_.shape[0]))
                 self._K_inv = L_inv.dot(L_inv.T)
             y_var = self.kernel.diag(X)
             y_var -= np.einsum("ij,ij->i", np.dot(K_trans, self._K_inv), K_trans)
+            #ans = np.einsum("ij,ij->i", np.dot(K_trans, self._K_inv), K_trans)
+            #if ans.shape[0] < 3:
+            #    print("y_mean", y_mean)
+            #    print("sigma", self.kernel.diag(X))
+            #    print("K_trans", K_trans.shape, np.sum(K_trans))
+            #    print("KCK", ans, "y_var", y_var)
+            #    print(K_trans)
             y_var_negative = y_var < 0
             # Check if any of the variances is negative because of
             # numerical issues. If yes: set the variance to 0.
@@ -89,7 +120,7 @@ class GaussianProcess():
                 warnings.warn("Predicted variances smaller than 0. "
                                 "Setting those variances to 0.")
             y_var[y_var_negative] = 0.0
-            return y_mean, np.sqrt(y_var)
+            return y_mean, np.sqrt(y_var)*factors
         else:
             return y_mean
     
@@ -120,7 +151,7 @@ class GaussianProcess():
                     count += 1
         self.y_train=y_train
 
-    def validate_data(self, test_data=None, return_std=False):
+    def validate_data(self, test_data=None, total_E=False, return_std=False):
         if test_data is None:
             test_X_E = {"energy": self.train_x['energy']}
             test_X_F = {"force": self.train_x['force']}
@@ -132,17 +163,21 @@ class GaussianProcess():
             E = np.array([data[1] for data in test_data['energy']])
             F = np.array([data[2] for data in test_data['force']]).flatten()
 
+        if total_E:
+            for i in range(len(E)):
+                E[i] *= len(test_X_E['energy'][i])
+                
         E_Pred, E_std, F_Pred, F_std = None, None, None, None
         if return_std:
-            if len(test_X_E) > 0:
-                E_Pred, E_std = self.predict(test_X_E, return_std=True)  
-            if len(test_X_F) > 0:
+            if len(test_X_E['energy']) > 0:
+                E_Pred, E_std = self.predict(test_X_E, total_E=total_E, return_std=True)  
+            if len(test_X_F['force']) > 0:
                 F_Pred, F_std = self.predict(test_X_F, return_std=True)
             return E, E_Pred, E_std, F, F_Pred, F_std
         else:
-            if len(test_X_E) > 0:
-                E_Pred = self.predict(test_X_E)  
-            if len(test_X_F) > 0:
+            if len(test_X_E['energy']) > 0:
+                E_Pred = self.predict(test_X_E, total_E=total_E)  
+            if len(test_X_F['force']) > 0:
                 F_Pred = self.predict(test_X_F)
             return E, E_Pred, F, F_Pred
 
@@ -157,7 +192,7 @@ class GaussianProcess():
         (X, E) = energy_data
         self.train_x['energy'].append(X)
         self.train_y['energy'].append(E)
-        self.update_y_train()
+        #self.update_y_train()
 
     def add_train_pts_force(self, force_data):
         """
@@ -170,7 +205,7 @@ class GaussianProcess():
         (X, dXdR, F) = force_data
         self.train_x['force'].append((X, dXdR))
         self.train_y['force'].append(F)
-        self.update_y_train()
+        #self.update_y_train()
 
     def log_marginal_likelihood(self, params, eval_gradient=False, clone_kernel=False):
         
@@ -189,7 +224,15 @@ class GaussianProcess():
             #sys.exit()
         else:
             K = kernel.k_total(self.train_x)
-        K[np.diag_indices_from(K)] += self.noise
+        # add noise matrix
+        #K[np.diag_indices_from(K)] += self.noise
+        noise = np.eye(len(K))
+        NE = len(self.train_x['energy'])
+        noise[:NE,:NE] *= self.noise_e**2
+        noise[NE:,NE:] *= self.noise_f**2
+        K += noise
+
+
 
         try:
             L = cholesky(K, lower=True)

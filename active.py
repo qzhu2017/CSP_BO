@@ -1,36 +1,10 @@
 import sys
 import numpy as np
 from time import time
-from cspbo.utilities import metric_single, build_desc, convert_struc, mae, plot, plot_two_body
+from cspbo.utilities import metric_single, build_desc, get_data, mae, plot, plot_two_body
 from cspbo.gaussianprocess_ef import GaussianProcess as gpr
 from cspbo.RBF_mb import RBF_mb
 from random import choice
-
-
-def get_data(db_name, des, N_force=100000, lists=None, select=False, ncpu=1):
-    """
-    Nmax: Maximum number of force data
-    """
-    X, Y = convert_struc(db_name, des, lists, ncpu=ncpu)
-    print('\n')
-    energy_data = []
-    force_data = []
-
-    for id in range(len(X)):
-        energy_data.append((X[id]['x'], Y["energy"][id]/len(X[id]['x']))) 
-        if select:
-            ids = [0] #[choice(range(len(X[id]['x'])))]
-        else:
-            ids = range(len(X[id]['x']))
-        for i in ids:
-            if len(force_data) < N_force:
-                ids = np.argwhere(X[id]['seq'][:,1]==i).flatten()
-                _i = X[id]['seq'][ids, 0] 
-                force_data.append((X[id]['x'][_i,:], X[id]['dxdr'][ids], Y['forces'][id][i]))
-
-
-    train_data = {"energy": energy_data, "force": force_data}
-    return train_data
 
 
 des = build_desc("SO3", lmax=4, nmax=4, rcut=4.5)

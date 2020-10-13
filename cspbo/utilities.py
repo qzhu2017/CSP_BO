@@ -74,6 +74,32 @@ def build_desc(method='SO3', rcut=5.0, lmax=4, nmax=4, alpha=2.0):
 
     return des
 
+def get_data(db_name, des, N_force=100000, lists=None, select=False, ncpu=1):
+    """
+    Nmax: Maximum number of force data
+    """
+    X, Y = convert_struc(db_name, des, lists, ncpu=ncpu)
+    print('\n')
+    energy_data = []
+    force_data = []
+
+    for id in range(len(X)):
+        energy_data.append((X[id]['x'], Y["energy"][id]/len(X[id]['x']))) 
+        if select:
+            ids = [0] #[choice(range(len(X[id]['x'])))]
+        else:
+            ids = range(len(X[id]['x']))
+        for i in ids:
+            if len(force_data) < N_force:
+                ids = np.argwhere(X[id]['seq'][:,1]==i).flatten()
+                _i = X[id]['seq'][ids, 0] 
+                force_data.append((X[id]['x'][_i,:], X[id]['dxdr'][ids], Y['forces'][id][i]))
+
+
+    train_data = {"energy": energy_data, "force": force_data}
+    return train_data
+
+
 def convert_rdf(db_file, N=None):
 
     train_Y, ds = [], []

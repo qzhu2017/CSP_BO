@@ -1,17 +1,28 @@
 import numpy as np
+from .RBF_mb import RBF_mb
 from scipy.linalg import cholesky, cho_solve, solve_triangular
 from scipy.optimize import minimize
 import warnings
+import json
+from ase.db import connect
+import os
 
 class GaussianProcess():
     """ Gaussian Process Regressor. """
-    def __init__(self, kernel=None, f_coef=10, noise_e=1e-3, bounds=[5e-3,1e-1]):
-        self.noise_e = noise_e
+    def __init__(self, kernel=None, descriptor=None, f_coef=10, noise_e=[5e-3, 2e-3, 1e-1]):
+        
+        self.noise_e = noise_e[0]
         self.f_coef = f_coef
         self.noise_f = self.f_coef*self.noise_e
-        self.x = None
+        self.noise_bounds = noise_e[1:]
+
+        self.descriptor = descriptor
         self.kernel = kernel
-        self.noise_bounds = bounds
+
+        self.x = None
+        self.train_x = None
+        self.train_y = None
+        self.train_db = None
 
     def __str__(self):
         s = "------Gaussian Process Regression------\n"
@@ -110,13 +121,6 @@ class GaussianProcess():
                 self._K_inv = L_inv.dot(L_inv.T)
             y_var = self.kernel.diag(X)
             y_var -= np.einsum("ij,ij->i", np.dot(K_trans, self._K_inv), K_trans)
-            #ans = np.einsum("ij,ij->i", np.dot(K_trans, self._K_inv), K_trans)
-            #if ans.shape[0] < 3:
-            #    print("y_mean", y_mean)
-            #    print("sigma", self.kernel.diag(X))
-            #    print("K_trans", K_trans.shape, np.sum(K_trans))
-            #    print("KCK", ans, "y_var", y_var)
-            #    print(K_trans)
             y_var_negative = y_var < 0
             # Check if any of the variances is negative because of
             # numerical issues. If yes: set the variance to 0.
@@ -128,9 +132,22 @@ class GaussianProcess():
         else:
             return y_mean
     
-    def set_train_pts(self, data):
-        self.train_x = {'energy': [], 'force': []}
-        self.train_y = {'energy': [], 'force': []}
+    def set_train_pts(self, data, mode="w"):
+        """
+        Set the training pts for the GPR model
+        two modes ("write" and "append") are allowed
+
+        Args:
+            data: a dictionary of energy/force/db data
+            mode: "w" or "a+"
+        """
+        if mode == "w": #reset
+            self.train_x = {'energy': [], 'force': []}
+            self.train_y = {'energy': [], 'force': []}
+            self.train_db = data['db']
+        else:
+            self.train_db.extend(data['db'])
+
         for key in data.keys():
             if key == 'energy':
                 for eng_data in data[key]:
@@ -140,8 +157,12 @@ class GaussianProcess():
                     self.add_train_pts_force(force_data)
         self.update_y_train()
     
+
     def update_y_train(self):
-        # convert self.train_y to 1D numpy array
+        """ 
+        convert self.train_y to 1D numpy array
+        """
+
         Npt_E = len(self.train_y["energy"])
         Npt_F = 3*len(self.train_y["force"])
         y_train = np.zeros([Npt_E+Npt_F, 1])
@@ -151,11 +172,16 @@ class GaussianProcess():
                 y_train[i,0] = self.train_y["energy"][i]
             else:
                 if (i-Npt_E)%3 == 0:
+                    #print(i, count, y_train.shape, self.train_y["force"][count])
                     y_train[i:i+3,0] = self.train_y["force"][count] 
                     count += 1
         self.y_train=y_train
 
     def validate_data(self, test_data=None, total_E=False, return_std=False):
+        """
+        validate the given dataset
+        """
+
         if test_data is None:
             test_X_E = {"energy": self.train_x['energy']}
             test_X_F = {"force": self.train_x['force']}
@@ -220,12 +246,6 @@ class GaussianProcess():
             kernel.update(params[:-1])
         if eval_gradient:
             K, K_gradient = kernel.k_total_with_grad(self.train_x)
-            #print(K[:3,:3])
-            #print(K[3:,3:])
-            #print(K[:3,3:])
-            #print(K[3:,:3])
-            #import sys
-            #sys.exit()
         else:
             K = kernel.k_total(self.train_x)
         # add noise matrix
@@ -272,6 +292,124 @@ class GaussianProcess():
         #print(opt_res)
         return opt_res.x, opt_res.fun
 
+    def save(self, filename, db_filename):
+        """
+        Save the model
+        Args:
+            filename: the file to save txt information
+            db_filename: the file to save structural information
+        """
+        dict0 = self.save_dict(db_filename)
+        with open(filename, "w") as fp:
+            json.dump(dict0, fp)
+        self.export_ase_db(db_filename, permission="w")
 
+        print("save the GP model to ", filename, ", and database to ", db_filename)
+
+    def load(self, filename):
+        """
+        Save the model
+        Args:
+            filename: the file to save txt information
+            db_filename: the file to save structural information
+        """
+        with open(filename, "r") as fp:
+            dict0 = json.load(fp)
+        self.load_from_dict(dict0)
+        self.fit()
+        print("load the GP model from ", filename)
+
+    def save_dict(self, db_filename):
+        """
+        save the model as a dictionary in json
+        """
+        noise = {"energy": self.noise_e, "f_coef": self.f_coef, "bounds": self.noise_bounds}
+        dict0 = {"noise": noise,
+                "kernel": self.kernel.save_dict(),
+                "descriptor": self.descriptor.save_dict(),
+                "db_filename": db_filename,
+                }
+
+        return dict0
+
+
+    def load_from_dict(self, dict0):
+        
+        #keys = ['kernel', 'descriptor', 'Noise']
+
+        if dict0["kernel"]["name"] == "RBF_mb":
+            self.kernel = RBF_mb()
+            self.kernel.load_from_dict(dict0["kernel"])
+        else:
+            msg = "unknow kernel {:s}".format(dict0["kernel"]["name"])
+            raise NotImplementedError(msg)
+
+        if dict0["descriptor"]["_type"] == "SO3":
+            from pyxtal_ff.descriptors.SO3 import SO3
+            self.descriptor = SO3()
+            self.descriptor.load_from_dict(dict0["descriptor"])
+        else:
+            msg = "unknow descriptors {:s}".format(dict0["descriptor"]["name"])
+            raise NotImplementedError(msg)
+
+        self.noise_e = dict0["noise"]["energy"]
+        self.f_coef = dict0["noise"]["f_coef"]
+        self.noise_bounds = dict0["noise"]["bounds"]
+        self.noise_f = self.f_coef*self.noise_e
+        # save structural file
+        self.extract_db(dict0["db_filename"])
+
+    def export_ase_db(self, db_filename, permission="w"):
+        """
+        export the structural information in ase db format
+            - atoms:
+            - energy:
+            _ forces:
+            - energy_in:
+            - forces_in:
+        """
+        if permission=="w" and os.path.exists(db_filename):
+            os.remove(db_filename)
+
+        with connect(db_filename) as db:
+            for _data in self.train_db:
+                (struc, energy, force, energy_in, force_in) = _data
+                data = {"energy": energy,
+                        "force": force,
+                        "energy_in": energy_in,
+                        "force_in": force_in,
+                       }
+                db.write(struc, data=data)
+
+    def extract_db(self, db_filename):
+        """
+        convert the structures to the descriptors from a given ase db
+        """
+               
+        pts_to_add = {"energy": [], "force": [], "db": []}
+
+        with connect(db_filename) as db: 
+            count = 0
+            for row in db.select():
+                count += 1
+                atoms = db.get_atoms(id=row.id)
+                energy = row.data.energy
+                force = row.data.force
+                energy_in = row.data.energy_in
+                force_in = row.data.force_in
+
+                d = self.descriptor.calculate(atoms)
+                if energy_in:
+                    pts_to_add["energy"].append((d['x'], energy/len(atoms)))
+                for id in force_in:
+                    ids = np.argwhere(d['seq'][:,1]==id).flatten() 
+                    _i = d['seq'][ids, 0]
+                    pts_to_add["force"].append((d['x'][_i,:], d['dxdr'][ids], force[id]))
+                pts_to_add["db"].append((atoms, energy, force, energy_in, force_in))
+
+                if count % 50 == 0:
+                    print("Processed {:d} structures".format(count))
+
+        self.set_train_pts(pts_to_add, "w")
 
 

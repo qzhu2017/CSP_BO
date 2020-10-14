@@ -78,10 +78,11 @@ def get_data(db_name, des, N_force=100000, lists=None, select=False, ncpu=1):
     """
     Nmax: Maximum number of force data
     """
-    X, Y = convert_struc(db_name, des, lists, ncpu=ncpu)
+    X, Y, structures = convert_struc(db_name, des, lists, ncpu=ncpu)
     print('\n')
     energy_data = []
     force_data = []
+    db_data = []
 
     for id in range(len(X)):
         energy_data.append((X[id]['x'], Y["energy"][id]/len(X[id]['x']))) 
@@ -89,14 +90,16 @@ def get_data(db_name, des, N_force=100000, lists=None, select=False, ncpu=1):
             ids = [0] #[choice(range(len(X[id]['x'])))]
         else:
             ids = range(len(X[id]['x']))
+        f_ids = []
         for i in ids:
             if len(force_data) < N_force:
                 ids = np.argwhere(X[id]['seq'][:,1]==i).flatten()
                 _i = X[id]['seq'][ids, 0] 
                 force_data.append((X[id]['x'][_i,:], X[id]['dxdr'][ids], Y['forces'][id][i]))
+                f_ids.append(i)
+        db_data.append((structures[id], Y['energy'][id], Y['forces'][id], True, f_ids))
 
-
-    train_data = {"energy": energy_data, "force": force_data}
+    train_data = {"energy": energy_data, "force": force_data, "db": db_data}
     return train_data
 
 
@@ -198,7 +201,7 @@ def convert_struc(db_file, des, ids=None, N=None, ncpu=1):
             p.join()
     train_x = xs 
 
-    return train_x, train_Y
+    return train_x, train_Y, structures
 
 def fea(des, struc):
     #return des.calculate(struc)['x']

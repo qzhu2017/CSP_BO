@@ -13,7 +13,26 @@ class RBF_mb():
         self.ncpu = ncpu
     def __str__(self):
         return "{:.3f}**2 *RBF(length={:.3f})".format(self.sigma, self.l)
- 
+
+    def load_from_dict(self, dict0):
+        self.sigma = dict0["sigma"]
+        self.l = dict0["l"]
+        self.zeta = dict0["zeta"]
+        self.bounds = dict0["bounds"]
+        self.name = dict0["name"]
+        
+    def save_dict(self):
+        """
+        save the model as a dictionary in json
+        """
+        dict = {"name": self.name,
+                "sigma": self.sigma,
+                "l": self.l,
+                "zeta": self.zeta,
+                "bounds": self.bounds
+               }
+        return dict
+
     def parameters(self):
         return [self.sigma, self.l]
  

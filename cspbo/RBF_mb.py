@@ -75,7 +75,7 @@ class RBF_mb():
             same = True
         else:
             same = False
-        C_ee, C_ef, C_fe, C_ff = None, None, None, None
+        C_ee, C_ef, C_fe, C_ff, C_se, C_sf = None, None, None, None, None, None
         for key1 in data1.keys():
             for key2 in data2.keys():
                 if len(data1[key1])>0 and len(data2[key2])>0:
@@ -93,7 +93,12 @@ class RBF_mb():
                             C_ff = self.kff_quick(data1[key1], data2[key2])
                         else:
                             C_ff = self.kff_many(data1[key1], data2[key2], same=same)
-        return build_covariance(C_ee, C_ef, C_fe, C_ff)
+                    elif key1 == 'stress' and key2 == 'force':
+                        C_sf = self.ksf_many(data1[key1], data2[key2])
+                    elif key1 == 'stress' and key2 == 'energy':
+                        C_se = self.kse_many(data1[key1], data2[key2])
+
+        return build_covariance(C_ee, C_ef, C_fe, C_ff, C_se, C_sf)
         
     def k_total_with_grad(self, data1):
         """
@@ -121,6 +126,13 @@ class RBF_mb():
         C_l = build_covariance(C_ee_l, C_ef_l, C_fe_l, C_ff_l)
         return C, np.dstack((C_s, C_l))
 
+    def ksf_many(self, X1, X2, same=False, grad=False):
+        """
+        """
+        pass
+    def kse_many(self, X1, X2, same=False, grad=False):
+        pass
+    
     def kee_many(self, X1, X2, same=False, grad=False):
         """
         Compute the energy-energy kernel for many structures
@@ -353,7 +365,10 @@ def kff_para(args, data):
     (sigma2, l2, zeta, grad) = args
     return kff_single(x1, x2, dx1dr, dx2dr, sigma2, l2, zeta, grad)
  
-def build_covariance(c_ee, c_ef, c_fe, c_ff):
+def build_covariance(c_ee, c_ef, c_fe, c_ff, c_se=None, c_sf=None):
+    """
+    Need to rework
+    """
     exist = []
     for x in (c_ee, c_ef, c_fe, c_ff):
         if x is None:

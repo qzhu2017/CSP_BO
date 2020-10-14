@@ -282,7 +282,7 @@ def plot(Xs, Ys, labels, figname='results.png', draw_line=True):
         x_maxs.append(np.max(x))
     xs = np.linspace(min(x_mins)-0.1, max(x_maxs)+0.1, 100)
     if draw_line:
-        plt.plot(xs, xs, 'g--')
+        plt.plot(xs, xs, 'g--', alpha=0.5)
         #plt.plot(xs, xs+0.10, 'g--')
         #plt.plot(xs, xs-0.10, 'g--')
         plt.xlim(min(x_mins)-0.1, max(x_maxs)+0.1)

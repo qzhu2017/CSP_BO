@@ -103,6 +103,8 @@ class GaussianProcess():
             Npts += len(X["energy"])
         if 'force' in X:
             Npts += 3*len(X["force"])
+        if 'stress' in X:
+            Npts += 6*len(X["stress"])
 
         factors = np.ones(Npts)
 
@@ -304,7 +306,7 @@ class GaussianProcess():
             json.dump(dict0, fp)
         self.export_ase_db(db_filename, permission="w")
 
-        print("save the GP model to ", filename, ", and database to ", db_filename)
+        print("save the GP model to", filename, ", and database to ", db_filename)
 
     def load(self, filename):
         """

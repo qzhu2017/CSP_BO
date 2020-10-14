@@ -110,7 +110,8 @@ def K_sf(x1, x2, x1_norm, x2_norm, rdx1dr, dx2dr, d, sigma2, l2, zeta=2, grad=Fa
     d2D_dx1dx2 = fun_d2D_dx1dx2(x1, x2, x1_norm, x2_norm, d, zeta) # m, n, d1, d2
     dD_dx1, _ = fun_dD_dx1(x1, x2, x1_norm, x2_norm, d, zeta)      # m, n, d1
     dD_dx2, _ = fun_dD_dx2(x1, x2, x1_norm, x2_norm, d, zeta)      # m, n, d2
-    d2kdx1dx2 = d2D_dx1dx2 - 0.5/l2*dD_dx1[:,:,:,None]*dD_dx2[:,:,None,:] # m, n, d1, d2
+    tmp = d2D_dx1dx2 - 0.5/l2*dD_dx1[:,:,:,None]*dD_dx2[:,:,None,:] # m, n, d1, d2
+    d2kdx1dx2 = np.einsum("ij,ijkl->ijkl", dk_dD, tmp)
 
     K_sf_0 = np.einsum("ijk, iljm->lmk", d2kdx1dx2, rdx1dr) # [m, n, d1, d2] [m, d1, 6] -> [n, d2, 6]
     Ksf = np.einsum("ijk, ijl->kl", K_sf_0, dx2dr) # [n, d2, 6] [n, d2, 3] -> [6, 3]

@@ -55,11 +55,12 @@ def K_ff(x1, x2, x1_norm, x2_norm, dx1dr, dx2dr, d, sigma2, l2, zeta=2, grad=Fal
     dD_dx2, _ = fun_dD_dx2(x1, x2, x1_norm, x2_norm, d, zeta)        #m, n, d2
     tmp = d2D_dx1dx2 - 0.5/l2*dD_dx1[:,:,:,None]*dD_dx2[:,:,None,:] # m, n, d1, d2
     
-    K_ff_0 = np.einsum("ijkl,ikm->ijlm", tmp, dx1dr) # m, n, d2, 3
-    K_ff_0 = np.einsum("ijkl,jkm->ijlm", K_ff_0, dx2dr) # m, n, 3, 3
-    Kff = np.einsum("ijkl,ij->kl", K_ff_0, dk_dD) # 3, 3
 
     if grad:
+        K_ff_0 = np.einsum("ijkl,ikm->ijlm", tmp, dx1dr) # m, n, d2, 3
+        K_ff_0 = np.einsum("ijkl,jkm->ijlm", K_ff_0, dx2dr) # m, n, 3, 3
+        Kff = np.einsum("ijkl,ij->kl", K_ff_0, dk_dD) # 3, 3
+
         d2k_dDdsigma = fun_d2k_dDdsigma(x1, x2, x1_norm, x2_norm, sigma2, l2, zeta) #m,n
         d2k_dDdl         = fun_d2k_dDdl(x1, x2, x1_norm, x2_norm, sigma2, l2, zeta) #m, n
 
@@ -72,6 +73,9 @@ def K_ff(x1, x2, x1_norm, x2_norm, dx1dr, dx2dr, d, sigma2, l2, zeta=2, grad=Fal
 
         return Kff, dKff_dsigma, dKff_dl
     else:
+        tmp = np.einsum("ijkl,ij->ijkl", tmp, dk_dD) #m,n,d1,d2
+        tmp = np.einsum("ijkl,ikm->jlm", tmp, dx1dr) #m,n,d1,d2  m,d1,3 -> n, d2, 3
+        Kff = np.einsum("ijk,ijm->km", tmp, dx2dr) #n d2, 3   n d2 3
         return Kff
 
 def K_ef(x1, x2, x1_norm, x2_norm, dx2dr, d, sigma2, l2, zeta=2, grad=False):

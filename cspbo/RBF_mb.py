@@ -245,42 +245,6 @@ class RBF_mb():
         else:
             return C
 
-
-    def kff_quick(self, _X1, _X2):
-        """
-        Compute the force-force kernel between structures and atoms
-        Args:
-            X1: list of tuples ([X, dXdR])
-            X2: list of tuples ([X, dXdR])
-        Returns:
-            C: M*N 2D array
-        """
-        sigma2, l2 = self.sigma**2, self.l**2
-        m1, m2, n, d = len(_X1), len(_X2), 20, _X1[0][0].shape[1]
-        X1 = np.zeros([m1, n, d])
-        X2 = np.zeros([m2, n, d])
-        dX1dr = np.zeros([m1, n, d, 3]) 
-        dX2dr = np.zeros([m2, n, d, 3]) 
-
-        for i, data in enumerate(_X1):
-            (x1, dx1dr) = data
-            N_atom = len(x1)
-            X1[i,:N_atom, :] += x1
-            dX1dr[i,:N_atom, :, :] += dx1dr
-            
-        for i, data in enumerate(_X2):
-            (x1, dx1dr) = data
-            N_atom = len(x1)
-            X2[i,:N_atom, :] += x1
-            dX2dr[i,:N_atom, :, :] += dx1dr
-
-        ans = K_ff_multi(X1, X2, dX1dr, dX2dr, sigma2, l2)
-        Kff = np.zeros([3*m1, 3*m2])
-        for i in range(m1):
-            for j in range(m2):
-                Kff[i*3:(i+1)*3,j*3:(j+1)*3] = ans[i,j,:,:]
-        return Kff
-
     def kef_many(self, X1, X2, grad=False):
         """
         Compute the energy-force kernel between structures and atoms
@@ -297,17 +261,42 @@ class RBF_mb():
         C = np.zeros([m1, 3*m2])
         C_s = np.zeros([m1, 3*m2])
         C_l = np.zeros([m1, 3*m2])
+        
+        # This loop is rather expansive, a simple way is to do multi-process
+        indices = np.indices((m1, m2))
+        _is = indices[0].flatten()
+        _js = indices[1].flatten()
 
-        for i, x1 in enumerate(X1):
-            for j, data in enumerate(X2):
-                (x2, dx2dr) = data
-                if grad:
-                    Kef, Kef_sigma, Kef_l = kef_single(x1, x2, dx2dr, sigma2, l2, zeta, True)
-                    C[i, j*3:(j+1)*3] = Kef
-                    C_s[i, j*3:(j+1)*3] = Kef_sigma
-                    C_l[i, j*3:(j+1)*3] = Kef_l
-                else:
-                    C[i, j*3:(j+1)*3] = kef_single(x1, x2, dx2dr, sigma2, l2, zeta)
+        if self.ncpu == 1:
+            results = []
+            for i, j in zip(_is, _js):
+                x1 = X1[i]
+                (x2, dx2dr) = X2[j]
+                results.append(kef_single(x1, x2, dx2dr, sigma2, l2, zeta, grad))
+        else:
+            #print("Parallel version is on: ")
+            fun_vars = []
+            for i, j in zip(_is, _js):
+                x1 = X1[i]
+                (x2, dx2dr) = X2[j]
+                fun_vars.append((x1, x2, dx2dr))
+
+            with Pool(self.ncpu) as p:
+                func = partial(kef_para, (sigma2, l2, zeta, grad))
+                results = p.map(func, fun_vars)
+                p.close()
+                p.join()
+
+        # unpack the results
+        for i, j, res in zip(_is, _js, results):
+            if grad:
+                Kef, dKef_sigma, dKef_l = res
+                C[i, j*3:(j+1)*3] = Kef
+                C_s[i, j*3:(j+1)*3] = dKef_sigma
+                C_l[i, j*3:(j+1)*3] = dKef_l
+            else:
+                C[i, j*3:(j+1)*3] = res
+
         if grad:
             return C, C_s, C_l
         else:
@@ -364,6 +353,14 @@ def kff_para(args, data):
     (x1, x2, dx1dr, dx2dr) = data
     (sigma2, l2, zeta, grad) = args
     return kff_single(x1, x2, dx1dr, dx2dr, sigma2, l2, zeta, grad)
+ 
+def kef_para(args, data): 
+    """
+    para version
+    """
+    (x1, x2, dx2dr) = data
+    (sigma2, l2, zeta, grad) = args
+    return kef_single(x1, x2, dx2dr, sigma2, l2, zeta, grad)
  
 def build_covariance(c_ee, c_ef, c_fe, c_ff, c_se=None, c_sf=None):
     """

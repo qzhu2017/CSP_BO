@@ -32,15 +32,13 @@ parser.add_option("-f", "--file", dest="file",
 des = build_desc("SO3", lmax=3, nmax=3, rcut=4.0)
 print(des)
 
-N_start, N_step, N_max, zeta = 50, 50, 2000, 2
+N_start, zeta = 50, 2
 
 kernel = RBF_mb(para=[1, 0.5], zeta=zeta, ncpu=1)
-model = gpr(kernel=kernel, noise_e=0.02, f_coef=30)
+model = gpr(kernel=kernel, noise_e=[0.02, 0.01, 0.1], f_coef=30)
 
 db_file = options.file
-
-db_ids = range(N_start)
-train_data = get_data(db_file, des, N_force=5, lists=db_ids, select=True)
+train_data = get_data(db_file, des, N_force=5, lists=range(0,N_start), select=True)
 
 model.fit(train_data)
 E, E1, F, F1 = model.validate_data()

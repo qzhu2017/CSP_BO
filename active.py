@@ -5,10 +5,10 @@ from cspbo.utilities import metric_single, build_desc, get_data, plot, plot_two_
 from cspbo.gaussianprocess_ef import GaussianProcess as gpr
 from cspbo.RBF_mb import RBF_mb
 
-N_start, N_step, N_max, zeta = 50, 50, 200, 2
+N_start, N_step, N_max, zeta = 50, 50, 5000, 2
 
 des = build_desc("SO3", lmax=4, nmax=4, rcut=4.5)
-kernel = RBF_mb(para=[1, 0.5], zeta=zeta, ncpu=1)
+kernel = RBF_mb(para=[1, 0.5], zeta=zeta, ncpu=12)
 model = gpr(kernel=kernel, descriptor=des, noise_e=[2e-2, 5e-3, 1e-1], f_coef=30)
 db_file = sys.argv[1]
 

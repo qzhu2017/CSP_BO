@@ -192,11 +192,11 @@ def convert_struc(db_file, des, ids=None, N=None, ncpu=1):
         print('---Parallel mode is on, {} cores with be used'.format(ncpu))
         import tqdm
         tqdm_func = tqdm.tqdm
-        structures = tqdm_func(list(structures), desc='running')
+        structures0 = tqdm_func(list(structures), desc='running')
 
         with Pool(ncpu) as p:
             func = partial(fea, des)
-            xs = p.map(func, structures)
+            xs = p.map(func, structures0)
             p.close()
             p.join()
     train_x = xs 

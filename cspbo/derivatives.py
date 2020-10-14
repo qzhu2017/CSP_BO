@@ -15,27 +15,43 @@ def fun_D(x1, x2, x1_norm, x2_norm, zeta=2, eps=1e-6):
     D = 1 - d**zeta
     return D, d
 
-def fun_dk_dD(x1, x2, x1_norm, x2_norm, sigma2, l2, zeta=2):
-    #_k, _ = fun_k(x1, x2, x1_norm, x2_norm, sigma2, l2)
+def fun_dk_dD(x1, x2, x1_norm, x2_norm, sigma2, l2, zeta=2, mask=None):
     D, _ = fun_D(x1, x2, x1_norm, x2_norm, zeta)
     k = sigma2*np.exp(-0.5*D/l2)
+    if mask is not None:
+        k[mask] = 0
     return -0.5*k/l2
 
-def fun_d2k_dDdsigma(x1, x2, x1_norm, x2_norm, sigma2, l2, zeta=2):
-    #_k, _ = fun_k(x1, x2, x1_norm, x2_norm, sigma2, l2)
+def fun_d2k_dDdsigma(x1, x2, x1_norm, x2_norm, sigma2, l2, zeta=2, mask=None):
     D, _ = fun_D(x1, x2, x1_norm, x2_norm, zeta)
     k = sigma2*np.exp(-0.5*D/l2)
+    if mask is not None:
+        k[mask] = 0
     return -k/np.sqrt(sigma2)/l2
 
-def fun_d2k_dDdl(x1, x2, x1_norm, x2_norm, sigma2, l2, zeta=2):
+def fun_d2k_dDdl(x1, x2, x1_norm, x2_norm, sigma2, l2, zeta=2, mask=None):
     l3 = np.sqrt(l2)*l2
     D, _ = fun_D(x1, x2, x1_norm, x2_norm, zeta)
     k = sigma2*np.exp(-0.5*D/l2)
+    if mask is not None:
+        k[mask] = 0
     return -0.5*D*k/l2/l3 + k/l3
 
-def K_ee(x1, x2, x1_norm, x2_norm, sigma2, l2, zeta=2, grad=False):
-    D, _ = fun_D(x1, x2, x1_norm, x2_norm, zeta)
+def K_ee(x1, x2, x1_norm, x2_norm, sigma2, l2, zeta=2, grad=False, mask=None):
+    """
+    Compute the Kee between two structures
+    Args:
+        x1: [M, D] 2d array
+        x2: [N, D] 2d array
+        sigma2: float
+        l2: float
+        zeta: power term, float
+        mask: to set the kernel zero if the chemical species are different
+    """
+    D, _ = fun_D(x1, x2, x1_norm, x2_norm, zeta) #
     Kee0 = sigma2*np.exp(-0.5*D/l2)
+    if mask is not None:
+        Kee0[mask] = 0
     Kee = np.sum(Kee0)
     mn = len(x1)*len(x2)
 
@@ -45,7 +61,6 @@ def K_ee(x1, x2, x1_norm, x2_norm, sigma2, l2, zeta=2, grad=False):
         dKee_dl = np.sum(Kee0*D)/l3
         return Kee/mn, dKee_dsigma/mn, dKee_dl/mn
     else:
-        #print(D, Kee0)
         return Kee/mn
 
 def K_ff(x1, x2, x1_norm, x2_norm, dx1dr, dx2dr, d, sigma2, l2, zeta=2, grad=False):
@@ -78,7 +93,7 @@ def K_ff(x1, x2, x1_norm, x2_norm, dx1dr, dx2dr, d, sigma2, l2, zeta=2, grad=Fal
         Kff = np.einsum("ijk,ijm->km", tmp, dx2dr) #n d2, 3   n d2 3
         return Kff
 
-def K_ef(x1, x2, x1_norm, x2_norm, dx2dr, d, sigma2, l2, zeta=2, grad=False):
+def K_ef(x1, x2, x1_norm, x2_norm, dx2dr, d, sigma2, l2, zeta=2, grad=False, mask=None):
     dk_dD = fun_dk_dD(x1, x2, x1_norm, x2_norm, sigma2, l2, zeta) #m, n
     dD_dx2, _ = fun_dD_dx2(x1, x2, x1_norm, x2_norm, d, zeta) #m, n, d2
     m = len(x1)

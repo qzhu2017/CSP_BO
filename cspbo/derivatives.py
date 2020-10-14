@@ -80,7 +80,7 @@ def K_ef(x1, x2, x1_norm, x2_norm, dx2dr, d, sigma2, l2, zeta=2, grad=False):
     m = len(x1)
 
     K_ef_0 = -np.einsum("ijk,jkl->ijl", dD_dx2, dx2dr) # [m, n, d2] [n, d2, 3] -> [m,n,3]
-    Kef = np.einsum("ijk,ij->k", K_ef_0, dk_dD) # 3
+    Kef = np.einsum("ijk,ij->k", K_ef_0, dk_dD) # [m, n, 3] [m, n] -> 3
 
     if grad:
         d2k_dDdsigma = fun_d2k_dDdsigma(x1, x2, x1_norm, x2_norm, sigma2, l2, zeta) #m,n
@@ -91,6 +91,27 @@ def K_ef(x1, x2, x1_norm, x2_norm, dx2dr, d, sigma2, l2, zeta=2, grad=False):
     else:
         return Kef/m
 
+def K_se(x1, x2, x1_norm, x2_norm, rdx1dr, d, sigma2, l2, zeta=2, grad=False):
+    dk_dD = fun_dk_dD(x1, x2, x1_norm, x2_norm, sigma2, l2, zeta) # m, n
+    dD_dx1, _ = fun_dD_dx1(x1, x2, x1_norm, x2_norm, d, zeta) # m, n, d1
+    n = len(X2)
+
+    K_se_0 = -np.einsum("ijk, ikl->ijl", dD_dx1, rdx1dr) # [m, n, d1] [m, d1, 6] -> [m, n, 6]
+    Kse = np.einsum("ijk, ij->k", K_se_0, dk_dD) # [m, n, 6] [m, n] -> 6
+
+    return Kse/n
+
+def K_sf(x1, x2, x1_norm, x2_norm, rdx1dr, dx2dr, d, sigma2, l2, zeta=2, grad=False):
+    dk_dD = fun_dk_dD(x1, x2, x1_norm, x2_norm, sigma2, l2, zeta) # m, n
+    d2D_dx1dx2 = fun_d2D_dx1dx2(x1, x2, x1_norm, x2_norm, d, zeta) # m, n, d1, d2
+    dD_dx1, _ = fun_dD_dx1(x1, x2, x1_norm, x2_norm, d, zeta)      # m, n, d1
+    dD_dx2, _ = fun_dD_dx2(x1, x2, x1_norm, x2_norm, d, zeta)      # m, n, d2
+    d2kdx1dx2 = d2D_dx1dx2 - 0.5/l2*dD_dx1[:,:,:,None]*dD_dx2[:,:,None,:] # m, n, d1, d2
+
+    K_sf_0 = np.einsum("ijk, iljm->lmk", d2kdx1dx2, rdx1dr) # [m, n, d1, d2] [m, d1, 6] -> [n, d2, 6]
+    Ksf = np.einsum("ijk, ijl->kl", K_sf_0, dx2dr) # [n, d2, 6] [n, d2, 3] -> [6, 3]
+
+    return Ksf
 
 def fun_dd_dx1(x1, x2, x1_norm, x2_norm):  
     # x1: m,d
@@ -168,6 +189,8 @@ def fun_d2k_dx1dx2(x1, x2, x1_norm, x2_norm, d, sigma2, l2, zeta=2):
     tmp = d2D_dx1dx2 - 0.5/l2*dD_dx1[:,:,:,None]*dD_dx2[:,:,None,:] # m, n, d1, d2
     #tmp = np.transpose(tmp, axes=(0,1,3,2))
     return tmp*dk_dD[:,:,None,None], tmp
+
+
 
 if __name__ == "__main__":
    

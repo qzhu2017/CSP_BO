@@ -5,6 +5,8 @@ from multiprocessing import Pool, cpu_count
 from ase.db import connect
 from .descriptors.rdf import RDF
 from pymatgen.io.ase import AseAtomsAdaptor
+from pyxtal.database.element import Element
+
 import matplotlib as mpl
 mpl.use("Agg")
 import matplotlib.pyplot as plt
@@ -85,7 +87,9 @@ def get_data(db_name, des, N_force=100000, lists=None, select=False, ncpu=1):
     db_data = []
 
     for id in range(len(X)):
-        energy_data.append((X[id]['x'], Y["energy"][id]/len(X[id]['x']))) 
+        ele = [Element(ele).z for ele in X[id]['elements']]
+        ele = np.array(ele)
+        energy_data.append((X[id]['x'], Y["energy"][id]/len(X[id]['x']), ele)) 
         if select:
             ids = [0] #[choice(range(len(X[id]['x'])))]
         else:
@@ -95,7 +99,7 @@ def get_data(db_name, des, N_force=100000, lists=None, select=False, ncpu=1):
             if len(force_data) < N_force:
                 ids = np.argwhere(X[id]['seq'][:,1]==i).flatten()
                 _i = X[id]['seq'][ids, 0] 
-                force_data.append((X[id]['x'][_i,:], X[id]['dxdr'][ids], Y['forces'][id][i]))
+                force_data.append((X[id]['x'][_i,:], X[id]['dxdr'][ids], Y['forces'][id][i], ele[_i]))
                 f_ids.append(i)
         db_data.append((structures[id], Y['energy'][id], Y['forces'][id], True, f_ids))
 

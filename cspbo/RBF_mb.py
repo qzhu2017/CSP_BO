@@ -50,15 +50,17 @@ class RBF_mb():
             NE = len(data["energy"])
             C_ee = np.zeros(NE)
             for i in range(NE):
-                x1 = data["energy"][i]
-                C_ee[i] = kee_single(x1, x1, sigma2, l2, zeta) 
+                (x1, ele1) = data["energy"][i]
+                mask = get_mask(ele1, ele1)
+                C_ee[i] = kee_single(x1, x1, sigma2, l2, zeta, False, mask) 
 
         if "force" in data:
             NF = len(data["force"])
             C_ff = np.zeros(3*NF)
             for i in range(NF):
-                (x1, dx1dr) = data["force"][i]
-                C_ff[i*3:(i+1)*3] = np.diag(kff_single(x1, x1, dx1dr, dx1dr, sigma2, l2, zeta))
+                (x1, dx1dr, ele1) = data["force"][i]
+                mask = get_mask(ele1, ele1)
+                C_ff[i*3:(i+1)*3] = np.diag(kff_single(x1, x1, dx1dr, dx1dr, sigma2, l2, zeta, False, mask))
 
         if C_ff is None:
             return C_ee
@@ -151,22 +153,50 @@ class RBF_mb():
         C_s = np.zeros([m1, m2])
         C_l = np.zeros([m1, m2])
 
-        for i, x1 in enumerate(X1):
-            if same:
-                start = i
+        # This loop is rather expansive, a simple way is to do multi-process
+        if same:
+            indices = np.triu_indices(m1)
+            (_is, _js) = indices
+        else:
+            indices = np.indices((m1, m2))
+            _is = indices[0].flatten()
+            _js = indices[1].flatten()
+
+        if self.ncpu == 1:
+            results = []
+            for i, j in zip(_is, _js):
+                (x1, ele1) = X1[i]
+                (x2, ele2) = X2[j]
+                mask = get_mask(ele1, ele2)
+                results.append(kee_single(x1, x2, sigma2, l2, zeta, grad, mask))
+        else:
+            fun_vars = []
+            for i, j in zip(_is, _js):
+                (x1, ele1) = X1[i]
+                (x2, ele2) = X2[j]
+                mask = get_mask(ele1, ele2)
+                fun_vars.append((x1, x2, mask))
+
+            with Pool(self.ncpu) as p:
+                func = partial(kee_para, (sigma2, l2, zeta, grad))
+                results = p.map(func, fun_vars)
+                p.close()
+                p.join()
+
+        # unpack the results
+        for i, j, res in zip(_is, _js, results):
+            if grad:
+                Kee, dKee_sigma, dKee_l = res
+                C[i, j] = Kee
+                C_s[i, j] = dKee_sigma
+                C_s[j, i] = dKee_sigma
+                C_l[i, j] = dKee_l
+                C_l[j, i] = dKee_l
             else:
-                start = 0
-            for j in range(start, len(X2)):
-                x2 = X2[j]
-                if grad:
-                    Kee, Kee_sigma, Kee_l = kee_single(x1, x2, sigma2, l2, zeta, True)
-                    C[i, j] = Kee
-                    C_s[i, j], C_s[j, i] = Kee_sigma, Kee_sigma
-                    C_l[i, j], C_l[j, i] = Kee_l, Kee_l
-                else:
-                    C[i, j] = kee_single(x1, x2, sigma2, l2, zeta)
-                if same:
-                    C[j, i] = C[i, j]
+                C[i, j] = res
+            if same and (i != j):
+                C[j, i] = C[i, j]
+
         if grad:
             return C, C_s, C_l
         else:
@@ -205,16 +235,18 @@ class RBF_mb():
         if self.ncpu == 1:
             results = []
             for i, j in zip(_is, _js):
-                (x1, dx1dr) = X1[i]
-                (x2, dx2dr) = X2[j]
-                results.append(kff_single(x1, x2, dx1dr, dx2dr, sigma2, l2, zeta, grad))
+                (x1, dx1dr, ele1) = X1[i]
+                (x2, dx2dr, ele2) = X2[j]
+                mask = get_mask(ele1, ele2)
+                results.append(kff_single(x1, x2, dx1dr, dx2dr, sigma2, l2, zeta, grad, mask))
         else:
             #print("Parallel version is on: ")
             fun_vars = []
             for i, j in zip(_is, _js):
-                (x1, dx1dr) = X1[i]
-                (x2, dx2dr) = X2[j]
-                fun_vars.append((x1, x2, dx1dr, dx2dr))
+                (x1, dx1dr, ele1) = X1[i]
+                (x2, dx2dr, ele2) = X2[j]
+                mask = get_mask(ele1, ele2)
+                fun_vars.append((x1, x2, dx1dr, dx2dr, mask))
 
             with Pool(self.ncpu) as p:
                 func = partial(kff_para, (sigma2, l2, zeta, grad))
@@ -270,16 +302,18 @@ class RBF_mb():
         if self.ncpu == 1:
             results = []
             for i, j in zip(_is, _js):
-                x1 = X1[i]
-                (x2, dx2dr) = X2[j]
-                results.append(kef_single(x1, x2, dx2dr, sigma2, l2, zeta, grad))
+                (x1, ele1) = X1[i]
+                (x2, dx2dr, ele2) = X2[j]
+                mask = get_mask(ele1, ele2)
+                results.append(kef_single(x1, x2, dx2dr, sigma2, l2, zeta, grad, mask))
         else:
             #print("Parallel version is on: ")
             fun_vars = []
             for i, j in zip(_is, _js):
-                x1 = X1[i]
-                (x2, dx2dr) = X2[j]
-                fun_vars.append((x1, x2, dx2dr))
+                (x1, ele1) = X1[i]
+                (x2, dx2dr, ele2) = X2[j]
+                mask = get_mask(ele1, ele2)
+                fun_vars.append((x1, x2, dx2dr, mask))
 
             with Pool(self.ncpu) as p:
                 func = partial(kef_para, (sigma2, l2, zeta, grad))
@@ -302,7 +336,7 @@ class RBF_mb():
         else:
             return C
 
-def kee_single(x1, x2, sigma2, l2, zeta, grad=False):
+def kee_single(x1, x2, sigma2, l2, zeta, grad=False, mask=None):
     """
     Compute the energy-energy kernel between two structures
     Args:
@@ -314,9 +348,9 @@ def kee_single(x1, x2, sigma2, l2, zeta, grad=False):
     """
     x1_norm = np.linalg.norm(x1, axis=1)
     x2_norm = np.linalg.norm(x2, axis=1)
-    return K_ee(x1, x2, x1_norm, x2_norm, sigma2, l2, zeta, grad)
+    return K_ee(x1, x2, x1_norm, x2_norm, sigma2, l2, zeta, grad, mask)
 
-def kef_single(x1, x2, dx2dr, sigma2, l2, zeta, grad=False):
+def kef_single(x1, x2, dx2dr, sigma2, l2, zeta, grad=False, mask=None):
     """
     Args:
         x1: N*d
@@ -328,9 +362,9 @@ def kef_single(x1, x2, dx2dr, sigma2, l2, zeta, grad=False):
     x1_norm = np.linalg.norm(x1, axis=1)
     x2_norm = np.linalg.norm(x2, axis=1)
     _, d1 = fun_D(x1, x2, x1_norm, x2_norm, zeta)
-    return K_ef(x1, x2, x1_norm, x2_norm, dx2dr, d1, sigma2, l2, zeta, grad)
+    return K_ef(x1, x2, x1_norm, x2_norm, dx2dr, d1, sigma2, l2, zeta, grad, mask)
 
-def kff_single(x1, x2, dx1dr, dx2dr, sigma2, l2, zeta, grad=False):
+def kff_single(x1, x2, dx1dr, dx2dr, sigma2, l2, zeta, grad=False, mask=None):
     """
     Compute the energy-energy kernel between two structures
     Args:
@@ -344,23 +378,31 @@ def kff_single(x1, x2, dx1dr, dx2dr, sigma2, l2, zeta, grad=False):
     x1_norm = np.linalg.norm(x1, axis=1)
     x2_norm = np.linalg.norm(x2, axis=1)
     D1, d1 = fun_D(x1, x2, x1_norm, x2_norm, zeta)
-    return K_ff(x1, x2, x1_norm, x2_norm, dx1dr, dx2dr, d1, sigma2, l2, zeta, grad) 
+    return K_ff(x1, x2, x1_norm, x2_norm, dx1dr, dx2dr, d1, sigma2, l2, zeta, grad, mask) 
     
+def kee_para(args, data): 
+    """
+    para version
+    """
+    (x1, x2, mask) = data
+    (sigma2, l2, zeta, grad) = args
+    return kee_single(x1, x2, sigma2, l2, zeta, grad, mask)
+ 
 def kff_para(args, data): 
     """
     para version
     """
-    (x1, x2, dx1dr, dx2dr) = data
+    (x1, x2, dx1dr, dx2dr, mask) = data
     (sigma2, l2, zeta, grad) = args
-    return kff_single(x1, x2, dx1dr, dx2dr, sigma2, l2, zeta, grad)
+    return kff_single(x1, x2, dx1dr, dx2dr, sigma2, l2, zeta, grad, mask)
  
 def kef_para(args, data): 
     """
     para version
     """
-    (x1, x2, dx2dr) = data
+    (x1, x2, dx2dr, mask) = data
     (sigma2, l2, zeta, grad) = args
-    return kef_single(x1, x2, dx2dr, sigma2, l2, zeta, grad)
+    return kef_single(x1, x2, dx2dr, sigma2, l2, zeta, grad, mask)
  
 def build_covariance(c_ee, c_ef, c_fe, c_ff, c_se=None, c_sf=None):
     """
@@ -387,3 +429,15 @@ def build_covariance(c_ee, c_ef, c_fe, c_ff, c_se=None, c_sf=None):
         return c_ff
     elif exist == [False, False, True, False]: # F in train, E in predict 
         return c_fe
+
+def get_mask(ele1, ele2):
+    ans = ele1[:,None] - ele2[None,:]
+    ids = np.where(ans!=0)
+    if len(ids[0]) == 0:
+        return None
+    else:
+        return ids
+    
+    #return None
+
+

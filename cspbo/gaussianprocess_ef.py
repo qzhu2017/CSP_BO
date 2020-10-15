@@ -190,8 +190,8 @@ class GaussianProcess():
             E = self.y_train[:len(test_X_E['energy'])].flatten()
             F = self.y_train[len(test_X_E['energy']):].flatten()
         else:
-            test_X_E = {"energy": [data[0] for data in test_data['energy']]}
-            test_X_F = {"force": [(data[0], data[1]) for data in test_data['force']]}
+            test_X_E = {"energy": [(data[0], data[2]) for data in test_data['energy']]}
+            test_X_F = {"force": [(data[0], data[1], data[3]) for data in test_data['force']]}
             E = np.array([data[1] for data in test_data['energy']])
             F = np.array([data[2] for data in test_data['force']]).flatten()
 
@@ -221,8 +221,8 @@ class GaussianProcess():
         E: total energy: scalor
         N1 is the number of atoms in the given structure
         """
-        (X, E) = energy_data
-        self.train_x['energy'].append(X)
+        (X, E, ele) = energy_data
+        self.train_x['energy'].append((X, ele))
         self.train_y['energy'].append(E)
         #self.update_y_train()
 
@@ -234,8 +234,8 @@ class GaussianProcess():
         F: atomic force: 1*3
         N2 is the number of the centered atoms' neighbors within the cutoff
         """
-        (X, dXdR, F) = force_data
-        self.train_x['force'].append((X, dXdR))
+        (X, dXdR, F, ele) = force_data
+        self.train_x['force'].append((X, dXdR, ele))
         self.train_y['force'].append(F)
         #self.update_y_train()
 

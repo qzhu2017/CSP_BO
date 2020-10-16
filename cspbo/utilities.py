@@ -69,21 +69,22 @@ def build_desc(method='SO3', rcut=5.0, lmax=4, nmax=4, alpha=2.0):
     #from pyxtal_ff.descriptors.EAMD import EAMD
     if method == "SO3":
         from pyxtal_ff.descriptors.SO3 import SO3
-        des = SO3(nmax=nmax, lmax=lmax, rcut=rcut, alpha=alpha, derivative=True)
+        des = SO3(nmax=nmax, lmax=lmax, rcut=rcut, alpha=alpha, derivative=True, stress=True)
     elif method == "SO4":
         from pyxtal_ff.descriptors.SO4 import SO4_Bispectrum
-        des = SO4_Bispectrum(lmax=lmax, rcut=rcut, derivative=True) 
+        des = SO4_Bispectrum(lmax=lmax, rcut=rcut, derivative=True, stress=True) 
 
     return des
 
-def get_data(db_name, des, N_force=100000, lists=None, select=False, ncpu=1):
+def get_data(db_name, des, N_force=100000, lists=None, select=False, ncpu=1, force_mod=5, stress=False):
     """
     Nmax: Maximum number of force data
     """
-    X, Y, structures = convert_struc(db_name, des, lists, ncpu=ncpu)
+    X, Y, structures = convert_struc(db_name, des, lists, ncpu=ncpu, stress=stress)
     print('\n')
     energy_data = []
     force_data = []
+    stress_data = []
     db_data = []
 
     for id in range(len(X)):
@@ -96,14 +97,26 @@ def get_data(db_name, des, N_force=100000, lists=None, select=False, ncpu=1):
             ids = range(len(X[id]['x']))
         f_ids = []
         for i in ids:
-            if len(force_data) < N_force:
+            if len(force_data) < N_force and id%force_mod==0:
                 ids = np.argwhere(X[id]['seq'][:,1]==i).flatten()
                 _i = X[id]['seq'][ids, 0] 
                 force_data.append((X[id]['x'][_i,:], X[id]['dxdr'][ids], Y['forces'][id][i], ele[_i]))
                 f_ids.append(i)
-        db_data.append((structures[id], Y['energy'][id], Y['forces'][id], True, f_ids))
 
-    train_data = {"energy": energy_data, "force": force_data, "db": db_data}
+            if stress:
+                _n, l = X[id]['x'].shape
+                rdxdr = np.zeros([_n, l, 3, 3])
+                for _m in range(_n):
+                    _ids = np.where(X[id]['seq'][:,0]==_m)[0]
+                    rdxdr[_m, :, :, :] += np.einsum('ijkl->jkl', X[id]['rdxdr'][_ids, :, :, :])
+                rdxdr = rdxdr.reshape([_n, l, 9])[:, :, [0, 4, 8, 1, 2, 5]]
+                stress_data.append((X[id]['x'], rdxdr, Y['stress'][id], ele))
+
+        db_data.append((structures[id], Y['energy'][id], Y['forces'][id], True, f_ids))
+    if stress:
+        train_data = {"energy": energy_data, "force": force_data, "stress": stress_data, "db": db_data}
+    else:
+        train_data = {"energy": energy_data, "force": force_data, "db": db_data}
     return train_data
 
 
@@ -153,8 +166,6 @@ def get_rdf(s, r_min=0.5, r_max=8.0, N_bins=40, sigma=0.2):
     rdf[-1,:] = Cosine(bins, r_max)
     return rdf
 
-
-
 def get_2b(s, rcut=4.0, kernel='all'):
     
     _is, _js, _ds = neighbor_list('ijd', s, rcut)
@@ -169,8 +180,8 @@ def get_2b(s, rcut=4.0, kernel='all'):
     else:
         return (np.vstack((_ds, Cosine(_ds, rcut))), len(s))
 
-def convert_struc(db_file, des, ids=None, N=None, ncpu=1):
-    structures, train_Y = [], {"energy":[], "forces": []}
+def convert_struc(db_file, des, ids=None, N=None, ncpu=1, stress=False):
+    structures, train_Y = [], {"energy":[], "forces": [], "stress": []}
     with connect(db_file) as db:
         for row in db.select():
             include = True
@@ -180,6 +191,8 @@ def convert_struc(db_file, des, ids=None, N=None, ncpu=1):
                 s = db.get_atoms(id=row.id)
                 train_Y['energy'].append(row.data.energy)
                 train_Y['forces'].append(row.data.force)
+                if stress:
+                    train_Y['stress'].append(row.data.stress)
                 structures.append(s)
 
                 if N is not None and len(structures) == N:

@@ -413,5 +413,3 @@ class GaussianProcess():
                     print("Processed {:d} structures".format(count))
 
         self.set_train_pts(pts_to_add, "w")
-
-

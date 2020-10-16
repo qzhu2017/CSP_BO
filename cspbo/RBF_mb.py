@@ -1,6 +1,6 @@
 import numpy as np
 from .derivatives import *
-from .derivatives_many import K_ff_multi
+#from .derivatives_many import K_ff_multi
 from functools import partial
 from multiprocessing import Pool, cpu_count
 
@@ -123,17 +123,54 @@ class RBF_mb():
 
                     elif key1 == 'force' and key2 == 'force':
                         C_ff, C_ff_s, C_ff_l = self.kff_many(data1[key1], data2[key2], True, True)
-        C = build_covariance(C_ee, C_ef, C_fe, C_ff)
-        C_s = build_covariance(C_ee_s, C_ef_s, C_fe_s, C_ff_s)
-        C_l = build_covariance(C_ee_l, C_ef_l, C_fe_l, C_ff_l)
+        C = build_covariance(C_ee, C_ef, C_fe, C_ff, None, None)
+        C_s = build_covariance(C_ee_s, C_ef_s, C_fe_s, C_ff_s, None, None)
+        C_l = build_covariance(C_ee_l, C_ef_l, C_fe_l, C_ff_l, None, None)
         return C, np.dstack((C_s, C_l))
 
     def ksf_many(self, X1, X2, same=False, grad=False):
         """
+        Compute the stress-force kernel for many structures
+        Args:
+            X1: list of 2D arrays
+            X2: list of 2D arrays
+            same: avoid double counting if true
+            grad: output gradient if true
+        Returns:
+            C: M*N 2D array
+            C_grad:
+
         """
-        pass
+        sigma2, l2, zeta = self.sigma**2, self.l**2, self.zeta
+        m1, m2 = len(X1), len(X2)
+        C = np.zeros([m1*6, m2*3])
+
+        for i, (x1, rdxdr) in enumerate(X1):
+            for j, (x2, dxdr, ele2) in enumerate(X2):
+                C[i*6:(i+1)*6, j*3:(j+1)*3] = ksf_single(x1, x2, rdxdr, dxdr, sigma2, l2, zeta)
+        return C
+
     def kse_many(self, X1, X2, same=False, grad=False):
-        pass
+        """
+        Compute the stress-energy kernel for many structures
+        Args:
+            X1: list of 2D arrays
+            X2: list of 2D arrays
+            same: avoid double counting if true
+            grad: output gradient if true
+        Returns:
+            C: M*N 2D array
+            C_grad:
+        """
+        sigma2, l2, zeta = self.sigma**2, self.l**2, self.zeta
+        m1, m2 = len(X1), len(X2)
+        C = np.zeros([m1*6, m2])
+
+        for i, (x1, rdxdr) in enumerate(X1):
+            for j, (x2, ele2) in enumerate(X2):
+                C[i*6:(i+1)*6, j] = kse_single(x1, x2, rdxdr, sigma2, l2, zeta, grad)
+        return C
+
     
     def kee_many(self, X1, X2, same=False, grad=False):
         """
@@ -379,6 +416,40 @@ def kff_single(x1, x2, dx1dr, dx2dr, sigma2, l2, zeta, grad=False, mask=None):
     x2_norm = np.linalg.norm(x2, axis=1)
     D1, d1 = fun_D(x1, x2, x1_norm, x2_norm, zeta)
     return K_ff(x1, x2, x1_norm, x2_norm, dx1dr, dx2dr, d1, sigma2, l2, zeta, grad, mask) 
+
+def kse_single(x1, x2, rdx1dr, sigma2, l2, zeta, grad=False):
+    """
+    Compute the stress-energy kernel between two structures
+    Args:
+        x1: m*d1
+        x2: n*d2
+        rdx1dr: m*d1*6
+    Returns:
+        Kse: 6*1 array
+    """
+
+    x1_norm = np.linalg.norm(x1, axis=1)
+
+    x2_norm = np.linalg.norm(x2, axis=1)
+    D1, d1 = fun_D(x1, x2, x1_norm, x2_norm, zeta)
+    return K_se(x1, x2, x1_norm, x2_norm, rdx1dr, d1, sigma2, l2, zeta, grad)
+
+def ksf_single(x1, x2, rdx1dr, dx2dr, sigma2, l2, zeta, grad=False):
+    """
+    Compute the stress-force kernel between two structures
+    Args:
+        x1: m*d1
+        x2: n*d2
+        rdx1dr: m*d1*6
+        rdxdr: n*d2*3
+    Returns:
+        Ksf: 6*3 array
+    """
+    x1_norm = np.linalg.norm(x1, axis=1)
+    x2_norm = np.linalg.norm(x2, axis=1)
+    D1, d1 = fun_D(x1, x2, x1_norm, x2_norm, zeta)
+    return K_sf(x1, x2, x1_norm, x2_norm, rdx1dr, dx2dr, d1, sigma2, l2, zeta, grad)
+
     
 def kee_para(args, data): 
     """
@@ -404,31 +475,35 @@ def kef_para(args, data):
     (sigma2, l2, zeta, grad) = args
     return kef_single(x1, x2, dx2dr, sigma2, l2, zeta, grad, mask)
  
-def build_covariance(c_ee, c_ef, c_fe, c_ff, c_se=None, c_sf=None):
-    """
-    Need to rework
-    """
+def build_covariance(c_ee, c_ef, c_fe, c_ff, c_se, c_sf):
     exist = []
-    for x in (c_ee, c_ef, c_fe, c_ff):
+    for x in (c_ee, c_ef, c_fe, c_ff, c_se, c_sf):
         if x is None:
             exist.append(False)
         else:
             exist.append(True)
-    if False not in exist:
+    #if False not in exist:
+    if exist == [True, True, True, True, False, False]:
         return np.block([[c_ee, c_ef], [c_fe, c_ff]])
-    elif exist == [False, False, True, True]: # F in train, E/F in predict
+    elif exist == [False, False, True, True, False, False]: # F in train, E/F in predict
         #print(c_fe.shape, c_ff.shape)
         return np.hstack((c_fe, c_ff))
-    elif exist == [True, True, False, False]: # E in train, E/F in predict
+    elif exist == [True, True, False, False, False, False]: # E in train, E/F in predict
         return np.hstack((c_ee, c_ef))
-    elif exist == [False, True, False, False]: # E in train, F in predict
+    elif exist == [False, True, False, False, False, False]: # E in train, F in predict
         return c_ef
-    elif exist == [True, False, False, False]: # E in train, E in predict
+    elif exist == [True, False, False, False, False, False]: # E in train, E in predict
         return c_ee
-    elif exist == [False, False, False, True]: # F in train, F in predict 
+    elif exist == [False, False, False, True, False, False]: # F in train, F in predict 
         return c_ff
-    elif exist == [False, False, True, False]: # F in train, E in predict 
+    elif exist == [False, False, True, False, False, False]: # F in train, E in predict 
         return c_fe
+    elif exist == [False, False, False, False, True, False]: # E in train, S in predict
+        return c_se
+    elif exist == [False, False, False, False, False, True]: # F in train, S in predict
+        return c_sf
+    elif exist == [False, False, False, False, True, True]: # E&F in train, S in predict
+        return np.hstack((c_se, c_sf))
 
 def get_mask(ele1, ele2):
     ans = ele1[:,None] - ele2[None,:]
@@ -437,7 +512,3 @@ def get_mask(ele1, ele2):
         return None
     else:
         return ids
-    
-    #return None
-
-

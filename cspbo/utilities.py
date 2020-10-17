@@ -220,6 +220,19 @@ def convert_struc(db_file, des, ids=None, N=None, ncpu=1, stress=False):
 
     return train_x, train_Y, structures
 
+def get_strucs(db_file, N_max=None):
+    structures = []
+    values = []
+    with connect(db_file) as db:
+        for row in db.select():
+            s = db.get_atoms(id=row.id)
+            structures.append(s)
+            values.append((row.data.energy, np.array(row.data.force), np.array(row.data.stress)))
+            if (N_max is not None) and (len(values) == N_max):
+                break
+    return structures, values
+
+
 def fea(des, struc):
     #return des.calculate(struc)['x']
     return des.calculate(struc)
@@ -308,7 +321,7 @@ def plot(Xs, Ys, labels, figname='results.png', draw_line=True, type='Energy'):
         unit = "(eV/atom)"
     elif type == 'Force':
         unit = "(eV/A)"
-    elif type == 'stress':
+    elif type == 'Stress':
         unit = "GPa"
     plt.xlabel('True' + unit) 
     plt.ylabel('Prediction' + unit)

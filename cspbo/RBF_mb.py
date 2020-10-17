@@ -1,6 +1,5 @@
 import numpy as np
 from .derivatives import *
-#from .derivatives_many import K_ff_multi
 from functools import partial
 from multiprocessing import Pool, cpu_count
 
@@ -80,13 +79,13 @@ class RBF_mb():
 
         #return np.ones(N)*sigma2
 
-    def k_total(self, data1, data2=None, kff_quick=False):
+    def k_total(self, data1, data2=None):
         if data2 is None:
             data2 = data1
             same = True
         else:
             same = False
-        C_ee, C_ef, C_fe, C_ff, C_se, C_sf = None, None, None, None, None, None
+        C_ee, C_ef, C_fe, C_ff = None, None, None, None
         for key1 in data1.keys():
             for key2 in data2.keys():
                 if len(data1[key1])>0 and len(data2[key2])>0:
@@ -100,17 +99,11 @@ class RBF_mb():
                         else:
                             C_fe = C_ef.T 
                     elif key1 == 'force' and key2 == 'force':
-                        if kff_quick:
-                            C_ff = self.kff_quick(data1[key1], data2[key2])
-                        else:
-                            C_ff = self.kff_many(data1[key1], data2[key2], same=same)
-                    elif key1 == 'stress' and key2 == 'force':
-                        C_sf = self.ksf_many(data1[key1], data2[key2])
-                    elif key1 == 'stress' and key2 == 'energy':
-                        C_se = self.kse_many(data1[key1], data2[key2])
+                        C_ff = self.kff_many(data1[key1], data2[key2], same=same)
 
-        return build_covariance(C_ee, C_ef, C_fe, C_ff, C_se, C_sf)
+        return build_covariance(C_ee, C_ef, C_fe, C_ff)
         
+
     def k_total_with_grad(self, data1):
         """
         Compute the covairance for train data
@@ -125,7 +118,6 @@ class RBF_mb():
                 if len(data1[key1])>0 and len(data2[key2])>0:
                     if key1 == 'energy' and key2 == 'energy':
                         C_ee, C_ee_s, C_ee_l = self.kee_many(data1[key1], data2[key2], True, True)
-                        #print(C_ee)
                     elif key1 == 'energy' and key2 == 'force':
                         C_ef, C_ef_s, C_ef_l = self.kef_many(data1[key1], data2[key2], True)
                         C_fe, C_fe_s, C_fe_l = C_ef.T, C_ef_s.T, C_ef_l.T
@@ -136,52 +128,6 @@ class RBF_mb():
         C_s = build_covariance(C_ee_s, C_ef_s, C_fe_s, C_ff_s, None, None)
         C_l = build_covariance(C_ee_l, C_ef_l, C_fe_l, C_ff_l, None, None)
         return C, np.dstack((C_s, C_l))
-
-    def ksf_many(self, X1, X2, same=False, grad=False):
-        """
-        Compute the stress-force kernel for many structures
-        Args:
-            X1: list of 2D arrays
-            X2: list of 2D arrays
-            same: avoid double counting if true
-            grad: output gradient if true
-        Returns:
-            C: M*N 2D array
-            C_grad:
-
-        """
-        sigma2, l2, zeta = self.sigma**2, self.l**2, self.zeta
-        m1, m2 = len(X1), len(X2)
-        C = np.zeros([m1*6, m2*3])
-
-        for i, (x1, rdxdr, ele1) in enumerate(X1):
-            for j, (x2, dxdr, ele2) in enumerate(X2):
-                mask = get_mask(ele1, ele2)
-                C[i*6:(i+1)*6, j*3:(j+1)*3] = ksf_single(x1, x2, rdxdr, dxdr, sigma2, l2, zeta, mask)
-        return C
-
-    def kse_many(self, X1, X2, same=False, grad=False):
-        """
-        Compute the stress-energy kernel for many structures
-        Args:
-            X1: list of 2D arrays
-            X2: list of 2D arrays
-            same: avoid double counting if true
-            grad: output gradient if true
-        Returns:
-            C: M*N 2D array
-            C_grad:
-        """
-        sigma2, l2, zeta = self.sigma**2, self.l**2, self.zeta
-        m1, m2 = len(X1), len(X2)
-        C = np.zeros([m1*6, m2])
-
-        for i, (x1, rdxdr, ele1) in enumerate(X1):
-            for j, (x2, ele2) in enumerate(X2):
-                mask = get_mask(ele1, ele2)
-                C[i*6:(i+1)*6, j] = kse_single(x1, x2, rdxdr, sigma2, l2, zeta, mask)
-        return C
-
     
     def kee_many(self, X1, X2, same=False, grad=False):
         """
@@ -254,8 +200,8 @@ class RBF_mb():
         """
         Compute the energy-force kernel between structures and atoms
         Args:
-            X1: list of tuples ([X, dXdR])
-            X2: list of tuples ([X, dXdR])
+            X1: list of tuples ([X, dXdR, rdXdR, ele])
+            X2: list of tuples ([X, dXdR, rdXdR, ele])
             same: avoid double counting if true
             grad: output gradient if true
         Returns:
@@ -283,18 +229,18 @@ class RBF_mb():
         if self.ncpu == 1:
             results = []
             for i, j in zip(_is, _js):
-                (x1, dx1dr, ele1) = X1[i]
-                (x2, dx2dr, ele2) = X2[j]
+                (x1, dx1dr, _, ele1) = X1[i]
+                (x2, dx2dr, _, ele2) = X2[j]
                 mask = get_mask(ele1, ele2)
-                results.append(kff_single(x1, x2, dx1dr, dx2dr, sigma2, l2, zeta, grad, mask))
+                results.append(kff_single(x1, x2, dx1dr, dx2dr, None, None, sigma2, l2, zeta, grad, mask))
         else:
             #print("Parallel version is on: ")
             fun_vars = []
             for i, j in zip(_is, _js):
-                (x1, dx1dr, ele1) = X1[i]
-                (x2, dx2dr, ele2) = X2[j]
+                (x1, dx1dr, _, ele1) = X1[i]
+                (x2, dx2dr, _, ele2) = X2[j]
                 mask = get_mask(ele1, ele2)
-                fun_vars.append((x1, x2, dx1dr, dx2dr, mask))
+                fun_vars.append((x1, x2, dx1dr, dx2dr, None, None, mask))
 
             with Pool(self.ncpu) as p:
                 func = partial(kff_para, (sigma2, l2, zeta, grad))
@@ -351,17 +297,17 @@ class RBF_mb():
             results = []
             for i, j in zip(_is, _js):
                 (x1, ele1) = X1[i]
-                (x2, dx2dr, ele2) = X2[j]
+                (x2, dx2dr, _, ele2) = X2[j]
                 mask = get_mask(ele1, ele2)
-                results.append(kef_single(x1, x2, dx2dr, sigma2, l2, zeta, grad, mask))
+                results.append(kef_single(x1, x2, dx2dr, None, sigma2, l2, zeta, grad, mask))
         else:
             #print("Parallel version is on: ")
             fun_vars = []
             for i, j in zip(_is, _js):
                 (x1, ele1) = X1[i]
-                (x2, dx2dr, ele2) = X2[j]
+                (x2, dx2dr, _, ele2) = X2[j]
                 mask = get_mask(ele1, ele2)
-                fun_vars.append((x1, x2, dx2dr, mask))
+                fun_vars.append((x1, x2, dx2dr, None, mask))
 
             with Pool(self.ncpu) as p:
                 func = partial(kef_para, (sigma2, l2, zeta, grad))
@@ -384,6 +330,126 @@ class RBF_mb():
         else:
             return C
 
+    def k_total_with_stress(self, data1, data2):
+        C_ee, C_ef, C_fe, C_ff = None, None, None, None
+        for key1 in data1.keys():
+            for key2 in data2.keys():
+                if len(data1[key1])>0 and len(data2[key2])>0:
+                    if key1 == 'energy' and key2 == 'energy':
+                        C_ee = self.kee_many(data1[key1], data2[key2])
+                    elif key1 == 'energy' and key2 == 'force':
+                        C_ef = self.kef_many(data1[key1], data2[key2])
+                    elif key1 == 'force' and key2 == 'energy':
+                        C_fe, C_se = self.kef_many_with_stress(data2[key2], data1[key1])
+                        C_fe, C_se = C_fe.T, C_se.T
+                    elif key1 == 'force' and key2 == 'force':
+                        C_ff, C_sf = self.kff_many_with_stress(data1[key1], data2[key2])
+
+        return build_covariance(C_ee, C_ef, C_fe, C_ff), build_covariance(None, None, C_se, C_sf)
+ 
+    def kef_many_with_stress(self, X1, X2):
+        """
+        Compute the energy-force kernel between structures and atoms
+        Args:
+            X1: list of 2D arrays (each N*d)
+            X2: list of tuples ([X, dXdR])
+            grad: output gradient if true
+        Returns:
+            C: M*9N 2D array
+        """
+        sigma2, l2, zeta = self.sigma**2, self.l**2, self.zeta
+        m1, m2 = len(X1), len(X2)
+        C = np.zeros([m1, 3*m2])
+        C1 = np.zeros([m1, 6*m2])
+        
+        # This loop is rather expansive, a simple way is to do multi-process
+        indices = np.indices((m1, m2))
+        _is = indices[0].flatten()
+        _js = indices[1].flatten()
+
+        if self.ncpu == 1:
+            results = []
+            for i, j in zip(_is, _js):
+                (x1, ele1) = X1[i]
+                (x2, dx2dr, rdx2dr, ele2) = X2[j]
+                mask = get_mask(ele1, ele2)
+                results.append(kef_single(x1, x2, dx2dr, rdx2dr, sigma2, l2, zeta, False, mask))
+        else:
+            #print("Parallel version is on: ")
+            fun_vars = []
+            for i, j in zip(_is, _js):
+                (x1, ele1) = X1[i]
+                (x2, dx2dr, rdx2dr, ele2) = X2[j]
+                mask = get_mask(ele1, ele2)
+                fun_vars.append((x1, x2, dx2dr, rdx2dr, mask))
+
+            with Pool(self.ncpu) as p:
+                func = partial(kef_para, (sigma2, l2, zeta, False))
+                results = p.map(func, fun_vars)
+                p.close()
+                p.join()
+
+        # unpack the results
+        for i, j, res in zip(_is, _js, results):
+            (Kef, Kes) = res
+            C[i, j*3:(j+1)*3] = Kef
+            C1[i, j*6:(j+1)*6] = Kes
+        return C, C1
+
+
+    def kff_many_with_stress(self, X1, X2):
+        """
+        Compute the force-force kernel between structures and atoms
+        with the output of stress, for prediction only, no grad
+        Args:
+            X1: list of tuples ([X, dXdR, rdXdR, ele])
+            X2: list of tuples ([X, dXdR, rdXdR, ele])
+            same: avoid double counting if true
+            grad: output gradient if true
+        Returns:
+            C: M*N 2D array
+            C_grad:
+        """
+        sigma2, l2, zeta = self.sigma**2, self.l**2, self.zeta
+        m1, m2 = len(X1), len(X2)
+        C = np.zeros([3*m1, 3*m2])
+        C1 = np.zeros([6*m1, 3*m2])
+
+        # This loop is rather expansive, a simple way is to do multi-process
+        indices = np.indices((m1, m2))
+        _is = indices[0].flatten()
+        _js = indices[1].flatten()
+
+        if self.ncpu == 1:
+            results = []
+            for i, j in zip(_is, _js):
+                (x1, dx1dr, rdx1dr, ele1) = X1[i]
+                (x2, dx2dr, rdx2dr, ele2) = X2[j]
+                mask = get_mask(ele1, ele2)
+                results.append(kff_single(x1, x2, dx1dr, dx2dr, rdx1dr, rdx2dr, sigma2, l2, zeta, False, mask))
+        else:
+            #print("Parallel version is on: ")
+            fun_vars = []
+            for i, j in zip(_is, _js):
+                (x1, dx1dr, rdx1dr, ele1) = X1[i]
+                (x2, dx2dr, rdx2dr, ele2) = X2[j]
+                mask = get_mask(ele1, ele2)
+                fun_vars.append((x1, x2, dx1dr, dx2dr, rdx1dr, rdx2dr, mask))
+
+            with Pool(self.ncpu) as p:
+                func = partial(kff_para, (sigma2, l2, zeta, False))
+                results = p.map(func, fun_vars)
+                p.close()
+                p.join()
+
+        # unpack the results
+        for i, j, res in zip(_is, _js, results):
+            (Kff, Ksf) = res
+            C[i*3:(i+1)*3, j*3:(j+1)*3] = Kff
+            C1[i*6:(i+1)*6, j*3:(j+1)*3] = Ksf
+
+        return C, C1
+
 def kee_single(x1, x2, sigma2, l2, zeta, grad=False, mask=None):
     """
     Compute the energy-energy kernel between two structures
@@ -394,11 +460,18 @@ def kee_single(x1, x2, sigma2, l2, zeta, grad=False, mask=None):
     Returns:
         C: M*N 2D array
     """
-    x1_norm = np.linalg.norm(x1, axis=1)
-    x2_norm = np.linalg.norm(x2, axis=1)
-    return K_ee(x1, x2, x1_norm, x2_norm, sigma2, l2, zeta, grad, mask)
+    return K_ee(x1, x2, sigma2, l2, zeta, grad, mask)
 
-def kef_single(x1, x2, dx2dr, sigma2, l2, zeta, grad=False, mask=None):
+def kee_para(args, data): 
+    """
+    para version
+    """
+    (x1, x2, mask) = data
+    (sigma2, l2, zeta, grad) = args
+    return K_ee(x1, x2, sigma2, l2, zeta, grad, mask)
+ 
+
+def kef_single(x1, x2, dx2dr, rdx2dr, sigma2, l2, zeta, grad=False, mask=None):
     """
     Args:
         x1: N*d
@@ -407,12 +480,18 @@ def kef_single(x1, x2, dx2dr, sigma2, l2, zeta, grad=False, mask=None):
     Returns:
         Kef: 3
     """
-    x1_norm = np.linalg.norm(x1, axis=1)
-    x2_norm = np.linalg.norm(x2, axis=1)
-    _, d1 = fun_D(x1, x2, x1_norm, x2_norm, zeta)
-    return K_ef(x1, x2, x1_norm, x2_norm, dx2dr, d1, sigma2, l2, zeta, grad, mask)
+    return K_ef(x1, x2, dx2dr, rdx2dr, sigma2, l2, zeta, grad, mask)
 
-def kff_single(x1, x2, dx1dr, dx2dr, sigma2, l2, zeta, grad=False, mask=None):
+def kef_para(args, data): 
+    """
+    para version
+    """
+    (x1, x2, dx2dr, rdx2dr, mask) = data
+    (sigma2, l2, zeta, grad) = args
+    return K_ef(x1, x2, dx2dr, rdx2dr, sigma2, l2, zeta, grad, mask)
+ 
+
+def kff_single(x1, x2, dx1dr, dx2dr, rdx1dr, rdx2dr, sigma2, l2, zeta, grad=False, mask=None):
     """
     Compute the energy-energy kernel between two structures
     Args:
@@ -423,10 +502,15 @@ def kff_single(x1, x2, dx1dr, dx2dr, sigma2, l2, zeta, grad=False, mask=None):
     Returns:
         Kff: 3*3 array
     """
-    x1_norm = np.linalg.norm(x1, axis=1)
-    x2_norm = np.linalg.norm(x2, axis=1)
-    D1, d1 = fun_D(x1, x2, x1_norm, x2_norm, zeta)
-    return K_ff(x1, x2, x1_norm, x2_norm, dx1dr, dx2dr, d1, sigma2, l2, zeta, grad, mask) 
+    return K_ff(x1, x2, dx1dr, dx2dr, rdx1dr, rdx2dr, sigma2, l2, zeta, grad, mask) 
+
+def kff_para(args, data): 
+    """
+    para version
+    """
+    (x1, x2, dx1dr, dx2dr, rdx1dr, rdx2dr, mask) = data
+    (sigma2, l2, zeta, grad) = args
+    return K_ff(x1, x2, dx1dr, dx2dr, rdx1dr, rdx2dr, sigma2, l2, zeta, grad, mask) 
 
 def kse_single(x1, x2, rdx1dr, sigma2, l2, zeta, mask=None):
     """
@@ -461,59 +545,33 @@ def ksf_single(x1, x2, rdx1dr, dx2dr, sigma2, l2, zeta, mask=None):
     D1, d1 = fun_D(x1, x2, x1_norm, x2_norm, zeta)
     return K_sf(x1, x2, x1_norm, x2_norm, rdx1dr, dx2dr, d1, sigma2, l2, zeta, mask)
     
-def kee_para(args, data): 
+
+
+def build_covariance(c_ee, c_ef, c_fe, c_ff, c_se=None, c_sf=None):
     """
-    para version
+    Need to rework
     """
-    (x1, x2, mask) = data
-    (sigma2, l2, zeta, grad) = args
-    return kee_single(x1, x2, sigma2, l2, zeta, grad, mask)
- 
-def kff_para(args, data): 
-    """
-    para version
-    """
-    (x1, x2, dx1dr, dx2dr, mask) = data
-    (sigma2, l2, zeta, grad) = args
-    return kff_single(x1, x2, dx1dr, dx2dr, sigma2, l2, zeta, grad, mask)
- 
-def kef_para(args, data): 
-    """
-    para version
-    """
-    (x1, x2, dx2dr, mask) = data
-    (sigma2, l2, zeta, grad) = args
-    return kef_single(x1, x2, dx2dr, sigma2, l2, zeta, grad, mask)
- 
-def build_covariance(c_ee, c_ef, c_fe, c_ff, c_se, c_sf):
     exist = []
-    for x in (c_ee, c_ef, c_fe, c_ff, c_se, c_sf):
+    for x in (c_ee, c_ef, c_fe, c_ff):
         if x is None:
             exist.append(False)
         else:
             exist.append(True)
-    #if False not in exist:
-    if exist == [True, True, True, True, False, False]:
+    if False not in exist:
         return np.block([[c_ee, c_ef], [c_fe, c_ff]])
-    elif exist == [False, False, True, True, False, False]: # F in train, E/F in predict
+    elif exist == [False, False, True, True]: # F in train, E/F in predict
         #print(c_fe.shape, c_ff.shape)
         return np.hstack((c_fe, c_ff))
-    elif exist == [True, True, False, False, False, False]: # E in train, E/F in predict
+    elif exist == [True, True, False, False]: # E in train, E/F in predict
         return np.hstack((c_ee, c_ef))
-    elif exist == [False, True, False, False, False, False]: # E in train, F in predict
+    elif exist == [False, True, False, False]: # E in train, F in predict
         return c_ef
-    elif exist == [True, False, False, False, False, False]: # E in train, E in predict
+    elif exist == [True, False, False, False]: # E in train, E in predict
         return c_ee
-    elif exist == [False, False, False, True, False, False]: # F in train, F in predict 
+    elif exist == [False, False, False, True]: # F in train, F in predict 
         return c_ff
-    elif exist == [False, False, True, False, False, False]: # F in train, E in predict 
+    elif exist == [False, False, True, False]: # F in train, E in predict 
         return c_fe
-    elif exist == [False, False, False, False, True, False]: # E in train, S in predict
-        return c_se
-    elif exist == [False, False, False, False, False, True]: # F in train, S in predict
-        return c_sf
-    elif exist == [False, False, False, False, True, True]: # E&F in train, S in predict
-        return np.hstack((c_se, c_sf))
 
 def get_mask(ele1, ele2):
     ans = ele1[:,None] - ele2[None,:]

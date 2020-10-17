@@ -37,7 +37,7 @@ def fun_d2k_dDdl(x1, x2, x1_norm, x2_norm, sigma2, l2, zeta=2, mask=None):
         k[mask] = 0
     return -0.5*D*k/l2/l3 + k/l3
 
-def K_ee(x1, x2, x1_norm, x2_norm, sigma2, l2, zeta=2, grad=False, mask=None):
+def K_ee(x1, x2, sigma2, l2, zeta=2, grad=False, mask=None):
     """
     Compute the Kee between two structures
     Args:
@@ -48,6 +48,11 @@ def K_ee(x1, x2, x1_norm, x2_norm, sigma2, l2, zeta=2, grad=False, mask=None):
         zeta: power term, float
         mask: to set the kernel zero if the chemical species are different
     """
+    x1_norm = np.linalg.norm(x1, axis=1)
+    x2_norm = np.linalg.norm(x2, axis=1)
+    _, d = fun_D(x1, x2, x1_norm, x2_norm, zeta)
+
+
     D, _ = fun_D(x1, x2, x1_norm, x2_norm, zeta) #
     Kee0 = sigma2*np.exp(-0.5*D/l2)
     #print(mask)
@@ -68,13 +73,16 @@ def K_ee(x1, x2, x1_norm, x2_norm, sigma2, l2, zeta=2, grad=False, mask=None):
     else:
         return Kee/mn
 
-def K_ff(x1, x2, x1_norm, x2_norm, dx1dr, dx2dr, d, sigma2, l2, zeta=2, grad=False, mask=None):
+def K_ff(x1, x2, dx1dr, dx2dr, rdx1dr, rdx2dr, sigma2, l2, zeta=2, grad=False, mask=None):
+    x1_norm = np.linalg.norm(x1, axis=1)
+    x2_norm = np.linalg.norm(x2, axis=1)
+    _, d = fun_D(x1, x2, x1_norm, x2_norm, zeta)
+
     dk_dD = fun_dk_dD(x1, x2, x1_norm, x2_norm, sigma2, l2, zeta, mask) #m, n
     d2D_dx1dx2 = fun_d2D_dx1dx2(x1, x2, x1_norm, x2_norm, d, zeta) #m, n, d1, d2
     dD_dx1, _ = fun_dD_dx1(x1, x2, x1_norm, x2_norm, d, zeta)        #m, n, d1
     dD_dx2, _ = fun_dD_dx2(x1, x2, x1_norm, x2_norm, d, zeta)        #m, n, d2
     tmp = d2D_dx1dx2 - 0.5/l2*dD_dx1[:,:,:,None]*dD_dx2[:,:,None,:] # m, n, d1, d2
-    
 
     if grad:
         K_ff_0 = np.einsum("ijkl,ikm->ijlm", tmp, dx1dr) # m, n, d2, 3
@@ -93,12 +101,22 @@ def K_ff(x1, x2, x1_norm, x2_norm, dx1dr, dx2dr, d, sigma2, l2, zeta=2, grad=Fal
 
         return Kff, dKff_dsigma, dKff_dl
     else:
-        tmp = np.einsum("ijkl,ij->ijkl", tmp, dk_dD) #m,n,d1,d2
-        tmp = np.einsum("ijkl,ikm->jlm", tmp, dx1dr) #m,n,d1,d2  m,d1,3 -> n, d2, 3
-        Kff = np.einsum("ijk,ijm->km", tmp, dx2dr) #n d2, 3   n d2 3
-        return Kff
+        tmp0 = np.einsum("ijkl,ij->ijkl", tmp, dk_dD) #m,n,d1,d2
+        tmp = np.einsum("ijkl,ikm->jlm", tmp0, dx1dr) #m,n,d1,d2  m,d1,3 -> n, d2, 3
+        Kff = np.einsum("ijk,ijl->kl", tmp, dx2dr) #n d2, 3   n d2 3
+        if rdx1dr is None:
+            return Kff
+        else:
+            s_tmp = np.einsum("ijkl,ikm->jlm", tmp0, rdx1dr) #m,n,d1,d2  m,d1,6 -> n, d2, 3
+            Ksf = np.einsum("ijk,ijl->kl", s_tmp, dx2dr) #[6,3]
+            return Kff, Ksf
 
-def K_ef(x1, x2, x1_norm, x2_norm, dx2dr, d, sigma2, l2, zeta=2, grad=False, mask=None):
+def K_ef(x1, x2, dx2dr, rdx2dr, sigma2, l2, zeta=2, grad=False, mask=None):
+
+    x1_norm = np.linalg.norm(x1, axis=1)
+    x2_norm = np.linalg.norm(x2, axis=1)
+    _, d = fun_D(x1, x2, x1_norm, x2_norm, zeta)
+
     dk_dD = fun_dk_dD(x1, x2, x1_norm, x2_norm, sigma2, l2, zeta, mask) #m, n
     dD_dx2, _ = fun_dD_dx2(x1, x2, x1_norm, x2_norm, d, zeta) #m, n, d2
     m = len(x1)
@@ -113,30 +131,12 @@ def K_ef(x1, x2, x1_norm, x2_norm, dx2dr, d, sigma2, l2, zeta=2, grad=False, mas
         dKef_dl     = np.einsum("ijk,ij->k", K_ef_0, d2k_dDdl)
         return Kef/m, dKef_dsigma/m, dKef_dl/m
     else:
-        return Kef/m
-
-def K_se(x1, x2, x1_norm, x2_norm, rdx1dr, d, sigma2, l2, zeta=2, mask=None):
-    dk_dD = fun_dk_dD(x1, x2, x1_norm, x2_norm, sigma2, l2, zeta, mask) # m, n
-    dD_dx1, _ = fun_dD_dx1(x1, x2, x1_norm, x2_norm, d, zeta) # m, n, d1
-    n = len(x2)
-
-    K_se_0 = -np.einsum("ijk, ikl->ijl", dD_dx1, rdx1dr) # [m, n, d1] [m, d1, 6] -> [m, n, 6]
-    Kse = np.einsum("ijk, ij->k", K_se_0, dk_dD) # [m, n, 6] [m, n] -> 6
-
-    return Kse/n
-
-def K_sf(x1, x2, x1_norm, x2_norm, rdx1dr, dx2dr, d, sigma2, l2, zeta=2, mask=None):
-    dk_dD = fun_dk_dD(x1, x2, x1_norm, x2_norm, sigma2, l2, zeta, mask) # m, n
-    d2D_dx1dx2 = fun_d2D_dx1dx2(x1, x2, x1_norm, x2_norm, d, zeta) # m, n, d1, d2
-    dD_dx1, _ = fun_dD_dx1(x1, x2, x1_norm, x2_norm, d, zeta)      # m, n, d1
-    dD_dx2, _ = fun_dD_dx2(x1, x2, x1_norm, x2_norm, d, zeta)      # m, n, d2
-    tmp = d2D_dx1dx2 - 0.5/l2*dD_dx1[:,:,:,None]*dD_dx2[:,:,None,:] # m, n, d1, d2
-    d2kdx1dx2 = np.einsum("ij,ijkl->ijkl", dk_dD, tmp)
-    
-    K_sf_0 = np.einsum("ijkl, ikm->jlm", d2kdx1dx2, rdx1dr) # [m, n, d1, d2] [m, d1, 6] -> [n, d2, 6]
-    Ksf = np.einsum("ijk, ijl->kl", K_sf_0, dx2dr) # [n, d2, 6] [n, d2, 3] -> [6, 3]
-
-    return Ksf
+        if rdx2dr is None:
+            return Kef/m
+        else:
+            K_se_0 = -np.einsum("ijk,jkl->ijl", dD_dx2, rdx2dr)
+            Kse = np.einsum("ijk,ij->k", K_se_0, dk_dD) #[6]
+            return Kef/m, Kse/m
 
 def fun_dd_dx1(x1, x2, x1_norm, x2_norm):  
     # x1: m,d

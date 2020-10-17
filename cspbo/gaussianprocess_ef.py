@@ -95,8 +95,13 @@ class GaussianProcess():
         self.alpha_ = cho_solve((self.L_, True), self.y_train)  # Line 3
         return self
 
-    def predict(self, X, kff_quick=False, total_E=False, return_std=False, return_cov=False):
-        K_trans = self.kernel.k_total(X, self.train_x, kff_quick=kff_quick)
+    def predict(self, X, stress=False, total_E=False, return_std=False, return_cov=False):
+        if stress:
+            K_trans, K_trans1 = self.kernel.k_total_with_stress(X, self.train_x)
+            pred1 = K_trans1.dot(self.alpha_)
+        else:
+            K_trans = self.kernel.k_total(X, self.train_x)
+
         pred = K_trans.dot(self.alpha_)
         y_mean = pred[:, 0]
 
@@ -226,6 +231,57 @@ class GaussianProcess():
                 S_Pred = self.predict(test_X_S)
             return E, E_Pred, F, F_Pred, S, S_Pred
 
+    def predict_structure(self, struc, stress=True, return_std=False):
+        """
+        make prediction for a given structure
+        """
+
+        d = self.descriptor.calculate(struc) 
+        ele = [Element(ele).z for ele in d['elements']]
+        ele = np.array(ele)
+        data = {"energy": [(d['x'], ele)]}
+        data["force"] = []
+        _n, l = d['x'].shape
+        for i in range(len(struc)):
+            ids = np.argwhere(d['seq'][:,1]==i).flatten()
+            _i = d['seq'][ids, 0] 
+            _x, _dxdr, _rdxdr, ele0 = d['x'][_i,:], d['dxdr'][ids], d['rdxdr'][ids], ele[_i]
+
+            if stress:
+                _rdxdr = _rdxdr.reshape([len(ids), l, 9])[:, :, [0, 4, 8, 1, 2, 5]]
+                data["force"].append((_x, _dxdr, _rdxdr, ele0))
+            else:
+                data["force"].append((_x, _dxdr, None, ele0))
+
+        if stress:
+            K_trans, K_trans1 = self.kernel.k_total_with_stress(data, self.train_x)
+        else:
+            K_trans = self.kernel.k_total(X, self.train_x)
+
+        pred = K_trans.dot(self.alpha_)
+        y_mean = pred[:, 0]
+        y_mean[0] *= len(struc) #total energy
+        E = y_mean[0]
+        F = y_mean[1:].reshape([len(struc), 3])
+        if stress:
+            S = K_trans1.dot(self.alpha_)[:,0].reshape([len(struc), 6])
+        else:
+            S = None
+
+        if return_std:
+            if self._K_inv is None:
+                L_inv = solve_triangular(self.L_.T, np.eye(self.L_.shape[0]))
+                self._K_inv = L_inv.dot(L_inv.T)
+            y_var = self.kernel.diag(X)
+            y_var -= np.einsum("ij,ij->i", np.dot(K_trans, self._K_inv), K_trans)
+            y_var_negative = y_var < 0
+            y_var[y_var_negative] = 0.0
+            y_var = np.sqrt(y_var)
+            E_std = y_var[0]
+            F_std = y_var[1:].reshape([len(struc), 3])
+            return E, F, S, E_std, F_std
+        else:
+            return E, F, S
 
     def add_train_pts_energy(self, energy_data):
         """
@@ -247,8 +303,8 @@ class GaussianProcess():
         F: atomic force: 1*3
         N2 is the number of the centered atoms' neighbors within the cutoff
         """
-        (X, dXdR, F, ele) = force_data
-        self.train_x['force'].append((X, dXdR, ele))
+        (X, dXdR, RdXdR, F, ele) = force_data
+        self.train_x['force'].append((X, dXdR, RdXdR, ele))
         self.train_y['force'].append(F)
         #self.update_y_train()
 
@@ -321,7 +377,7 @@ class GaussianProcess():
 
         print("save the GP model to", filename, ", and database to ", db_filename)
 
-    def load(self, filename, opt=False):
+    def load(self, filename, N_max=None, opt=False):
         """
         Save the model
         Args:
@@ -331,7 +387,7 @@ class GaussianProcess():
         #print(filename)
         with open(filename, "r") as fp:
             dict0 = json.load(fp)
-        self.load_from_dict(dict0)
+        self.load_from_dict(dict0, N_max=N_max)
         self.fit(opt=opt)
         print("load the GP model from ", filename)
 
@@ -349,7 +405,7 @@ class GaussianProcess():
         return dict0
 
 
-    def load_from_dict(self, dict0):
+    def load_from_dict(self, dict0, N_max=None):
         
         #keys = ['kernel', 'descriptor', 'Noise']
 
@@ -373,7 +429,7 @@ class GaussianProcess():
         self.noise_bounds = dict0["noise"]["bounds"]
         self.noise_f = self.f_coef*self.noise_e
         # save structural file
-        self.extract_db(dict0["db_filename"])
+        self.extract_db(dict0["db_filename"], N_max)
 
     def export_ase_db(self, db_filename, permission="w"):
         """
@@ -397,7 +453,7 @@ class GaussianProcess():
                        }
                 db.write(struc, data=data)
 
-    def extract_db(self, db_filename, N_max=30):
+    def extract_db(self, db_filename, N_max=None):
         """
         convert the structures to the descriptors from a given ase db
         """
@@ -423,7 +479,7 @@ class GaussianProcess():
                 for id in force_in:
                     ids = np.argwhere(d['seq'][:,1]==id).flatten() 
                     _i = d['seq'][ids, 0]
-                    pts_to_add["force"].append((d['x'][_i,:], d['dxdr'][ids], force[id], ele[_i]))
+                    pts_to_add["force"].append((d['x'][_i,:], d['dxdr'][ids], d['rdxdr'][ids], force[id], ele[_i]))
                 pts_to_add["db"].append((atoms, energy, force, energy_in, force_in))
 
                 if count % 50 == 0:

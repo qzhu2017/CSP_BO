@@ -36,7 +36,7 @@ class GaussianProcess():
     def __repr__(self):
         return str(self)
 
-    def fit(self, TrainData=None, show=True):
+    def fit(self, TrainData=None, show=True, opt=True):
         # Set up optimizer to train the GPR
         if TrainData is not None:
             self.set_train_pts(TrainData)
@@ -65,10 +65,11 @@ class GaussianProcess():
                 return -self.log_marginal_likelihood(params, clone_kernel=False)
         hyper_params = self.kernel.parameters() + [self.noise_e]
         hyper_bounds = self.kernel.bounds + [self.noise_bounds]
-        params, loss = self.optimize(obj_func, hyper_params, hyper_bounds)
-        self.kernel.update(params[:-1])
-        self.noise_e = params[-1]
-        self.noise_f = self.f_coef*params[-1]
+        if opt:
+            params, loss = self.optimize(obj_func, hyper_params, hyper_bounds, )
+            self.kernel.update(params[:-1])
+            self.noise_e = params[-1]
+            self.noise_f = self.f_coef*params[-1]
         K = self.kernel.k_total(self.train_x)
 
         # add noise matrix
@@ -184,15 +185,22 @@ class GaussianProcess():
         """
         validate the given dataset
         """
-
         if test_data is None:
             test_X_E = {"energy": self.train_x['energy']}
             test_X_F = {"force": self.train_x['force']}
+            test_X_S = {"stress": []}
             E = self.y_train[:len(test_X_E['energy'])].flatten()
             F = self.y_train[len(test_X_E['energy']):].flatten()
+            S = None
         else:
             test_X_E = {"energy": [(data[0], data[2]) for data in test_data['energy']]}
             test_X_F = {"force": [(data[0], data[1], data[3]) for data in test_data['force']]}
+            if "stress" in test_data.keys():
+                test_X_S = {"stress": [(data[0], data[1], data[3]) for data in test_data['stress']]}
+                S = np.array([data[2] for data in test_data['stress']]).flatten()
+            else:
+                test_X_S = {"stress": []}
+                S = None
             E = np.array([data[1] for data in test_data['energy']])
             F = np.array([data[2] for data in test_data['force']]).flatten()
 
@@ -200,19 +208,23 @@ class GaussianProcess():
             for i in range(len(E)):
                 E[i] *= len(test_X_E['energy'][i])
                 
-        E_Pred, E_std, F_Pred, F_std = None, None, None, None
+        E_Pred, E_std, F_Pred, F_std, S_Pred, S_std = None, None, None, None, None, None
         if return_std:
             if len(test_X_E['energy']) > 0:
                 E_Pred, E_std = self.predict(test_X_E, total_E=total_E, return_std=True)  
             if len(test_X_F['force']) > 0:
                 F_Pred, F_std = self.predict(test_X_F, return_std=True)
-            return E, E_Pred, E_std, F, F_Pred, F_std
+            if len(test_X_S['stress']) > 0:
+                S_Pred, S_std = self.predict(test_X_S, return_std=True)
+            return E, E_Pred, E_std, F, F_Pred, F_std, S, S_Pred, S_std
         else:
             if len(test_X_E['energy']) > 0:
                 E_Pred = self.predict(test_X_E, total_E=total_E)  
             if len(test_X_F['force']) > 0:
                 F_Pred = self.predict(test_X_F)
-            return E, E_Pred, F, F_Pred
+            if len(test_X_S['stress']) > 0:
+                S_Pred = self.predict(test_X_S)
+            return E, E_Pred, F, F_Pred, S, S_Pred
 
 
     def add_train_pts_energy(self, energy_data):
@@ -309,7 +321,7 @@ class GaussianProcess():
 
         print("save the GP model to", filename, ", and database to ", db_filename)
 
-    def load(self, filename):
+    def load(self, filename, opt=False):
         """
         Save the model
         Args:
@@ -320,7 +332,7 @@ class GaussianProcess():
         with open(filename, "r") as fp:
             dict0 = json.load(fp)
         self.load_from_dict(dict0)
-        self.fit()
+        self.fit(opt=opt)
         print("load the GP model from ", filename)
 
     def save_dict(self, db_filename):
@@ -385,7 +397,7 @@ class GaussianProcess():
                        }
                 db.write(struc, data=data)
 
-    def extract_db(self, db_filename):
+    def extract_db(self, db_filename, N_max=30):
         """
         convert the structures to the descriptors from a given ase db
         """
@@ -416,5 +428,7 @@ class GaussianProcess():
 
                 if count % 50 == 0:
                     print("Processed {:d} structures".format(count))
+                if N_max is not None and count == N_max:
+                    break
 
         self.set_train_pts(pts_to_add, "w")

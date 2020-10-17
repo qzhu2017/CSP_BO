@@ -62,6 +62,15 @@ class RBF_mb():
                 mask = get_mask(ele1, ele1)
                 C_ff[i*3:(i+1)*3] = np.diag(kff_single(x1, x1, dx1dr, dx1dr, sigma2, l2, zeta, False, mask))
 
+        if "stress" in data:
+            NS = len(data["stress"])
+            C_ff = np.zeros(6*NS)
+            for i in range(NF):
+                (x1, dx1dr, ele1) = data["stress"][i]
+                mask = get_mask(ele1, ele1)
+                C_ff[i*3:(i+1)*3] = np.diag(kss_single(x1, x1, dx1dr, dx1dr, sigma2, l2, zeta, False, mask))
+
+
         if C_ff is None:
             return C_ee
         elif C_ee is None:
@@ -145,9 +154,10 @@ class RBF_mb():
         m1, m2 = len(X1), len(X2)
         C = np.zeros([m1*6, m2*3])
 
-        for i, (x1, rdxdr) in enumerate(X1):
+        for i, (x1, rdxdr, ele1) in enumerate(X1):
             for j, (x2, dxdr, ele2) in enumerate(X2):
-                C[i*6:(i+1)*6, j*3:(j+1)*3] = ksf_single(x1, x2, rdxdr, dxdr, sigma2, l2, zeta)
+                mask = get_mask(ele1, ele2)
+                C[i*6:(i+1)*6, j*3:(j+1)*3] = ksf_single(x1, x2, rdxdr, dxdr, sigma2, l2, zeta, mask)
         return C
 
     def kse_many(self, X1, X2, same=False, grad=False):
@@ -166,9 +176,10 @@ class RBF_mb():
         m1, m2 = len(X1), len(X2)
         C = np.zeros([m1*6, m2])
 
-        for i, (x1, rdxdr) in enumerate(X1):
+        for i, (x1, rdxdr, ele1) in enumerate(X1):
             for j, (x2, ele2) in enumerate(X2):
-                C[i*6:(i+1)*6, j] = kse_single(x1, x2, rdxdr, sigma2, l2, zeta, grad)
+                mask = get_mask(ele1, ele2)
+                C[i*6:(i+1)*6, j] = kse_single(x1, x2, rdxdr, sigma2, l2, zeta, mask)
         return C
 
     
@@ -417,7 +428,7 @@ def kff_single(x1, x2, dx1dr, dx2dr, sigma2, l2, zeta, grad=False, mask=None):
     D1, d1 = fun_D(x1, x2, x1_norm, x2_norm, zeta)
     return K_ff(x1, x2, x1_norm, x2_norm, dx1dr, dx2dr, d1, sigma2, l2, zeta, grad, mask) 
 
-def kse_single(x1, x2, rdx1dr, sigma2, l2, zeta, grad=False):
+def kse_single(x1, x2, rdx1dr, sigma2, l2, zeta, mask=None):
     """
     Compute the stress-energy kernel between two structures
     Args:
@@ -432,9 +443,9 @@ def kse_single(x1, x2, rdx1dr, sigma2, l2, zeta, grad=False):
 
     x2_norm = np.linalg.norm(x2, axis=1)
     D1, d1 = fun_D(x1, x2, x1_norm, x2_norm, zeta)
-    return K_se(x1, x2, x1_norm, x2_norm, rdx1dr, d1, sigma2, l2, zeta, grad)
+    return K_se(x1, x2, x1_norm, x2_norm, rdx1dr, d1, sigma2, l2, zeta, mask)
 
-def ksf_single(x1, x2, rdx1dr, dx2dr, sigma2, l2, zeta, grad=False):
+def ksf_single(x1, x2, rdx1dr, dx2dr, sigma2, l2, zeta, mask=None):
     """
     Compute the stress-force kernel between two structures
     Args:
@@ -448,8 +459,7 @@ def ksf_single(x1, x2, rdx1dr, dx2dr, sigma2, l2, zeta, grad=False):
     x1_norm = np.linalg.norm(x1, axis=1)
     x2_norm = np.linalg.norm(x2, axis=1)
     D1, d1 = fun_D(x1, x2, x1_norm, x2_norm, zeta)
-    return K_sf(x1, x2, x1_norm, x2_norm, rdx1dr, dx2dr, d1, sigma2, l2, zeta, grad)
-
+    return K_sf(x1, x2, x1_norm, x2_norm, rdx1dr, dx2dr, d1, sigma2, l2, zeta, mask)
     
 def kee_para(args, data): 
     """

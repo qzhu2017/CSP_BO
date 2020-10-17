@@ -115,8 +115,8 @@ def K_ef(x1, x2, x1_norm, x2_norm, dx2dr, d, sigma2, l2, zeta=2, grad=False, mas
     else:
         return Kef/m
 
-def K_se(x1, x2, x1_norm, x2_norm, rdx1dr, d, sigma2, l2, zeta=2, grad=False):
-    dk_dD = fun_dk_dD(x1, x2, x1_norm, x2_norm, sigma2, l2, zeta) # m, n
+def K_se(x1, x2, x1_norm, x2_norm, rdx1dr, d, sigma2, l2, zeta=2, mask=None):
+    dk_dD = fun_dk_dD(x1, x2, x1_norm, x2_norm, sigma2, l2, zeta, mask) # m, n
     dD_dx1, _ = fun_dD_dx1(x1, x2, x1_norm, x2_norm, d, zeta) # m, n, d1
     n = len(x2)
 
@@ -125,8 +125,8 @@ def K_se(x1, x2, x1_norm, x2_norm, rdx1dr, d, sigma2, l2, zeta=2, grad=False):
 
     return Kse/n
 
-def K_sf(x1, x2, x1_norm, x2_norm, rdx1dr, dx2dr, d, sigma2, l2, zeta=2, grad=False):
-    dk_dD = fun_dk_dD(x1, x2, x1_norm, x2_norm, sigma2, l2, zeta) # m, n
+def K_sf(x1, x2, x1_norm, x2_norm, rdx1dr, dx2dr, d, sigma2, l2, zeta=2, mask=None):
+    dk_dD = fun_dk_dD(x1, x2, x1_norm, x2_norm, sigma2, l2, zeta, mask) # m, n
     d2D_dx1dx2 = fun_d2D_dx1dx2(x1, x2, x1_norm, x2_norm, d, zeta) # m, n, d1, d2
     dD_dx1, _ = fun_dD_dx1(x1, x2, x1_norm, x2_norm, d, zeta)      # m, n, d1
     dD_dx2, _ = fun_dD_dx2(x1, x2, x1_norm, x2_norm, d, zeta)      # m, n, d2

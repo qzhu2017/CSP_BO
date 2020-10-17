@@ -4,18 +4,31 @@ from time import time
 from cspbo.utilities import metric_single, build_desc, get_data, plot, plot_two_body
 from cspbo.gaussianprocess_ef import GaussianProcess as gpr
 from cspbo.RBF_mb import RBF_mb
+from scipy.spatial.distance import cdist
 
-N_start, N_step, N_max, zeta = 50, 50, 5000, 2
+def new_pt(data, Refs, d_tol=1e-1):
+    (X, ele) = data
+    X = X/np.linalg.norm(X)
+    for Ref in Refs:
+        (X1, ele1) = Ref
+        if ele1 == ele:
+            X1 = X1/np.linalg.norm(X1)
+            d = X@X1.T
+            if 1-d**2 < d_tol:
+                return False
+    return True
+        
+N_start, N_step, N_max, zeta, ncpu, fac = 4, 1, 240, 2, 10, 2
 
-des = build_desc("SO3", lmax=4, nmax=4, rcut=4.5)
-kernel = RBF_mb(para=[1, 0.5], zeta=zeta, ncpu=12)
-model = gpr(kernel=kernel, descriptor=des, noise_e=[2e-2, 5e-3, 1e-1], f_coef=30)
+des = build_desc("SO3", lmax=3, nmax=3, rcut=4.5)
+kernel = RBF_mb(para=[1, 0.5], zeta=zeta, ncpu=ncpu)
+model = gpr(kernel=kernel, descriptor=des, noise_e=[1e-2, 3e-3, 1e-2], f_coef=20)
 db_file = sys.argv[1]
 
 db_ids = range(N_start)
 pool_ids = range(0, N_max, N_step)  
 
-train_data = get_data(db_file, des, N_force=5, lists=db_ids, select=True)
+train_data = get_data(db_file, des, N_force=5, lists=db_ids, select=True, ncpu=ncpu)
 
 model.fit(train_data)
 E, E1, F, F1 = model.validate_data()
@@ -26,7 +39,7 @@ print("\n")
 
 for id in pool_ids:
     ids = range(id, id+N_step)
-    test_data = get_data(db_file, des, lists=ids, ncpu=1)
+    test_data = get_data(db_file, des, lists=ids, ncpu=10)
     E, E1, E_std, F, F1, F_std = model.validate_data(test_data, return_std=True)
     l1 = metric_single(E, E1, "Test Energy") 
     l2 = metric_single(F, F1, "Test Forces") 
@@ -50,12 +63,22 @@ for id in pool_ids:
             energy_in = True
 
         _std = _std.reshape([Num, 3])
+        xs_added = []
         for f_id in range(Num):
-            if np.max(_std[f_id]) > 2*model.noise_f: 
-                pts_to_add["force"].append(test_data["force"][int(F_count/3)+f_id])
-                force_in.append(f_id)
-                #print("add force data to GP model", _std[f_id])
-                break
+            if np.max(_std[f_id]) > fac*model.noise_f: 
+                X = test_data['energy'][i][0][f_id]
+                ele = test_data['energy'][i][2][f_id]
+                if len(xs_added) == 0:
+                    pts_to_add["force"].append(test_data["force"][int(F_count/3)+f_id])
+                    force_in.append(f_id)
+                    xs_added.append((X, ele))
+                else:
+                    if new_pt((X, ele), xs_added):
+                        pts_to_add["force"].append(test_data["force"][int(F_count/3)+f_id])
+                        force_in.append(f_id)
+                        xs_added.append((X, ele))
+                if len(xs_added) == 6:
+                    break
 
         if energy_in or len(force_in)>0:
             (struc, energy, force, _, _) = test_data["db"][i]
@@ -72,15 +95,18 @@ for id in pool_ids:
 
         model.fit()
         train_E, train_E1, train_F, train_F1 = model.validate_data()
-        l1 = metric_single(train_E, train_E1, "Energy") 
-        l2 = metric_single(train_F, train_F1, "Forces") 
+        l1 = metric_single(train_E, train_E1, "Train Energy") 
+        l2 = metric_single(train_F, train_F1, "Train Forces") 
+        print(model)
 
 model.save("1.json", "test.db")
 
 test_E, test_E1, E_var, test_F, test_F1, F_var = None, None, None, None, None, None
+
+N_step = 20
 for id in range(0, N_max, N_step):
     ids = range(id, id+N_step)
-    test_data = get_data(db_file, des, lists=ids, ncpu=1)
+    test_data = get_data(db_file, des, lists=ids, ncpu=ncpu)
     print("Testing-------", id, id+N_step)
     E, E1, E_std, F, F1, F_std = model.validate_data(test_data, return_std=True)
     metric_single(E, E1, "Test Energy") 
@@ -100,14 +126,14 @@ for id in range(0, N_max, N_step):
         E_var = np.hstack((E_var, E_std))
         F_var = np.hstack((F_var, F_std))
 
-l3 = metric_single(test_E, test_E1, "Energy") 
-l4 = metric_single(test_F, test_F1, "Forces") 
+l3 = metric_single(test_E, test_E1, "Test Energy") 
+l4 = metric_single(test_F, test_F1, "Test Forces") 
 
 plot((train_E, test_E), (train_E1, test_E1), (l1, l3), "E.png")
 plot((train_F, test_F), (train_F1, test_F1), (l2, l4), "F.png")
 plot([np.abs(test_E-test_E1)], [E_var], ["Energy: True .v.s Var"], "E_var.png", False)
 plot([np.abs(test_F-test_F1)], [F_var], ["Forces: True .v.s Var"], "F_var.png", False)
-plot_two_body(model, des, kernel, "2-body.png") 
+#plot_two_body(model, des, kernel, "2-body.png") 
 
 model2 = gpr()
 model2.load("1.json")

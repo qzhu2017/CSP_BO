@@ -256,7 +256,7 @@ class GaussianProcess():
         if stress:
             K_trans, K_trans1 = self.kernel.k_total_with_stress(data, self.train_x)
         else:
-            K_trans = self.kernel.k_total(X, self.train_x)
+            K_trans = self.kernel.k_total(data, self.train_x)
 
         pred = K_trans.dot(self.alpha_)
         y_mean = pred[:, 0]
@@ -272,7 +272,7 @@ class GaussianProcess():
             if self._K_inv is None:
                 L_inv = solve_triangular(self.L_.T, np.eye(self.L_.shape[0]))
                 self._K_inv = L_inv.dot(L_inv.T)
-            y_var = self.kernel.diag(X)
+            y_var = self.kernel.diag(data)
             y_var -= np.einsum("ij,ij->i", np.dot(K_trans, self._K_inv), K_trans)
             y_var_negative = y_var < 0
             y_var[y_var_negative] = 0.0
@@ -303,8 +303,8 @@ class GaussianProcess():
         F: atomic force: 1*3
         N2 is the number of the centered atoms' neighbors within the cutoff
         """
-        (X, dXdR, RdXdR, F, ele) = force_data
-        self.train_x['force'].append((X, dXdR, RdXdR, ele))
+        (X, dXdR, _, F, ele) = force_data
+        self.train_x['force'].append((X, dXdR, None, ele))
         self.train_y['force'].append(F)
         #self.update_y_train()
 
@@ -479,7 +479,8 @@ class GaussianProcess():
                 for id in force_in:
                     ids = np.argwhere(d['seq'][:,1]==id).flatten() 
                     _i = d['seq'][ids, 0]
-                    pts_to_add["force"].append((d['x'][_i,:], d['dxdr'][ids], d['rdxdr'][ids], force[id], ele[_i]))
+                    #pts_to_add["force"].append((d['x'][_i,:], d['dxdr'][ids], d['rdxdr'][ids], force[id], ele[_i]))
+                    pts_to_add["force"].append((d['x'][_i,:], d['dxdr'][ids], None, force[id], ele[_i]))
                 pts_to_add["db"].append((atoms, energy, force, energy_in, force_in))
 
                 if count % 50 == 0:

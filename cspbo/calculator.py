@@ -28,7 +28,10 @@ class GPR(Calculator):
         self.results['energy'] = res[0]
         self.results['free_energy'] = res[0]
         self.results['forces'] = res[1]
-        self.results['stress'] = res[2].sum(axis=0)*eV2GPa
+        if stress:
+            self.results['stress'] = res[2].sum(axis=0)*eV2GPa
+        else:
+            self.results['stress'] = None
 
     def get_var_e(self, total=False):
         if total:

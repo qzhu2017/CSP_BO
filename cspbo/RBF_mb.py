@@ -57,18 +57,9 @@ class RBF_mb():
             NF = len(data["force"])
             C_ff = np.zeros(3*NF)
             for i in range(NF):
-                (x1, dx1dr, ele1) = data["force"][i]
+                (x1, dx1dr, _, ele1) = data["force"][i]
                 mask = get_mask(ele1, ele1)
-                C_ff[i*3:(i+1)*3] = np.diag(kff_single(x1, x1, dx1dr, dx1dr, sigma2, l2, zeta, False, mask))
-
-        if "stress" in data:
-            NS = len(data["stress"])
-            C_ff = np.zeros(6*NS)
-            for i in range(NF):
-                (x1, dx1dr, ele1) = data["stress"][i]
-                mask = get_mask(ele1, ele1)
-                C_ff[i*3:(i+1)*3] = np.diag(kss_single(x1, x1, dx1dr, dx1dr, sigma2, l2, zeta, False, mask))
-
+                C_ff[i*3:(i+1)*3] = np.diag(kff_single(x1, x1, dx1dr, dx1dr, None, None, sigma2, l2, zeta, False, mask))
 
         if C_ff is None:
             return C_ee

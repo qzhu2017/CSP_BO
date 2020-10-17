@@ -156,22 +156,66 @@ def fun_dd_dx2(x1, x2, x1_norm, x2_norm, eps=1e-6):
     return out, out.sum(axis=0)
 
 def fun_d2d_dx1dx2(x1, x2, x1_norm, x2_norm):
-
     x1_norm3 = x1_norm**3        
     x2_norm3 = x2_norm**3      
     x2_norm2 = x2_norm**2      
-
+    
+    # For tmp1
     tmp0 = np.ones(x2.shape)
-    x1x1 = np.einsum("ijl,ik->ijkl", x1[:,None,:]*tmp0[None,:,:], x1)
-    tmp1 = x1x1/x2_norm[None,:,None,None]
-    x1x2 = np.einsum("ik,jl->ijkl", x1, x2/x2_norm3[:,None])
-    tmp2 = np.einsum("ijkl,ij->ijkl", x1x2, x1@x2.T)
-    out1 = (tmp1-tmp2)/(x1_norm3[:,None,None,None])
+    tmp1 = (x1[:,None,:]*(tmp0/x2_norm[:,None])[None,:,:])[:,:,None,:]*(x1/x1_norm3[:,None])[:,None,:,None]
 
-    tmp3 = np.eye(x2.shape[1])[None,:,:] - np.einsum('ij,ik->ijk',x2,x2)/x2_norm2[:,None,None] # n*d1*d2
-    out2 = tmp3[None, :, :, :]/x1_norm[:,None, None,None]/x2_norm[None,:,None,None]
+    # For tmp2
+    x1x2 = (x1/x1_norm3[:,None])[:,None,:,None]*(x2/x2_norm3[:,None])[None,:,None,:]
+    tmp2 = x1x2 * (x1@x2.T)[:,:,None,None]
+    
+    out1 = tmp1-tmp2
+    tmp3 = np.eye(x2.shape[1])[None,:,:] - np.einsum('ij,ik->ijk',x2,x2/x2_norm2[:,None]) # n*d1*d2
+    out2 = tmp3[None,:,:,:]/(x1_norm[:,None]*x2_norm[None,:])[:,:,None,None]
+    out = out2 - out1
+    return out
 
-    return out2 - out1
+#def fun_d2d_dx1dx2(x1, x2, x1_norm, x2_norm):
+#    # New implementation, seems to be ~20% faster  
+#    x1_norm3 = x1_norm**3        
+#    x2_norm3 = x2_norm**3      
+#    x2_norm2 = x2_norm**2      
+#    
+#    # For tmp1
+#    tmp0 = np.ones(x2.shape)
+#    x1x1 = (x1[:,None,:]*tmp0[None,:,:])[:,:,None,:]*(x1 / x1_norm3[:,None])[:,None,:,None]
+#    tmp1 = x1x1/x2_norm[None,:,None,None]
+#
+#    # For tmp2
+#    x1x2 = (x1/x1_norm3[:,None])[:,None,:,None]*(x2/x2_norm3[:,None])[None,:,None,:]
+#    tmp2 = x1x2 * (x1@x2.T)[:,:,None,None]
+#
+#    out1 = tmp1-tmp2
+#
+#    tmp3 = np.eye(x2.shape[1])[None,:,:] - np.einsum('ij,ik->ijk',x2,x2)/x2_norm2[:,None,None] # n*d1*d2
+#    
+#    out2 = tmp3[None,:,:,:]/(x1_norm[:,None]*x2_norm[None,:])[:,:,None,None]
+#    out = out2 - out1
+#
+#    return out
+
+#def fun_d2d_dx1dx2(x1, x2, x1_norm, x2_norm):
+#
+#    x1_norm3 = x1_norm**3        
+#    x2_norm3 = x2_norm**3      
+#    x2_norm2 = x2_norm**2      
+#
+#    tmp0 = np.ones(x2.shape)
+#    x1x1 = np.einsum("ijl,ik->ijkl", x1[:,None,:]*tmp0[None,:,:], x1)
+#    tmp1 = x1x1/x2_norm[None,:,None,None]
+#    x1x2 = np.einsum("ik,jl->ijkl", x1, x2/x2_norm3[:,None])
+#    tmp2 = np.einsum("ijkl,ij->ijkl", x1x2, x1@x2.T)
+#    out1 = (tmp1-tmp2)/(x1_norm3[:,None,None,None])
+#
+#    tmp3 = np.eye(x2.shape[1])[None,:,:] - np.einsum('ij,ik->ijk',x2,x2)/x2_norm2[:,None,None] # n*d1*d2
+#    out2 = tmp3[None, :, :, :]/x1_norm[:,None, None,None]/x2_norm[None,:,None,None]
+#
+#    return out2 - out1
+
 
 def fun_dD_dx1(x1, x2, x1_norm, x2_norm, d, zeta=2):
     out, _ = fun_dd_dx1(x1, x2, x1_norm, x2_norm)

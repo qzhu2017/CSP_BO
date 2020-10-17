@@ -1,0 +1,1 @@
+{"noise": {"energy": 0.008142338423350038, "f_coef": 20, "bounds": [0.003, 0.01]}, "kernel": {"name": "RBF_mb", "sigma": 6.244955524643115, "l": 0.5611029935713949, "zeta": 2, "bounds": [[0.01, 20.0], [0.1, 10.0]]}, "descriptor": {"nmax": 3, "lmax": 3, "rcut": 4.5, "alpha": 2.0, "derivative": true, "stress": true, "_type": "SO3"}, "db_filename": "models/Si.db"}

@@ -1,4 +1,5 @@
 import numpy as np
+from pyxtal.database.element import Element
 from .RBF_mb import RBF_mb
 from scipy.linalg import cholesky, cho_solve, solve_triangular
 from scipy.optimize import minimize
@@ -315,6 +316,7 @@ class GaussianProcess():
             filename: the file to save txt information
             db_filename: the file to save structural information
         """
+        #print(filename)
         with open(filename, "r") as fp:
             dict0 = json.load(fp)
         self.load_from_dict(dict0)
@@ -401,12 +403,15 @@ class GaussianProcess():
                 force_in = row.data.force_in
 
                 d = self.descriptor.calculate(atoms)
+                ele = [Element(ele).z for ele in d['elements']]
+                ele = np.array(ele)
+
                 if energy_in:
-                    pts_to_add["energy"].append((d['x'], energy/len(atoms)))
+                    pts_to_add["energy"].append((d['x'], energy/len(atoms), ele))
                 for id in force_in:
                     ids = np.argwhere(d['seq'][:,1]==id).flatten() 
                     _i = d['seq'][ids, 0]
-                    pts_to_add["force"].append((d['x'][_i,:], d['dxdr'][ids], force[id]))
+                    pts_to_add["force"].append((d['x'][_i,:], d['dxdr'][ids], force[id], ele[_i]))
                 pts_to_add["db"].append((atoms, energy, force, energy_in, force_in))
 
                 if count % 50 == 0:

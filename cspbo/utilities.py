@@ -76,7 +76,7 @@ def build_desc(method='SO3', rcut=5.0, lmax=4, nmax=4, alpha=2.0):
 
     return des
 
-def get_data(db_name, des, N_force=100000, lists=None, select=False, ncpu=1, force_mod=5, stress=False):
+def get_data(db_name, des, N_force=100000, lists=None, select=False, ncpu=1, force_mod=1, stress=False):
     """
     Nmax: Maximum number of force data
     """
@@ -198,7 +198,7 @@ def convert_struc(db_file, des, ids=None, N=None, ncpu=1, stress=False):
                 if N is not None and len(structures) == N:
                     break
 
-    if ncpu == 1:
+    if (ncpu == 1) or (len(structures)==1):
         xs = []
         for i, struc in enumerate(structures):
             strs = '\rDescriptor calculation: {:4d} out of {:4d}'.format(i+1, len(structures))
@@ -291,7 +291,7 @@ def regression(method, data, layers):
         labels=  metrics(y_train, y_test, y_train_pred, y_test_pred, "NN")
     return y_train_pred, y_test_pred, labels
 
-def plot(Xs, Ys, labels, figname='results.png', draw_line=True):
+def plot(Xs, Ys, labels, figname='results.png', draw_line=True, type='Energy'):
     x_mins, x_maxs = [], []
     for x, y, label in zip(Xs, Ys, labels):
         plt.scatter(x, y, alpha=0.8, label=label, s=5)
@@ -304,13 +304,20 @@ def plot(Xs, Ys, labels, figname='results.png', draw_line=True):
         #plt.plot(xs, xs-0.10, 'g--')
         plt.xlim(min(x_mins)-0.1, max(x_maxs)+0.1)
         plt.ylim(min(x_mins)-0.1, max(x_maxs)+0.1)
-    plt.xlabel('True (eV/atom)') 
-    plt.ylabel('Prediction (eV/atom)')
+    if type == "Energy":
+        unit = "(eV/atom)"
+    elif type == 'Force':
+        unit = "(eV/A)"
+    elif type == 'stress':
+        unit = "GPa"
+    plt.xlabel('True' + unit) 
+    plt.ylabel('Prediction' + unit)
     plt.legend(loc=2)
     plt.tight_layout() 
     plt.savefig(figname)
     plt.close()
     print("save the figure to ", figname)
+
 
 def write_db(data, db_filename='viz.db', permission='w'):
     import os

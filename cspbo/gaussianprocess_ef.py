@@ -101,7 +101,11 @@ class GaussianProcess():
             pred1 = K_trans1.dot(self.alpha_)
         else:
             K_trans = self.kernel.k_total(X, self.train_x)
-
+        #print(K_trans[0,:])
+        #print(self.alpha_[:,0])
+        #print(K_trans[0,:]*self.alpha_[:,0])
+        #import sys
+        #sys.exit()
         pred = K_trans.dot(self.alpha_)
         y_mean = pred[:, 0]
 
@@ -110,8 +114,6 @@ class GaussianProcess():
             Npts += len(X["energy"])
         if 'force' in X:
             Npts += 3*len(X["force"])
-        if 'stress' in X:
-            Npts += 6*len(X["stress"])
 
         factors = np.ones(Npts)
 
@@ -469,6 +471,7 @@ class GaussianProcess():
                 force = row.data.force
                 energy_in = row.data.energy_in
                 force_in = row.data.force_in
+
 
                 d = self.descriptor.calculate(atoms)
                 ele = [Element(ele).z for ele in d['elements']]

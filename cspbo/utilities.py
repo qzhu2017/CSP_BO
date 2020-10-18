@@ -227,7 +227,13 @@ def get_strucs(db_file, N_max=None):
         for row in db.select():
             s = db.get_atoms(id=row.id)
             structures.append(s)
-            values.append((row.data.energy, np.array(row.data.force), np.array(row.data.stress)))
+            E = row.data.energy
+            F = np.array(row.data.force)
+            if "stress" in row.data.keys():
+                S = np.array(row.data.stress)
+            else:
+                S = None
+            values.append((E, F, S))
             if (N_max is not None) and (len(values) == N_max):
                 break
     return structures, values

@@ -4,6 +4,7 @@ from ase.build import bulk
 from cspbo.gaussianprocess_ef import GaussianProcess as gpr
 from cspbo.calculator import GPR
 from ase.optimize import BFGS, FIRE
+from cspbo.mushybox import mushybox
 from cspbo.utilities import rmse, metric_single, get_strucs, plot
 
 
@@ -37,8 +38,9 @@ pos[0] += 0.1
 si.set_positions(pos)
 
 print(si.get_potential_energy())
-dyn = FIRE(si)
-dyn.run(fmax=0.05, steps=10)
+box = mushybox(si)
+dyn = FIRE(box)
+dyn.run(fmax=0.05, steps=50)
 
 print(si.get_potential_energy())
 
@@ -46,7 +48,6 @@ print(si.get_potential_energy())
 # --------------------------- Example of MD
 from ase.md.velocitydistribution import MaxwellBoltzmannDistribution
 from ase.md.verlet import VelocityVerlet
-from ase.optimize import BFGS, FIRE
 from ase import units
 from time import time
 

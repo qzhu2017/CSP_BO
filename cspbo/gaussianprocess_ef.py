@@ -247,9 +247,10 @@ class GaussianProcess():
         for i in range(len(struc)):
             ids = np.argwhere(d['seq'][:,1]==i).flatten()
             _i = d['seq'][ids, 0] 
-            _x, _dxdr, _rdxdr, ele0 = d['x'][_i,:], d['dxdr'][ids], d['rdxdr'][ids], ele[_i]
+            _x, _dxdr, ele0 = d['x'][_i,:], d['dxdr'][ids], ele[_i]
 
             if stress:
+                _rdxdr = d['rdxdr'][ids]
                 _rdxdr = _rdxdr.reshape([len(ids), l, 9])[:, :, [0, 4, 8, 1, 2, 5]]
                 data["force"].append((_x, _dxdr, _rdxdr, ele0))
             else:

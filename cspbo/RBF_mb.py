@@ -4,7 +4,7 @@ from functools import partial
 from multiprocessing import Pool, cpu_count
 
 class RBF_mb():
-    def __init__(self, para=[1., 1.], bounds=[[1e-2, 2e+1], [1e-1, 1e+1]], zeta=3, ncpu=1):
+    def __init__(self, para=[1., 1.], bounds=[[1e-2, 5e+1], [1e-1, 1e+1]], zeta=3, ncpu=1):
         self.name = 'RBF_mb'
         self.bounds = bounds
         self.update(para)

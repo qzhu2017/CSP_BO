@@ -7,14 +7,14 @@ from cspbo.calculator import GPR
 
 np.set_printoptions(formatter={'float': '{: 5.2f}'.format})
 
-N_max, ncpu = 5, 12
+N_max, ncpu = 50, 12
 m_file = sys.argv[1]
 db_file = sys.argv[2]
 model = gpr()
 model.load(m_file, N_max=None)
 model.kernel.ncpu = ncpu
 
-train_E, train_E1, train_F, train_F1, _, _ = model.validate_data()
+train_E, train_E1, train_F, train_F1 = model.validate_data()
 l1 = metric_single(train_E, train_E1, "Train Energy") 
 l2 = metric_single(train_F, train_F1, "Train Forces") 
 

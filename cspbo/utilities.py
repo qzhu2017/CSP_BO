@@ -76,15 +76,14 @@ def build_desc(method='SO3', rcut=5.0, lmax=4, nmax=4, alpha=2.0):
 
     return des
 
-def get_data(db_name, des, N_force=100000, lists=None, select=False, ncpu=1, force_mod=1, stress=False):
+def get_data(db_name, des, N_force=100000, lists=None, select=False, ncpu=1):
     """
     Nmax: Maximum number of force data
     """
-    X, Y, structures = convert_struc(db_name, des, lists, ncpu=ncpu, stress=stress)
+    X, Y, structures = convert_struc(db_name, des, lists, ncpu=ncpu)
     print('\n')
     energy_data = []
     force_data = []
-    stress_data = []
     db_data = []
 
     for id in range(len(X)):
@@ -97,26 +96,15 @@ def get_data(db_name, des, N_force=100000, lists=None, select=False, ncpu=1, for
             ids = range(len(X[id]['x']))
         f_ids = []
         for i in ids:
-            if len(force_data) < N_force and id%force_mod==0:
+            if len(force_data) < N_force:
                 ids = np.argwhere(X[id]['seq'][:,1]==i).flatten()
                 _i = X[id]['seq'][ids, 0] 
-                force_data.append((X[id]['x'][_i,:], X[id]['dxdr'][ids], Y['forces'][id][i], ele[_i]))
+                force_data.append((X[id]['x'][_i,:], X[id]['dxdr'][ids], None, Y['forces'][id][i], ele[_i]))
+                #force_data.append((X[id]['x'][_i,:], X[id]['dxdr'][ids], Y['forces'][id][i], ele[_i]))
                 f_ids.append(i)
 
-            if stress:
-                _n, l = X[id]['x'].shape
-                rdxdr = np.zeros([_n, l, 3, 3])
-                for _m in range(_n):
-                    _ids = np.where(X[id]['seq'][:,0]==_m)[0]
-                    rdxdr[_m, :, :, :] += np.einsum('ijkl->jkl', X[id]['rdxdr'][_ids, :, :, :])
-                rdxdr = rdxdr.reshape([_n, l, 9])[:, :, [0, 4, 8, 1, 2, 5]]
-                stress_data.append((X[id]['x'], rdxdr, Y['stress'][id], ele))
-
         db_data.append((structures[id], Y['energy'][id], Y['forces'][id], True, f_ids))
-    if stress:
-        train_data = {"energy": energy_data, "force": force_data, "stress": stress_data, "db": db_data}
-    else:
-        train_data = {"energy": energy_data, "force": force_data, "db": db_data}
+    train_data = {"energy": energy_data, "force": force_data, "db": db_data}
     return train_data
 
 

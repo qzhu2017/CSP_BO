@@ -195,43 +195,31 @@ class GaussianProcess():
         if test_data is None:
             test_X_E = {"energy": self.train_x['energy']}
             test_X_F = {"force": self.train_x['force']}
-            test_X_S = {"stress": []}
             E = self.y_train[:len(test_X_E['energy'])].flatten()
             F = self.y_train[len(test_X_E['energy']):].flatten()
-            S = None
         else:
             test_X_E = {"energy": [(data[0], data[2]) for data in test_data['energy']]}
-            test_X_F = {"force": [(data[0], data[1], data[3]) for data in test_data['force']]}
-            if "stress" in test_data.keys():
-                test_X_S = {"stress": [(data[0], data[1], data[3]) for data in test_data['stress']]}
-                S = np.array([data[2] for data in test_data['stress']]).flatten()
-            else:
-                test_X_S = {"stress": []}
-                S = None
+            test_X_F = {"force": [(data[0], data[1], data[2], data[4]) for data in test_data['force']]}
             E = np.array([data[1] for data in test_data['energy']])
-            F = np.array([data[2] for data in test_data['force']]).flatten()
+            F = np.array([data[3] for data in test_data['force']]).flatten()
 
         if total_E:
             for i in range(len(E)):
                 E[i] *= len(test_X_E['energy'][i])
                 
-        E_Pred, E_std, F_Pred, F_std, S_Pred, S_std = None, None, None, None, None, None
+        E_Pred, E_std, F_Pred, F_std = None, None, None, None
         if return_std:
             if len(test_X_E['energy']) > 0:
                 E_Pred, E_std = self.predict(test_X_E, total_E=total_E, return_std=True)  
             if len(test_X_F['force']) > 0:
                 F_Pred, F_std = self.predict(test_X_F, return_std=True)
-            if len(test_X_S['stress']) > 0:
-                S_Pred, S_std = self.predict(test_X_S, return_std=True)
-            return E, E_Pred, E_std, F, F_Pred, F_std, S, S_Pred, S_std
+            return E, E_Pred, E_std, F, F_Pred, F_std
         else:
             if len(test_X_E['energy']) > 0:
                 E_Pred = self.predict(test_X_E, total_E=total_E)  
             if len(test_X_F['force']) > 0:
                 F_Pred = self.predict(test_X_F)
-            if len(test_X_S['stress']) > 0:
-                S_Pred = self.predict(test_X_S)
-            return E, E_Pred, F, F_Pred, S, S_Pred
+            return E, E_Pred, F, F_Pred
 
     def predict_structure(self, struc, stress=True, return_std=False):
         """

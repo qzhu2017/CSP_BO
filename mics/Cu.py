@@ -64,7 +64,7 @@ def printenergy(a):
           'Etot = %.3feV' % (epot, ekin, ekin / (1.5 * units.kB), epot + ekin))
 
 
-des = build_desc("SO3", lmax=4, nmax=4, rcut=5.0)
+des = build_desc("SO3", lmax=3, nmax=3, rcut=4.0)
 print(des)
 
 #atoms = Icosahedron('Ar', noshells=2, latticeconstant=3)
@@ -75,12 +75,12 @@ atoms = FaceCenteredCubic(directions=[[1, 0, 0], [0, 1, 0], [0, 0, 1]],
                           size=(size, size, size),
                           pbc=True)
 atoms.set_calculator(EMT())
-MaxwellBoltzmannDistribution(atoms, 300*units.kB)
-dyn = VelocityVerlet(atoms, 2*units.fs)  # 2 fs time step.
+MaxwellBoltzmannDistribution(atoms, 600*units.kB)
+dyn = VelocityVerlet(atoms, 1*units.fs)  # 2 fs time step.
 
 # Collect the training data from the 1st 2000 steps
 strucs = []
-for i in range(20):
+for i in range(10):
     dyn.run(steps=10)
     printenergy(atoms)
     strucs.append(atoms.copy())
@@ -93,27 +93,54 @@ train_data, train_pt_E, train_pt_F, train_Y_E, train_Y_F = get_data(db_name, des
 kernel = RBF_mb(para=[1.0, 1.0])
 model = gpr(kernel=kernel)
 model.fit(train_data)
+E, E1, F, F1 = model.validate_data()
+metric_single(E, E1, "Train Energy") 
+metric_single(F, F1, "Train Forces") 
+            
+E_tol = 1e-2
+Ev_tol = 1e-1
+F_tol = 1e-1
 
-train_pred = model.predict(train_pt_E)
-metric_single(train_Y_E, train_pred, "Train Energy")
-train_pred = model.predict(train_pt_F)
-metric_single(train_Y_F, train_pred, "Train Forces")
+for i in range(1000):
+    dyn.run(steps=10)
+    printenergy(atoms)
+    if i%10 == 0:
+        #atoms.set_calculator(EMT())
+        d = des.calculate(atoms)
+        energy_data = [(d['x'], atoms.get_potential_energy())]
+        force_data = []
+        forces = atoms.get_forces()
+        for i in range(len(d['x'])):
+            ids = np.argwhere(d['seq'][:,1]==i).flatten()
+            _i = d['seq'][ids, 0] 
+            force_data.append((d['x'][_i,:], d['dxdr'][ids], forces[i]))
 
+        test_data = {"energy": energy_data, "force": force_data}
+        E, E1, E_std, F, F1, F_std = model.validate_data(test_data, return_std=True)
 
-for i in range(30):
-    t0 = time()
-    strucs = []
-    for i in range(10):
-        dyn.run(steps=10)
-        printenergy(atoms)
-        strucs.append(atoms.copy())
-    db_name = "test.db"
-    save_db(db_name, strucs)
-    _, test_pt_E, test_pt_F, test_Y_E, test_Y_F = get_data(db_name, des)
+        diff_E = E[0] - E1[0]
+        print("\nML Energy: {:6.3f} -> {:6.3f} ======== diff: {:6.3f}  Variance: {:6.3f}".format(E[0], E1[0], diff_E, E_std[0]))
+        metric_single(F, F1, "ML Forces", True)
+        print("\n")
+        update = False
+        #if abs(diff_E) > E_tol:
+        if E_std[0] > Ev_tol or abs(diff_E) > E_tol:
+            print("add energy data to GP model")
+            model.add_train_pts_energy(energy_data[0])
+            update=True
+        diffs_F = np.abs(F-F1)
+        if np.max(diffs_F) > F_tol:
+            id0 = np.argmax(diffs_F)
+            id = int(np.floor(id0/3))
+            print("add force data to GP model", diffs_F[id0], F_std[id0])
+            model.add_train_pts_force(test_data["force"][id])
+            update=True
+        if update:
+            model.fit()
+            E, E1, F, F1 = model.validate_data()
+            metric_single(E, E1, "Train Energy") 
+            metric_single(F, F1, "Train Forces") 
+            print("\n")
+            
 
-    test_pred = model.predict(test_pt_E)
-    metric_single(test_Y_E, test_pred, "Test Energy")
-    test_pred = model.predict(test_pt_F)
-    metric_single(test_Y_F, test_pred, "Test Forces")
-    print("\n=================={:6.2f} seconds elapsed================\n".format(time()-t0))
-
+print(model)

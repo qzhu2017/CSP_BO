@@ -12,6 +12,18 @@ mpl.use("Agg")
 import matplotlib.pyplot as plt
 plt.style.use("ggplot")
 
+def new_pt(data, Refs, d_tol=1e-1, eps=1e-8):
+    (X, ele) = data
+    X = X/(np.linalg.norm(X)+eps)
+    for Ref in Refs:
+        (X1, ele1) = Ref
+        if ele1 == ele:
+            X1 = X1/np.linalg.norm(X1+eps)
+            d = X@X1.T
+            if 1-d**2 < d_tol:
+                return False
+    return True
+ 
 def Cosine(Rij, Rc):
     # Rij is the norm 
     ids = (Rij > Rc)
@@ -75,6 +87,41 @@ def build_desc(method='SO3', rcut=5.0, lmax=4, nmax=4, alpha=2.0):
         des = SO4_Bispectrum(lmax=lmax, rcut=rcut, derivative=True, stress=True) 
 
     return des
+
+def convert_train_data(data, des,  N_force=100000):
+    """
+    Nmax: Maximum number of force data
+    """
+    energy_data = []
+    force_data = []
+    db_data = []
+    xs_added = []
+
+    for _data in data:
+        (struc, energy, forces) = _data
+        d = des.calculate(struc) 
+        ele = [Element(ele).z for ele in d['elements']]
+        ele = np.array(ele)
+        f_ids = []
+        for i in range(len(struc)):
+            if len(force_data) < N_force:
+                ids = np.argwhere(d['seq'][:,1]==i).flatten()
+                _i = d['seq'][ids, 0] 
+                if len(xs_added) == 0:
+                    force_data.append((d['x'][_i,:], d['dxdr'][ids], None, forces[i], ele[_i]))
+                    f_ids.append(i)
+                else:
+                    if new_pt((X, ele[i]), xs_added):
+                        force_data.append((d['x'][_i,:], d['dxdr'][ids], None, forces[i], ele[_i]))
+                        f_ids.append(i)
+                        xs_added.append((X, ele[i]))
+
+        energy_data.append((d['x'], energy/len(struc), ele)) 
+        db_data.append((struc, energy, forces, True, f_ids))
+
+    train_data = {"energy": energy_data, "force": force_data, "db": db_data}
+    return train_data
+
 
 def get_data(db_name, des, N_force=100000, lists=None, select=False, ncpu=1):
     """

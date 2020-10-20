@@ -37,7 +37,7 @@ def fun_d2k_dDdl(x1, x2, x1_norm, x2_norm, sigma2, l2, zeta=2, mask=None):
         k[mask] = 0
     return -0.5*D*k/l2/l3 + k/l3
 
-def K_ee(x1, x2, sigma2, l2, zeta=2, grad=False, mask=None):
+def K_ee(x1, x2, sigma2, l2, zeta=2, grad=False, mask=None, eps=1e-8):
     """
     Compute the Kee between two structures
     Args:
@@ -48,8 +48,8 @@ def K_ee(x1, x2, sigma2, l2, zeta=2, grad=False, mask=None):
         zeta: power term, float
         mask: to set the kernel zero if the chemical species are different
     """
-    x1_norm = np.linalg.norm(x1, axis=1)
-    x2_norm = np.linalg.norm(x2, axis=1)
+    x1_norm = np.linalg.norm(x1, axis=1) + eps
+    x2_norm = np.linalg.norm(x2, axis=1) + eps
     _, d = fun_D(x1, x2, x1_norm, x2_norm, zeta)
 
 
@@ -73,9 +73,9 @@ def K_ee(x1, x2, sigma2, l2, zeta=2, grad=False, mask=None):
     else:
         return Kee/mn
 
-def K_ff(x1, x2, dx1dr, dx2dr, rdx1dr, rdx2dr, sigma2, l2, zeta=2, grad=False, mask=None):
-    x1_norm = np.linalg.norm(x1, axis=1)
-    x2_norm = np.linalg.norm(x2, axis=1)
+def K_ff(x1, x2, dx1dr, dx2dr, rdx1dr, rdx2dr, sigma2, l2, zeta=2, grad=False, mask=None, eps=1e-8):
+    x1_norm = np.linalg.norm(x1, axis=1) + eps
+    x2_norm = np.linalg.norm(x2, axis=1) + eps
     _, d = fun_D(x1, x2, x1_norm, x2_norm, zeta)
 
     dk_dD = fun_dk_dD(x1, x2, x1_norm, x2_norm, sigma2, l2, zeta, mask) #m, n
@@ -111,10 +111,10 @@ def K_ff(x1, x2, dx1dr, dx2dr, rdx1dr, rdx2dr, sigma2, l2, zeta=2, grad=False, m
             Ksf = np.einsum("ijk,ijl->kl", s_tmp, dx2dr) #[6,3]
             return Kff, Ksf
 
-def K_ef(x1, x2, dx2dr, rdx2dr, sigma2, l2, zeta=2, grad=False, mask=None):
+def K_ef(x1, x2, dx2dr, rdx2dr, sigma2, l2, zeta=2, grad=False, mask=None, eps=1e-8):
 
-    x1_norm = np.linalg.norm(x1, axis=1)
-    x2_norm = np.linalg.norm(x2, axis=1)
+    x1_norm = np.linalg.norm(x1, axis=1) + eps
+    x2_norm = np.linalg.norm(x2, axis=1) + eps
     _, d = fun_D(x1, x2, x1_norm, x2_norm, zeta)
 
     dk_dD = fun_dk_dD(x1, x2, x1_norm, x2_norm, sigma2, l2, zeta, mask) #m, n

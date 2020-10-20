@@ -1,6 +1,7 @@
 import numpy as np
 from pyxtal.database.element import Element
 from .RBF_mb import RBF_mb
+from .utilities import new_pt
 from scipy.linalg import cholesky, cho_solve, solve_triangular
 from scipy.optimize import minimize
 import warnings
@@ -481,3 +482,44 @@ class GaussianProcess():
                     break
 
         self.set_train_pts(pts_to_add, "w")
+
+    def add_structure(self, data, N_max=6):
+        """
+        add the training points from a given structure
+        """
+               
+        pts_to_add = {"energy": [], "force": [], "db": []}
+        (atoms, energy, force) = data
+        energy_in = True
+        force_in = []
+
+        d = self.descriptor.calculate(atoms)
+        ele = [Element(ele).z for ele in d['elements']]
+        ele = np.array(ele)
+
+        pts_to_add["energy"].append((d['x'], energy/len(atoms), ele))
+        xs_added = []
+        for f_id in range(len(atoms)):
+            if len(force_in) <= N_max:
+                include = False
+                X = d['x'][f_id]
+                _ele = ele[f_id]
+                if len(xs_added) == 0:
+                    include = True
+                else:
+                    if new_pt((X, _ele), xs_added):
+                        include = True
+                if include:
+                    force_in.append(f_id)
+                    xs_added.append((X, _ele))
+                    ids = np.argwhere(d['seq'][:,1]==f_id).flatten() 
+                    _i = d['seq'][ids, 0]
+                    pts_to_add["force"].append((d['x'][_i,:], d['dxdr'][ids], None, force[f_id], ele[_i]))
+        pts_to_add["db"].append((atoms, energy, force, energy_in, force_in))
+
+        self.set_train_pts(pts_to_add, "a+")
+
+        strs = "==== 1 energy and {:d} forces were added".format(len(force_in))
+        print(strs)
+
+

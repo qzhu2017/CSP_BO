@@ -21,9 +21,10 @@ def new_pt(data, Refs, d_tol=1e-1):
 #N_start, N_step, N_max, zeta, ncpu, fac = 4, 1, 2554, 2, 10, 1.2
 N_start, N_step, N_max, zeta, ncpu, fac = 4, 1, 50, 2, 10, 1.2
 
-des = build_desc("SO3", lmax=3, nmax=3, rcut=4.5)
+des = build_desc("SO3", lmax=3, nmax=3, rcut=4.0)
 kernel = RBF_mb(para=[1, 0.5], zeta=zeta, ncpu=ncpu)
-model = gpr(kernel=kernel, descriptor=des, noise_e=[5e-3, 2e-3, 5e-3], f_coef=20)
+#model = gpr(kernel=kernel, descriptor=des, noise_e=[5e-3, 2e-3, 5e-3], f_coef=20)
+model = gpr(kernel=kernel, descriptor=des, noise_e=[5e-3, 2e-3, 2e-2], f_coef=30)
 db_file = sys.argv[1]
 
 db_ids = range(N_start)

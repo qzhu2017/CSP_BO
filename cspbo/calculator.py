@@ -42,4 +42,10 @@ class GPR(Calculator):
     def get_var_f(self):
         return self.results["var_f"]
 
+    def get_e(self, peratom=True):
+        if peratom:
+            return self.results["energy"]/len(self.results["forces"])
+        else:
+            return self.results["energy"]
+
 

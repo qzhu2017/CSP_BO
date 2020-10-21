@@ -77,6 +77,9 @@ def K_ff(x1, x2, dx1dr, dx2dr, rdx1dr, rdx2dr, sigma2, l2, zeta=2, grad=False, m
     if grad:
         K_ff_0 = np.einsum("ijkl,ikm->ijlm", tmp, dx1dr) # m, n, d2, 3
         K_ff_0 = np.einsum("ijkl,jkm->ijlm", K_ff_0, dx2dr) # m, n, 3, 3
+        #K_ff_0 = np.einsum("ikm,ijkl,jln->ijmn", dx1dr, tmp, dx2dr)
+        #K_ff_0 = np.einsum("ikm,ijkl,jln->ijmn", dx1dr, tmp, dx2dr, optimize='optimal')
+
         Kff = np.einsum("ijkl,ij->kl", K_ff_0, dk_dD) # 3, 3
 
         d2k_dDdsigma = fun_d2k_dDdsigma(dk_dD, sigma2) #m,n
@@ -87,18 +90,22 @@ def K_ff(x1, x2, dx1dr, dx2dr, rdx1dr, rdx2dr, sigma2, l2, zeta=2, grad=False, m
         tmp1 = dD_dx1[:,:,:,None]*dD_dx2[:,:,None,:]
         K_ff_1 = np.einsum("ijkl,ikm->ijlm", tmp1, dx1dr)
         K_ff_1 = np.einsum("ijkl,jkm->ijlm", K_ff_1, dx2dr)
+        #K_ff_1 = np.einsum("ikm,ijkl,jln->ijmn", dx1dr, tmp1, dx2dr, optimize='optimal')
+
         dKff_dl += np.einsum("ijkl,ij->kl", K_ff_1, dk_dD)/l2/np.sqrt(l2)
 
         return Kff, dKff_dsigma, dKff_dl
     else:
         tmp0 = np.einsum("ijkl,ij->ijkl", tmp, dk_dD) #m,n,d1,d2
-        tmp = np.einsum("ijkl,ikm->jlm", tmp0, dx1dr) #m,n,d1,d2  m,d1,3 -> n, d2, 3
-        Kff = np.einsum("ijk,ijl->kl", tmp, dx2dr) #n d2, 3   n d2 3
+        #tmp = np.einsum("ijkl,ikm->jlm", tmp0, dx1dr) #m,n,d1,d2  m,d1,3 -> n, d2, 3
+        #Kff = np.einsum("ijk,ijl->kl", tmp, dx2dr) #n d2, 3   n d2 3
+        Kff = np.einsum("ikm,ijkl,jln->mn", dx1dr, tmp0, dx2dr, optimize='greedy')
         if rdx1dr is None:
             return Kff
         else:
-            s_tmp = np.einsum("ijkl,ikm->jlm", tmp0, rdx1dr) #m,n,d1,d2  m,d1,6 -> n, d2, 3
-            Ksf = np.einsum("ijk,ijl->kl", s_tmp, dx2dr) #[6,3]
+            #s_tmp = np.einsum("ijkl,ikm->jlm", tmp0, rdx1dr) #m,n,d1,d2  m,d1,6 -> n, d2, 3
+            #Ksf = np.einsum("ijk,ijl->kl", s_tmp, dx2dr) #[6,3]
+            Ksf = np.einsum("ikm,ijkl,jln->mn", rdx1dr, tmp0, dx2dr, optimize='greedy') #[6,3]
             return Kff, Ksf
 
 def K_ef(x1, x2, dx2dr, rdx2dr, sigma2, l2, zeta=2, grad=False, mask=None, eps=1e-8):

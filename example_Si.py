@@ -23,7 +23,7 @@ model = gpr()
 model.load(options.file, N_max=None)
 model.kernel.ncpu = options.ncpu
 
-train_E, train_E1, train_F, train_F1, _, _ = model.validate_data()
+train_E, train_E1, train_F, train_F1 = model.validate_data()
 l1 = metric_single(train_E, train_E1, "Train Energy") 
 l2 = metric_single(train_F, train_F1, "Train Forces") 
 

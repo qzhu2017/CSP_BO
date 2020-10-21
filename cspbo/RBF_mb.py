@@ -204,6 +204,9 @@ class RBF_mb():
         C = np.zeros([3*m1, 3*m2])
         C_s = np.zeros([3*m1, 3*m2])
         C_l = np.zeros([3*m1, 3*m2])
+        a, b, c = X1[0][1], np.einsum("ik,jl->ijkl", X1[0][0], X2[0][0]), X2[0][1]
+        path = np.einsum_path('ikm,ijkl,jln->mn', a, b, c, optimize='greedy')[0]
+
 
         # This loop is rather expansive, a simple way is to do multi-process
         if same:
@@ -223,7 +226,7 @@ class RBF_mb():
                 (x1, dx1dr, _, ele1) = X1[i]
                 (x2, dx2dr, _, ele2) = X2[j]
                 mask = get_mask(ele1, ele2)
-                results.append(kff_single(x1, x2, dx1dr, dx2dr, None, None, sigma2, l2, zeta, grad, mask))
+                results.append(kff_single(x1, x2, dx1dr, dx2dr, None, None, sigma2, l2, zeta, grad, mask, path))
         else:
             #print("Parallel version is on: ")
             fun_vars = []
@@ -234,7 +237,7 @@ class RBF_mb():
                 fun_vars.append((x1, x2, dx1dr, dx2dr, None, None, mask))
 
             with Pool(self.ncpu) as p:
-                func = partial(kff_para, (sigma2, l2, zeta, grad))
+                func = partial(kff_para, (sigma2, l2, zeta, grad, path))
                 results = p.map(func, fun_vars)
                 p.close()
                 p.join()
@@ -252,10 +255,6 @@ class RBF_mb():
                 C[i*3:(i+1)*3, j*3:(j+1)*3] = res
             if same and (i != j):
                 C[j*3:(j+1)*3, i*3:(i+1)*3] = C[i*3:(i+1)*3, j*3:(j+1)*3].T
-
-        #print("================", time()-t0, self.ncpu, len(_is))
-        #import sys
-        #sys.exit()
 
         if grad:
             return C, C_s, C_l                  
@@ -283,6 +282,11 @@ class RBF_mb():
         indices = np.indices((m1, m2))
         _is = indices[0].flatten()
         _js = indices[1].flatten()
+        a = np.einsum("ik,jk->ijk", X1[0][0], X2[0][0])
+        b = X2[0][1]
+        c = np.einsum("ik,jk->ij", X1[0][0], X2[0][0])
+        path = np.einsum_path('ijk,jkl,ij->l', a, b, c, optimize='greedy')[0]
+
 
         if self.ncpu == 1:
             results = []
@@ -290,7 +294,7 @@ class RBF_mb():
                 (x1, ele1) = X1[i]
                 (x2, dx2dr, _, ele2) = X2[j]
                 mask = get_mask(ele1, ele2)
-                results.append(kef_single(x1, x2, dx2dr, None, sigma2, l2, zeta, grad, mask))
+                results.append(kef_single(x1, x2, dx2dr, None, sigma2, l2, zeta, grad, mask, path))
         else:
             #print("Parallel version is on: ")
             fun_vars = []
@@ -301,7 +305,7 @@ class RBF_mb():
                 fun_vars.append((x1, x2, dx2dr, None, mask))
 
             with Pool(self.ncpu) as p:
-                func = partial(kef_para, (sigma2, l2, zeta, grad))
+                func = partial(kef_para, (sigma2, l2, zeta, grad, path))
                 results = p.map(func, fun_vars)
                 p.close()
                 p.join()
@@ -352,7 +356,12 @@ class RBF_mb():
         m1, m2 = len(X1), len(X2)
         C = np.zeros([m1, 3*m2])
         C1 = np.zeros([m1, 6*m2])
-        
+        a = np.einsum("ik,jk->ijk", X1[0][0], X2[0][0])
+        b = X2[0][1]
+        c = np.einsum("ik,jk->ij", X1[0][0], X2[0][0])
+        path = np.einsum_path('ijk,jkl,ij->l', a, b, c, optimize='greedy')[0]
+
+       
         # This loop is rather expansive, a simple way is to do multi-process
         indices = np.indices((m1, m2))
         _is = indices[0].flatten()
@@ -364,7 +373,7 @@ class RBF_mb():
                 (x1, ele1) = X1[i]
                 (x2, dx2dr, rdx2dr, ele2) = X2[j]
                 mask = get_mask(ele1, ele2)
-                results.append(kef_single(x1, x2, dx2dr, rdx2dr, sigma2, l2, zeta, False, mask))
+                results.append(kef_single(x1, x2, dx2dr, rdx2dr, sigma2, l2, zeta, False, mask, path))
         else:
             #print("Parallel version is on: ")
             fun_vars = []
@@ -375,7 +384,7 @@ class RBF_mb():
                 fun_vars.append((x1, x2, dx2dr, rdx2dr, mask))
 
             with Pool(self.ncpu) as p:
-                func = partial(kef_para, (sigma2, l2, zeta, False))
+                func = partial(kef_para, (sigma2, l2, zeta, False, path))
                 results = p.map(func, fun_vars)
                 p.close()
                 p.join()
@@ -405,6 +414,8 @@ class RBF_mb():
         m1, m2 = len(X1), len(X2)
         C = np.zeros([3*m1, 3*m2])
         C1 = np.zeros([6*m1, 3*m2])
+        a, b, c = X1[0][1], np.einsum("ik,jl->ijkl", X1[0][0], X2[0][0]), X2[0][1]
+        path = np.einsum_path('ikm,ijkl,jln->mn', a, b, c, optimize='greedy')[0]
 
         # This loop is rather expansive, a simple way is to do multi-process
         indices = np.indices((m1, m2))
@@ -417,7 +428,7 @@ class RBF_mb():
                 (x1, dx1dr, rdx1dr, ele1) = X1[i]
                 (x2, dx2dr, rdx2dr, ele2) = X2[j]
                 mask = get_mask(ele1, ele2)
-                results.append(kff_single(x1, x2, dx1dr, dx2dr, rdx1dr, rdx2dr, sigma2, l2, zeta, False, mask))
+                results.append(kff_single(x1, x2, dx1dr, dx2dr, rdx1dr, rdx2dr, sigma2, l2, zeta, False, mask, path))
         else:
             #print("Parallel version is on: ")
             fun_vars = []
@@ -428,7 +439,7 @@ class RBF_mb():
                 fun_vars.append((x1, x2, dx1dr, dx2dr, rdx1dr, rdx2dr, mask))
 
             with Pool(self.ncpu) as p:
-                func = partial(kff_para, (sigma2, l2, zeta, False))
+                func = partial(kff_para, (sigma2, l2, zeta, False, path))
                 results = p.map(func, fun_vars)
                 p.close()
                 p.join()
@@ -462,7 +473,7 @@ def kee_para(args, data):
     return K_ee(x1, x2, sigma2, l2, zeta, grad, mask)
  
 
-def kef_single(x1, x2, dx2dr, rdx2dr, sigma2, l2, zeta, grad=False, mask=None):
+def kef_single(x1, x2, dx2dr, rdx2dr, sigma2, l2, zeta, grad=False, mask=None, path=None): 
     """
     Args:
         x1: N*d
@@ -471,18 +482,18 @@ def kef_single(x1, x2, dx2dr, rdx2dr, sigma2, l2, zeta, grad=False, mask=None):
     Returns:
         Kef: 3
     """
-    return K_ef(x1, x2, dx2dr, rdx2dr, sigma2, l2, zeta, grad, mask)
+    return K_ef(x1, x2, dx2dr, rdx2dr, sigma2, l2, zeta, grad, mask, path)
 
 def kef_para(args, data): 
     """
     para version
     """
     (x1, x2, dx2dr, rdx2dr, mask) = data
-    (sigma2, l2, zeta, grad) = args
-    return K_ef(x1, x2, dx2dr, rdx2dr, sigma2, l2, zeta, grad, mask)
+    (sigma2, l2, zeta, grad, path) = args
+    return K_ef(x1, x2, dx2dr, rdx2dr, sigma2, l2, zeta, grad, mask, path)
  
 
-def kff_single(x1, x2, dx1dr, dx2dr, rdx1dr, rdx2dr, sigma2, l2, zeta, grad=False, mask=None):
+def kff_single(x1, x2, dx1dr, dx2dr, rdx1dr, rdx2dr, sigma2, l2, zeta, grad=False, mask=None, path=None):
     """
     Compute the energy-energy kernel between two structures
     Args:
@@ -493,15 +504,15 @@ def kff_single(x1, x2, dx1dr, dx2dr, rdx1dr, rdx2dr, sigma2, l2, zeta, grad=Fals
     Returns:
         Kff: 3*3 array
     """
-    return K_ff(x1, x2, dx1dr, dx2dr, rdx1dr, rdx2dr, sigma2, l2, zeta, grad, mask) 
+    return K_ff(x1, x2, dx1dr, dx2dr, rdx1dr, rdx2dr, sigma2, l2, zeta, grad, mask, path) 
 
 def kff_para(args, data): 
     """
     para version
     """
     (x1, x2, dx1dr, dx2dr, rdx1dr, rdx2dr, mask) = data
-    (sigma2, l2, zeta, grad) = args
-    return K_ff(x1, x2, dx1dr, dx2dr, rdx1dr, rdx2dr, sigma2, l2, zeta, grad, mask) 
+    (sigma2, l2, zeta, grad, path) = args
+    return K_ff(x1, x2, dx1dr, dx2dr, rdx1dr, rdx2dr, sigma2, l2, zeta, grad, mask, path) 
 
 def kse_single(x1, x2, rdx1dr, sigma2, l2, zeta, mask=None):
     """
@@ -571,3 +582,6 @@ def get_mask(ele1, ele2):
         return None
     else:
         return ids
+
+#=========The collection of functions to compute the kernels
+

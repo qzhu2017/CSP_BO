@@ -1,6 +1,5 @@
 import numpy as np
 from pyxtal.database.element import Element
-from .RBF_mb import RBF_mb
 from .utilities import new_pt
 from scipy.linalg import cholesky, cho_solve, solve_triangular
 from scipy.optimize import minimize
@@ -402,11 +401,15 @@ class GaussianProcess():
         #keys = ['kernel', 'descriptor', 'Noise']
 
         if dict0["kernel"]["name"] == "RBF_mb":
+            from .RBF_mb import RBF_mb
             self.kernel = RBF_mb()
-            self.kernel.load_from_dict(dict0["kernel"])
+        elif dict0["kernel"]["name"] == "Dot_mb":
+            from .Dot_mb import Dot_mb
+            self.kernel = Dot_mb()
         else:
             msg = "unknow kernel {:s}".format(dict0["kernel"]["name"])
             raise NotImplementedError(msg)
+        self.kernel.load_from_dict(dict0["kernel"])
 
         if dict0["descriptor"]["_type"] == "SO3":
             from pyxtal_ff.descriptors.SO3 import SO3

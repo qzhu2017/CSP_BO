@@ -5,37 +5,29 @@ Here is the code to test
 """
 import numpy as np
 
-def fun_k(x1, x2, x1_norm, x2_norm, sigma2, l2):
-    D, d = fun_D(x1, x2, x1_norm, x2_norm)
-    _k = sigma2*np.exp(-0.5*D/l2)
-    return _k, _k.sum()
-
 def fun_D(x1, x2, x1_norm, x2_norm, zeta=2, eps=1e-6):
     d = x1@x2.T/(eps+np.outer(x1_norm, x2_norm))
     D = 1 - d**zeta
     return D, d
 
-def fun_dk_dD(x1, x2, x1_norm, x2_norm, sigma2, l2, zeta=2, mask=None):
-    D, _ = fun_D(x1, x2, x1_norm, x2_norm, zeta)
-    k = sigma2*np.exp(-0.5*D/l2)
+def fun_k(x1, x2, x1_norm, x2_norm, sigma2, l2, zeta=2, mask=None):
+    D, d = fun_D(x1, x2, x1_norm, x2_norm, zeta)
+    _k = sigma2*np.exp(-0.5*D/l2)
     if mask is not None:
-        k[mask] = 0
+        _k[mask] = 0
+    return _k, _k.sum()
+
+def fun_dk_dD(x1, x2, x1_norm, x2_norm, sigma2, l2, zeta=2, mask=None):
+    k, _ = fun_k(x1, x2, x1_norm, x2_norm, sigma2, l2, zeta, mask)
     return -0.5*k/l2
 
-def fun_d2k_dDdsigma(x1, x2, x1_norm, x2_norm, sigma2, l2, zeta=2, mask=None):
-    D, _ = fun_D(x1, x2, x1_norm, x2_norm, zeta)
-    k = sigma2*np.exp(-0.5*D/l2)
-    if mask is not None:
-        k[mask] = 0
-    return -k/np.sqrt(sigma2)/l2
+def fun_d2k_dDdsigma(dkdD, sigma2):
+    return 2*dkdD/np.sqrt(sigma2)
 
-def fun_d2k_dDdl(x1, x2, x1_norm, x2_norm, sigma2, l2, zeta=2, mask=None):
-    l3 = np.sqrt(l2)*l2
-    D, _ = fun_D(x1, x2, x1_norm, x2_norm, zeta)
-    k = sigma2*np.exp(-0.5*D/l2)
-    if mask is not None:
-        k[mask] = 0
-    return -0.5*D*k/l2/l3 + k/l3
+def fun_d2k_dDdl(dkdD, sigma2, l2):
+    l = np.sqrt(l2)
+    l3 = l*l2
+    return D*dkdD/l3 + 2*dkdD/l
 
 def K_ee(x1, x2, sigma2, l2, zeta=2, grad=False, mask=None, eps=1e-8):
     """
@@ -79,9 +71,7 @@ def K_ff(x1, x2, dx1dr, dx2dr, rdx1dr, rdx2dr, sigma2, l2, zeta=2, grad=False, m
     _, d = fun_D(x1, x2, x1_norm, x2_norm, zeta)
 
     dk_dD = fun_dk_dD(x1, x2, x1_norm, x2_norm, sigma2, l2, zeta, mask) #m, n
-    d2D_dx1dx2 = fun_d2D_dx1dx2(x1, x2, x1_norm, x2_norm, d, zeta) #m, n, d1, d2
-    dD_dx1, _ = fun_dD_dx1(x1, x2, x1_norm, x2_norm, d, zeta)        #m, n, d1
-    dD_dx2, _ = fun_dD_dx2(x1, x2, x1_norm, x2_norm, d, zeta)        #m, n, d2
+    d2D_dx1dx2, (dD_dx1, dD_dx2) = fun_d2D_dx1dx2(x1, x2, x1_norm, x2_norm, d, zeta) #m, n, d1, d2
     tmp = d2D_dx1dx2 - 0.5/l2*dD_dx1[:,:,:,None]*dD_dx2[:,:,None,:] # m, n, d1, d2
 
     if grad:
@@ -89,8 +79,8 @@ def K_ff(x1, x2, dx1dr, dx2dr, rdx1dr, rdx2dr, sigma2, l2, zeta=2, grad=False, m
         K_ff_0 = np.einsum("ijkl,jkm->ijlm", K_ff_0, dx2dr) # m, n, 3, 3
         Kff = np.einsum("ijkl,ij->kl", K_ff_0, dk_dD) # 3, 3
 
-        d2k_dDdsigma = fun_d2k_dDdsigma(x1, x2, x1_norm, x2_norm, sigma2, l2, zeta, mask) #m,n
-        d2k_dDdl = fun_d2k_dDdl(x1, x2, x1_norm, x2_norm, sigma2, l2, zeta, mask) #m, n
+        d2k_dDdsigma = fun_d2k_dDdsigma(dk_dD, sigma2) #m,n
+        d2k_dDdl = fun_d2k_dDdl(dk_dD, sigma2, l2) #m, n
 
         dKff_dsigma = np.einsum("ijkl,ij->kl", K_ff_0, d2k_dDdsigma) 
         dKff_dl = np.einsum("ijkl,ij->kl", K_ff_0, d2k_dDdl)
@@ -125,8 +115,8 @@ def K_ef(x1, x2, dx2dr, rdx2dr, sigma2, l2, zeta=2, grad=False, mask=None, eps=1
     Kef = np.einsum("ijk,ij->k", K_ef_0, dk_dD) # [m, n, 3] [m, n] -> 3
 
     if grad:
-        d2k_dDdsigma = fun_d2k_dDdsigma(x1, x2, x1_norm, x2_norm, sigma2, l2, zeta, mask) #m,n
-        d2k_dDdl = fun_d2k_dDdl(x1, x2, x1_norm, x2_norm, sigma2, l2, zeta, mask) #m, n
+        d2k_dDdsigma = fun_d2k_dDdsigma(dk_dD, sigma2) #m,n
+        d2k_dDdl = fun_d2k_dDdl(dk_dD, sigma2, l2) #m, n
         dKef_dsigma = np.einsum("ijk,ij->k", K_ef_0, d2k_dDdsigma) 
         dKef_dl     = np.einsum("ijk,ij->k", K_ef_0, d2k_dDdl)
         return Kef/m, dKef_dsigma/m, dKef_dl/m
@@ -235,7 +225,10 @@ def fun_d2D_dx1dx2(x1, x2, x1_norm, x2_norm, d, zeta=2):
     d2D_dx1dx2 = np.einsum('ijk, ijl->ijkl', dd_dx1, dd_dx2)
     d2D_dx1dx2 = np.einsum('ij, ijkl->ijkl', (zeta-1)*d**(zeta-2), d2D_dx1dx2)
     d2D_dx1dx2 += np.einsum("ij, ijkl->ijkl", d**(zeta-1), d2d_dx1dx2)
-    return -zeta*d2D_dx1dx2
+    dD_dx1 = np.einsum("ij, ijk->ijk", -zeta*d**(zeta-1), dd_dx1) 
+    dD_dx2 = np.einsum("ij, ijk->ijk", -zeta*d**(zeta-1), dd_dx2)
+
+    return -zeta*d2D_dx1dx2, (dD_dx1, dD_dx2)
 
 def fun_dk_dx1(x1, x2, x1_norm, x2_norm, d, sigma2, l2, zeta=2):
     dk_dD = fun_dk_dD(x1, x2, x1_norm, x2_norm, sigma2, l2) #m, n
@@ -251,13 +244,9 @@ def fun_dk_dx2(x1, x2, x1_norm, x2_norm, d, sigma2, l2, zeta=2):
     
 def fun_d2k_dx1dx2(x1, x2, x1_norm, x2_norm, d, sigma2, l2, zeta=2):
     dk_dD = fun_dk_dD(x1, x2, x1_norm, x2_norm, sigma2, l2) #m, n
-    d2D_dx1dx2 = fun_d2D_dx1dx2(x1, x2, x1_norm, x2_norm, d, zeta) #m, n, d, d
-    #d2D_dx1dx2 = np.transpose(d2D_dx1dx2, axes=(0,1,3,2))
-    dD_dx1, _ = fun_dD_dx1(x1, x2, x1_norm, x2_norm, d, zeta)        #m, n, d1
-    dD_dx2, _ = fun_dD_dx2(x1, x2, x1_norm, x2_norm, d, zeta)        #m, n, d2
+    d2D_dx1dx2, (dD_dx1, dD_dx2) = fun_d2D_dx1dx2(x1, x2, x1_norm, x2_norm, d, zeta) #m, n, d, d
     tmp = d2D_dx1dx2 - 0.5/l2*dD_dx1[:,:,:,None]*dD_dx2[:,:,None,:] # m, n, d1, d2
-    #tmp = np.transpose(tmp, axes=(0,1,3,2))
-    return tmp*dk_dD[:,:,None,None], tmp
+    return tmp*dk_dD[:,:,None,None], None
 
 
 
@@ -294,7 +283,7 @@ if __name__ == "__main__":
             func = D_torch
             _, df_dx1_np = fun_df_dx1(x1, x2, x1_norm, x2_norm, d1, zeta)
             _, df_dx2_np = fun_df_dx2(x1, x2, x1_norm, x2_norm, d1, zeta)
-            d2f_dx1dx2_np = fun_d2f_dx1dx2(x1, x2, x1_norm, x2_norm, d1, zeta)
+            d2f_dx1dx2_np, _ = fun_d2f_dx1dx2(x1, x2, x1_norm, x2_norm, d1, zeta)
 
         elif target == 'k':
             fun_df_dx1 = fun_dk_dx1

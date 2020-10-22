@@ -7,7 +7,7 @@ from cspbo.calculator import GPR
 
 np.set_printoptions(formatter={'float': '{: 5.2f}'.format})
 
-#N_max, ncpu = 50, 12
+#N_max, ncpu = 100, 24
 N_max, ncpu = 5, 1
 m_file = sys.argv[1]
 db_file = sys.argv[2]
@@ -23,10 +23,10 @@ t0 = time()
 # get _structures
 strucs, values = get_strucs(db_file, N_max=N_max)
 (E0, F0, S0) = values[0]
-if S0 is None:
-    stress = False
-else:
+if isinstance(S0, np.ndarray):
     stress = True
+else:
+    stress = False
 
 # set calculator
 calc = GPR(ff=model, return_std=False, stress=stress)
@@ -35,7 +35,9 @@ total_E0, total_E = [], []
 total_F0, total_F = None, None
 total_S0, total_S = None, None
 
+count = 0
 for struc, val in zip(strucs, values):
+    count += 1
     #E, F, S = model.predict_structure(struc)
     (E0, F0, S0) = val
     struc.set_calculator(calc)
@@ -59,7 +61,7 @@ for struc, val in zip(strucs, values):
     total_E.append(E)
     total_E0.append(E0)
     F_mse = rmse(F.flatten(), F0.flatten())
-    strs = "E: {:6.3f} -> {:6.3f}  F_MSE: {:6.3f} ".format(E, E0, F_mse)
+    strs = "{:4d} E: {:6.3f} -> {:6.3f}  F_MSE: {:6.3f} ".format(count, E, E0, F_mse)
     if stress:
         S_mse = rmse(S.flatten(), S0.flatten())
         strs += "S_MSE: {:6.3f}".format(S_mse)

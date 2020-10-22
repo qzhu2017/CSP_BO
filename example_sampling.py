@@ -1,28 +1,18 @@
 import sys
 import numpy as np
 from time import time
-from cspbo.utilities import metric_single, build_desc, get_data, plot, plot_two_body
+from cspbo.utilities import new_pt, metric_single, build_desc, get_data, plot, plot_two_body
 from cspbo.gaussianprocess_ef import GaussianProcess as gpr
 from cspbo.RBF_mb import RBF_mb
+from cspbo.Dot_mb import Dot_mb
 from scipy.spatial.distance import cdist
 
-def new_pt(data, Refs, d_tol=1e-1):
-    (X, ele) = data
-    X = X/np.linalg.norm(X)
-    for Ref in Refs:
-        (X1, ele1) = Ref
-        if ele1 == ele:
-            X1 = X1/np.linalg.norm(X1)
-            d = X@X1.T
-            if 1-d**2 < d_tol:
-                return False
-    return True
-        
 #N_start, N_step, N_max, zeta, ncpu, fac = 4, 1, 2554, 2, 10, 1.2
-N_start, N_step, N_max, zeta, ncpu, fac = 4, 1, 50, 2, 10, 1.2
+N_start, N_step, N_max, zeta, ncpu, fac = 4, 1, 50, 2, 1, 1.2
 
 des = build_desc("SO3", lmax=3, nmax=3, rcut=4.0)
 kernel = RBF_mb(para=[1, 0.5], zeta=zeta, ncpu=ncpu)
+#kernel = Dot_mb(para=[2, 0.5], zeta=zeta, ncpu=ncpu)
 #model = gpr(kernel=kernel, descriptor=des, noise_e=[5e-3, 2e-3, 5e-3], f_coef=20)
 model = gpr(kernel=kernel, descriptor=des, noise_e=[5e-3, 2e-3, 2e-2], f_coef=30)
 db_file = sys.argv[1]

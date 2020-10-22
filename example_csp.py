@@ -172,7 +172,7 @@ for i in range(10):
         calc = GPR(ff=model, stress=True, return_std=True)
         struc.set_calculator(calc)
         dyn = FIRE(struc)
-        dyn.run(fmax=0.05, steps=10)
+        dyn.run(fmax=0.05, steps=25)
 
         box = mushybox(struc)
         dyn = FIRE(box)

@@ -8,7 +8,7 @@ from cspbo.calculator import GPR
 np.set_printoptions(formatter={'float': '{: 5.2f}'.format})
 
 #N_max, ncpu = 50, 12
-N_max, ncpu = 5, 4
+N_max, ncpu = 5, 1
 m_file = sys.argv[1]
 db_file = sys.argv[2]
 model = gpr()

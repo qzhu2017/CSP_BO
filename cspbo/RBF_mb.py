@@ -1,5 +1,5 @@
 import numpy as np
-from .derivatives import *
+from .kernel_base import *
 from functools import partial
 from multiprocessing import Pool, cpu_count
 
@@ -182,6 +182,7 @@ class RBF_mb():
             if same and (i != j):
                 C[j, i] = C[i, j]
 
+        #print(C[:5,:5])
         if grad:
             return C, C_s, C_l
         else:
@@ -255,6 +256,9 @@ class RBF_mb():
                 C[i*3:(i+1)*3, j*3:(j+1)*3] = res
             if same and (i != j):
                 C[j*3:(j+1)*3, i*3:(i+1)*3] = C[i*3:(i+1)*3, j*3:(j+1)*3].T
+        #print(C[:5,:5])
+        #import sys
+        #sys.exit()
 
         if grad:
             return C, C_s, C_l                  
@@ -514,74 +518,131 @@ def kff_para(args, data):
     (sigma2, l2, zeta, grad, path) = args
     return K_ff(x1, x2, dx1dr, dx2dr, rdx1dr, rdx2dr, sigma2, l2, zeta, grad, mask, path) 
 
-def kse_single(x1, x2, rdx1dr, sigma2, l2, zeta, mask=None):
+def K_ee(x1, x2, sigma2, l2, zeta=2, grad=False, mask=None, eps=1e-8):
     """
-    Compute the stress-energy kernel between two structures
+    Compute the Kee between two structures
     Args:
-        x1: m*d1
-        x2: n*d2
-        rdx1dr: m*d1*6
-    Returns:
-        Kse: 6*1 array
+        x1: [M, D] 2d array
+        x2: [N, D] 2d array
+        sigma2: float
+        l2: float
+        zeta: power term, float
+        mask: to set the kernel zero if the chemical species are different
     """
+    x1_norm = np.linalg.norm(x1, axis=1) + eps
+    x2_norm = np.linalg.norm(x2, axis=1) + eps
+    D, _ = fun_D(x1, x2, x1_norm, x2_norm, zeta) #
+    dk_dD = fun_dk_dD(x1, x2, x1_norm, x2_norm, sigma2, l2, zeta, mask) #m, n
 
-    x1_norm = np.linalg.norm(x1, axis=1)
+    Kee0 = sigma2*np.exp(-0.5*(1-D)/l2)
+    if mask is not None:
+        Kee0[mask] = 0
+    Kee = np.sum(Kee0)
+    mn = len(x1)*len(x2)
 
-    x2_norm = np.linalg.norm(x2, axis=1)
-    D1, d1 = fun_D(x1, x2, x1_norm, x2_norm, zeta)
-    return K_se(x1, x2, x1_norm, x2_norm, rdx1dr, d1, sigma2, l2, zeta, mask)
-
-def ksf_single(x1, x2, rdx1dr, dx2dr, sigma2, l2, zeta, mask=None):
-    """
-    Compute the stress-force kernel between two structures
-    Args:
-        x1: m*d1
-        x2: n*d2
-        rdx1dr: m*d1*6
-        rdxdr: n*d2*3
-    Returns:
-        Ksf: 6*3 array
-    """
-    x1_norm = np.linalg.norm(x1, axis=1)
-    x2_norm = np.linalg.norm(x2, axis=1)
-    D1, d1 = fun_D(x1, x2, x1_norm, x2_norm, zeta)
-    return K_sf(x1, x2, x1_norm, x2_norm, rdx1dr, dx2dr, d1, sigma2, l2, zeta, mask)
-    
-
-
-def build_covariance(c_ee, c_ef, c_fe, c_ff, c_se=None, c_sf=None):
-    """
-    Need to rework
-    """
-    exist = []
-    for x in (c_ee, c_ef, c_fe, c_ff):
-        if x is None:
-            exist.append(False)
-        else:
-            exist.append(True)
-    if False not in exist:
-        return np.block([[c_ee, c_ef], [c_fe, c_ff]])
-    elif exist == [False, False, True, True]: # F in train, E/F in predict
-        #print(c_fe.shape, c_ff.shape)
-        return np.hstack((c_fe, c_ff))
-    elif exist == [True, True, False, False]: # E in train, E/F in predict
-        return np.hstack((c_ee, c_ef))
-    elif exist == [False, True, False, False]: # E in train, F in predict
-        return c_ef
-    elif exist == [True, False, False, False]: # E in train, E in predict
-        return c_ee
-    elif exist == [False, False, False, True]: # F in train, F in predict 
-        return c_ff
-    elif exist == [False, False, True, False]: # F in train, E in predict 
-        return c_fe
-
-def get_mask(ele1, ele2):
-    ans = ele1[:,None] - ele2[None,:]
-    ids = np.where(ans!=0)
-    if len(ids[0]) == 0:
-        return None
+    if grad:
+        l3 = np.sqrt(l2)*l2
+        dKee_dsigma = 2*Kee/np.sqrt(sigma2)
+        dKee_dl = np.sum(Kee0*(1-D))/l3
+        return Kee/mn, dKee_dsigma/mn, dKee_dl/mn
     else:
-        return ids
+        return Kee/mn
 
-#=========The collection of functions to compute the kernels
+def K_ff(x1, x2, dx1dr, dx2dr, rdx1dr, rdx2dr, sigma2, l2, zeta=2, grad=False, mask=None, path=None, eps=1e-8):
+    x1_norm = np.linalg.norm(x1, axis=1) + eps
+    x2_norm = np.linalg.norm(x2, axis=1) + eps
+    _, d = fun_D(x1, x2, x1_norm, x2_norm, zeta)
+
+    dk_dD = fun_dk_dD(x1, x2, x1_norm, x2_norm, sigma2, l2, zeta, mask) #m, n
+    d2D_dx1dx2, (dD_dx1, dD_dx2) = fun_d2D_dx1dx2(x1, x2, x1_norm, x2_norm, d, zeta) #m, n, d1, d2
+    tmp = -d2D_dx1dx2 - 0.5/l2*dD_dx1[:,:,:,None]*dD_dx2[:,:,None,:] # m, n, d1, d2
+    #print(dk_dD[:5,:5])
+    if grad:
+        K_ff_0 = np.einsum("ijkl,ikm->ijlm", tmp, dx1dr) # m, n, d2, 3
+        K_ff_0 = np.einsum("ijkl,jkm->ijlm", K_ff_0, dx2dr) # m, n, 3, 3
+        #K_ff_0 = np.einsum("ikm,ijkl,jln->ijmn", dx1dr, tmp, dx2dr)
+        #K_ff_0 = np.einsum("ikm,ijkl,jln->ijmn", dx1dr, tmp, dx2dr, optimize='optimal')
+
+        Kff = np.einsum("ijkl,ij->kl", K_ff_0, dk_dD) # 3, 3
+
+        d2k_dDdsigma = fun_d2k_dDdsigma(dk_dD, sigma2) #m,n
+        d2k_dDdl = fun_d2k_dDdl(dk_dD, sigma2, l2, d) #m, n
+        #print(d2k_dDdsigma)
+        #print(d2k_dDdl)
+        dKff_dsigma = np.einsum("ijkl,ij->kl", K_ff_0, d2k_dDdsigma) 
+        dKff_dl = np.einsum("ijkl,ij->kl", K_ff_0, d2k_dDdl)
+        tmp1 = dD_dx1[:,:,:,None]*dD_dx2[:,:,None,:]
+        K_ff_1 = np.einsum("ijkl,ikm->ijlm", tmp1, dx1dr)
+        K_ff_1 = np.einsum("ijkl,jkm->ijlm", K_ff_1, dx2dr)
+        #K_ff_1 = np.einsum("ikm,ijkl,jln->ijmn", dx1dr, tmp1, dx2dr, optimize='optimal')
+
+        dKff_dl += np.einsum("ijkl,ij->kl", K_ff_1, dk_dD)/l2/np.sqrt(l2)
+
+        return Kff, dKff_dsigma, dKff_dl
+    else:
+        tmp0 = np.einsum("ijkl,ij->ijkl", tmp, dk_dD) #m,n,d1,d2
+        #tmp = np.einsum("ijkl,ikm->jlm", tmp0, dx1dr) #m,n,d1,d2  m,d1,3 -> n, d2, 3
+        #Kff = np.einsum("ijk,ijl->kl", tmp, dx2dr) #n d2, 3   n d2 3
+        Kff = np.einsum("ikm,ijkl,jln->mn", dx1dr, tmp0, dx2dr, optimize=path)
+        if rdx1dr is None:
+            return Kff
+        else:
+            #s_tmp = np.einsum("ijkl,ikm->jlm", tmp0, rdx1dr) #m,n,d1,d2  m,d1,6 -> n, d2, 3
+            #Ksf = np.einsum("ijk,ijl->kl", s_tmp, dx2dr) #[6,3]
+            Ksf = np.einsum("ikm,ijkl,jln->mn", rdx1dr, tmp0, dx2dr, optimize=path) #[6,3]
+            return Kff, Ksf
+
+def K_ef(x1, x2, dx2dr, rdx2dr, sigma2, l2, zeta=2, grad=False, mask=None, path=None, eps=1e-8):
+
+    x1_norm = np.linalg.norm(x1, axis=1) + eps
+    x2_norm = np.linalg.norm(x2, axis=1) + eps
+    _, d = fun_D(x1, x2, x1_norm, x2_norm, zeta)
+
+    dk_dD = fun_dk_dD(x1, x2, x1_norm, x2_norm, sigma2, l2, zeta, mask) #m, n
+    dD_dx2, _ = fun_dD_dx2(x1, x2, x1_norm, x2_norm, d, zeta) #m, n, d2
+    dD_dx2 *= -1
+    m = len(x1)
+
+    if grad:
+        K_ef_0 = -np.einsum("ijk,jkl->ijl", dD_dx2, dx2dr) # [m, n, d2] [n, d2, 3] -> [m,n,3]
+        Kef = np.einsum("ijk,ij->k", K_ef_0, dk_dD) # [m, n, 3] [m, n] -> 3
+
+        d2k_dDdsigma = fun_d2k_dDdsigma(dk_dD, sigma2) #m,n
+        d2k_dDdl = fun_d2k_dDdl(dk_dD, sigma2, l2, 1-d) #m, n
+        dKef_dsigma = np.einsum("ijk,ij->k", K_ef_0, d2k_dDdsigma) 
+        dKef_dl     = np.einsum("ijk,ij->k", K_ef_0, d2k_dDdl)
+        return Kef/m, dKef_dsigma/m, dKef_dl/m
+    else:
+        Kef = -np.einsum("ijk,jkl,ij->l", dD_dx2, dx2dr, dk_dD, optimize=path) #[6]
+        if rdx2dr is None:
+            return Kef/m
+        else:
+            #K_se_0 = -np.einsum("ijk,jkl->ijl", dD_dx2, rdx2dr)
+            #Kse = np.einsum("ijk,ij->k", K_se_0, dk_dD) #[6]
+            #Kse = np.einsum("ij,ijk,jkl->l", dk_dD, dD_dx2, rdx2dr, optimize='greedy') #[6]
+            Kse = -np.einsum("ijk,jkl,ij->l", dD_dx2, rdx2dr, dk_dD, optimize=path) #[6]
+
+            return Kef/m, Kse/m
+
+# =================== Algebras for k, dkdD, d2kdDdsigma ==========================
+
+def fun_k(x1, x2, x1_norm, x2_norm, sigma2, l2, zeta=2, mask=None):
+    D, d = fun_D(x1, x2, x1_norm, x2_norm, zeta)
+    _k = sigma2*np.exp(-0.5*(1-D)/l2)
+    if mask is not None:
+        _k[mask] = 0
+    return _k, _k.sum()
+
+def fun_dk_dD(x1, x2, x1_norm, x2_norm, sigma2, l2, zeta=2, mask=None):
+    k, _ = fun_k(x1, x2, x1_norm, x2_norm, sigma2, l2, zeta, mask)
+    return -0.5*k/l2
+
+def fun_d2k_dDdsigma(dkdD, sigma2):
+    return 2*dkdD/np.sqrt(sigma2)
+
+def fun_d2k_dDdl(dkdD, sigma2, l2, D):
+    l = np.sqrt(l2)
+    l3 = l*l2
+    return D*dkdD/l3 + 2*dkdD/l
+
 

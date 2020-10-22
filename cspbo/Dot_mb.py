@@ -8,7 +8,7 @@ class Dot_mb():
     .. math::
         k(x_i, x_j) = \sigma ^2 * (\sigma_0 ^ 2 + x_i \cdot x_j)
     """
-    def __init__(self, para=[1., 1.], bounds=[[1e-2, 5e+1], [1e-1, 1e+1]], zeta=3, ncpu=1):
+    def __init__(self, para=[1., 1.], bounds=[[1e-2, 5e+1], [1e-2, 1e+1]], zeta=3, ncpu=1):
         self.name = 'Dot_mb'
         self.bounds = bounds
         self.update(para)

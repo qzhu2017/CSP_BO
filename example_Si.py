@@ -4,7 +4,8 @@ from ase.build import bulk
 from cspbo.gaussianprocess_ef import GaussianProcess as gpr
 from cspbo.calculator import GPR
 from ase.optimize import BFGS, FIRE
-from cspbo.mushybox import mushybox
+from ase.constraints import ExpCellFilter, UnitCellFilter
+from ase.spacegroup.symmetrize import FixSymmetry, check_symmetry
 from cspbo.utilities import rmse, metric_single, get_strucs, plot
 
 
@@ -29,18 +30,18 @@ l2 = metric_single(train_F, train_F1, "Train Forces")
 
 
 calc = GPR(ff=model, stress=True, return_std=False)
-si = bulk('Si', 'diamond', a=5.459, cubic=True)
+si = bulk('Si', 'diamond', a=5.459*1.2, cubic=True)
 
 # --------------------------- Example of Geometry Optimization
+check_symmetry(si, 1.0e-6, verbose=True)
 si.set_calculator(calc)
-pos = si.positions
-pos[0] += 0.1
-si.set_positions(pos)
-
-print(si.get_potential_energy())
-box = mushybox(si)
-dyn = FIRE(box)
-dyn.run(fmax=0.05, steps=50)
+si.set_constraint(FixSymmetry(si))
+ecf = ExpCellFilter(si)
+#ucf = UnitCellFilter(si)
+dyn = FIRE(ecf)
+dyn.run(fmax=0.005, steps=50)
+print(si)
+check_symmetry(si, 1.0e-6, verbose=True)
 
 print(si.get_potential_energy())
 
@@ -65,6 +66,7 @@ def printenergy(a, it, t0):
 
 
 calc = GPR(ff=model, stress=False, return_std=True)
+si.set_constraint()
 si = si*2
 si.set_calculator(calc)
 

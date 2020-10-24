@@ -72,8 +72,6 @@ class Dot_mb():
         else:
             return np.hstack((C_ee, C_ff))
 
-        #return np.ones(N)*sigma2
-
     def k_total(self, data1, data2=None):
         if data2 is None:
             data2 = data1
@@ -570,8 +568,6 @@ def K_ff(x1, x2, dx1dr, dx2dr, rdx1dr, rdx2dr, sigma2, sigma02, zeta=2, grad=Fal
         if rdx1dr is None:
             return Kff
         else:
-            #s_tmp = np.einsum("ijkl,ikm->jlm", tmp0, rdx1dr) #m,n,d1,d2  m,d1,6 -> n, d2, 3
-            #Ksf = np.einsum("ijk,ijl->kl", s_tmp, dx2dr) #[6,3]
             Ksf = np.einsum("ikm,ijkl,jln->mn", rdx1dr, tmp0, dx2dr, optimize=path) #[6,3]
             return Kff, Ksf
 

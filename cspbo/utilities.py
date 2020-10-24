@@ -6,11 +6,31 @@ from ase.db import connect
 from .descriptors.rdf import RDF
 from pymatgen.io.ase import AseAtomsAdaptor
 from pyxtal.database.element import Element
-
+from pyxtal.crystal import random_crystal
+from random import choice
+import os
 import matplotlib as mpl
 mpl.use("Agg")
 import matplotlib.pyplot as plt
 plt.style.use("ggplot")
+
+def PyXtal(sgs, species, numIons):
+    """ 
+    PyXtal interface for the followings,
+
+    Parameters
+    ----------
+        sg: a list of allowed space groups, e.g., range(2, 231)
+        species: a list of chemical species, e.g., ["Na", "Cl"]
+        numIons: a list to denote the number of atoms for each speice, [4, 4]
+    Return:
+        the pyxtal structure
+    """
+    while True:
+        struc = random_crystal(choice(sgs), species, numIons)
+        if struc.valid:
+            return struc.to_ase()
+ 
 
 def new_pt(data, Refs, d_tol=1e-1, eps=1e-8):
     (X, ele) = data
@@ -283,6 +303,22 @@ def normalize(x_train, x_test):
     scaler = StandardScaler()
     scaler.fit(x_train)
     return scaler.transform(x_train), scaler.transform(x_test)
+
+def write_db_from_dict(data, db_filename='viz.db', permission='w'):
+    if permission=='w' and os.path.exists(db_filename):
+        os.remove(db_filename)
+
+    N = len(data["atoms"])
+    with connect(db_filename) as db:
+        for i in range(N):
+            kvp = {}
+            for key in data.keys():
+                if key == "atoms":
+                    struc = data["atoms"][i]
+                else:
+                    kvp[key] = data[key][i]
+            db.write(struc, key_value_pairs=kvp)
+    print("Saved all structure to", db_filename)
 
 def write_db(data, db_filename='viz.db', permission='w'):
     from ase.db import connect

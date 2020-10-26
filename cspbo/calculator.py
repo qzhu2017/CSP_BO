@@ -20,7 +20,10 @@ class GPR(Calculator):
                   system_changes=all_changes):
 
         Calculator.calculate(self, atoms, properties, system_changes)
-        stress = self.parameters.stress
+        if hasattr(self.parameters, 'stress'):
+            stress = self.parameters.stress
+        else:
+            stress = False
         return_std=self.parameters.return_std
         if return_std:
             res = self.parameters.ff.predict_structure(atoms, stress, True)
@@ -36,14 +39,6 @@ class GPR(Calculator):
             self.results['stress'] = res[2].sum(axis=0) #*eV2GPa
         else:
             self.results['stress'] = None
-
-        if hasattr(self.parameters, 'lj'):
-            res1 = LJ(atoms, self.parameters.lj)
-            self.results['energy'] += res1[0]
-            self.results['free_energy'] += res1[0] 
-            self.results['forces'] += res1[1] 
-            if stress:
-                self.results['stress'] += res1[2] 
 
     def get_var_e(self, total=False):
         if total:
@@ -62,9 +57,11 @@ class GPR(Calculator):
 
 
 
-def LJ(atoms, parameters):
+class LJ():
     """
-    Pairwise LJ model (mostly copied from https://gitlab.com/ase/ase/-/blob/master/ase/calculators/lj.py)
+    Pairwise LJ model (mostly copied from `ase.calculators.lj`)
+    https://gitlab.com/ase/ase/-/blob/master/ase/calculators/lj.py
+
     Args:
         atoms: ASE atoms object
         parameters: dictionary to store the LJ parameters
@@ -72,73 +69,101 @@ def LJ(atoms, parameters):
     Returns:
         energy, force, stress
     """
-    if "epsilon" in parameters.keys():
-        epsilon = parameters["epsilon"]
-    else:
-        epsilon = 1.0
+    def __init__(self, parameters=None):
+        # Set up default descriptors parameters
+        keywords = ['rc', 'sigma', 'epsilon']
+        _parameters = {
+                       'name': 'LJ',
+                       'rc': 5.0,
+                       'sigma': 1.0, 
+                       'epsilon': 1.0,
+                      }
     
-    if "sigma" in parameters.keys():
-        sigma = parameters["sigma"]
-    else:
-        sigma = 1.0 
+        if parameters is not None:
+            _parameters.update(parameters)
+
+        self.load_from_dict(_parameters)
+
+    def __str__(self):
+        return "LJ({:.3f} {:.3f} cutoff{:.3f})".format(\
+        self.sigma, self.sigma0)
+
+    def load_from_dict(self, dict0):
+        self._parameters = dict0
+        self.name = self._parameters["name"]
+        self.epsilon = self._parameters["epsilon"]
+        self.sigma = self._parameters["sigma"]
+        self.rc = self._parameters["rc"]
+
+       
+    def save_dict(self):
+        """
+        save the model as a dictionary in json
+        """
+        return self._parameters
+
+    def calculate(self, atoms):
+        """
+        Compute the E/F/S
         
-    if "rc" in parameters.keys():
-        rc = parameters["rc"]
-    else:
-        rc = 1.5
+        Args:
+            atom: ASE atoms object
+        """
 
-    natoms = len(atoms)
-    positions = atoms.positions
-    cell = atoms.cell
+        sigma, epsilon, rc = self.sigma, self.epsilon, self.rc
 
-    e0 = 4 * epsilon * ((sigma / rc) ** 12 - (sigma / rc) ** 6)
+        natoms = len(atoms)
+        positions = atoms.positions
+        cell = atoms.cell
 
-    energies = np.zeros(natoms)
-    forces = np.zeros((natoms, 3))
-    stresses = np.zeros((natoms, 3, 3))
+        e0 = 4 * epsilon * ((sigma / rc) ** 12 - (sigma / rc) ** 6)
 
-    nl = NeighborList([rc / 2] * natoms, self_interaction=False)
-    nl.update(atoms)
+        energies = np.zeros(natoms)
+        forces = np.zeros((natoms, 3))
+        stresses = np.zeros((natoms, 3, 3))
 
-    for ii in range(natoms):
-        neighbors, offsets = nl.get_neighbors(ii)
-        cells = np.dot(offsets, cell)
+        nl = NeighborList([rc / 2] * natoms, self_interaction=False)
+        nl.update(atoms)
 
-        # pointing *towards* neighbours
-        distance_vectors = positions[neighbors] + cells - positions[ii]
+        for ii in range(natoms):
+            neighbors, offsets = nl.get_neighbors(ii)
+            cells = np.dot(offsets, cell)
 
-        r2 = (distance_vectors ** 2).sum(1)
-        c6 = (sigma ** 2 / r2) ** 3
-        c6[r2 > rc ** 2] = 0.0
-        c12 = c6 ** 2
+            # pointing *towards* neighbours
+            distance_vectors = positions[neighbors] + cells - positions[ii]
 
-        pairwise_energies = 4 * epsilon * (c12 - c6) - e0 * (c6 != 0.0)
-        energies[ii] += 0.5 * pairwise_energies.sum()  # atomic energies
+            r2 = (distance_vectors ** 2).sum(1)
+            c6 = (sigma ** 2 / r2) ** 3
+            c6[r2 > rc ** 2] = 0.0
+            c12 = c6 ** 2
 
-        pairwise_forces = (-24 * epsilon * (2 * c12 - c6) / r2)[
-            :, np.newaxis
-        ] * distance_vectors
+            pairwise_energies = 4 * epsilon * (c12 - c6) - e0 * (c6 != 0.0)
+            energies[ii] += 0.5 * pairwise_energies.sum()  # atomic energies
 
-        forces[ii] += pairwise_forces.sum(axis=0)
-        stresses[ii] += 0.5 * np.dot(
-            pairwise_forces.T, distance_vectors
-        )  # equivalent to outer product
+            pairwise_forces = (-24 * epsilon * (2 * c12 - c6) / r2)[
+                :, np.newaxis
+            ] * distance_vectors
 
-        # add j < i contributions
-        for jj, atom_j in enumerate(neighbors):
-            energies[atom_j] += 0.5 * pairwise_energies[jj]
-            forces[atom_j] += -pairwise_forces[jj]  # f_ji = - f_ij
-            stresses[atom_j] += 0.5 * np.outer(
-                pairwise_forces[jj], distance_vectors[jj]
-            )
+            forces[ii] += pairwise_forces.sum(axis=0)
+            stresses[ii] += 0.5 * np.dot(
+                pairwise_forces.T, distance_vectors
+            )  # equivalent to outer product
 
-    # whether or not output stress
-    if atoms.number_of_lattice_vectors == 3:
-        stresses = full_3x3_to_voigt_6_stress(stresses)
-        stress = stresses.sum(axis=0) / atoms.get_volume()
-    else:
-        stress = None
+            # add j < i contributions
+            for jj, atom_j in enumerate(neighbors):
+                energies[atom_j] += 0.5 * pairwise_energies[jj]
+                forces[atom_j] += -pairwise_forces[jj]  # f_ji = - f_ij
+                stresses[atom_j] += 0.5 * np.outer(
+                    pairwise_forces[jj], distance_vectors[jj]
+                )
 
-    energy = energies.sum()
-    #print(energy)
-    return energy, forces, stress
+        # whether or not output stress
+        if atoms.number_of_lattice_vectors == 3:
+            stresses = full_3x3_to_voigt_6_stress(stresses)
+            stress = stresses / atoms.get_volume()
+        else:
+            stress = None
+
+        energy = energies.sum()
+        #print(energy)
+        return energy, forces, stress

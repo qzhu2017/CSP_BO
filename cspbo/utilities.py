@@ -167,12 +167,12 @@ def get_data(db_name, des, N_force=100000, lists=None, select=False, ncpu=1):
                 ids = np.argwhere(X[id]['seq'][:,1]==i).flatten()
                 _i = X[id]['seq'][ids, 0] 
                 force_data.append((X[id]['x'][_i,:], X[id]['dxdr'][ids], None, Y['forces'][id][i], ele[_i]))
-                #force_data.append((X[id]['x'][_i,:], X[id]['dxdr'][ids], Y['forces'][id][i], ele[_i]))
                 f_ids.append(i)
 
         db_data.append((structures[id], Y['energy'][id], Y['forces'][id], True, f_ids))
     train_data = {"energy": energy_data, "force": force_data, "db": db_data}
     return train_data
+
 
 
 def convert_rdf(db_file, N=None):
@@ -234,6 +234,26 @@ def get_2b(s, rcut=4.0, kernel='all'):
         return des_2b
     else:
         return (np.vstack((_ds, Cosine(_ds, rcut))), len(s))
+
+def get_train_data(db_file, include_stress=False):
+    strucs = []
+    energies = []
+    forces = []
+    stresses = []
+    with connect(db_file) as db:
+        for row in db.select():
+            s = db.get_atoms(id=row.id)
+            strucs.append(s)
+            energies.append(row.data.energy)
+            forces.append(np.array(row.data.force))
+            if include_stress:
+                stress.append(np.array(row.data.stress))
+
+    if include_stress:
+        return (strucs, energies, forces, stress)
+    else:
+        return (strucs, energies, forces)
+
 
 def convert_struc(db_file, des, ids=None, N=None, ncpu=1, stress=False):
     structures, train_Y = [], {"energy":[], "forces": [], "stress": []}
@@ -423,18 +443,20 @@ def write_db(data, db_filename='viz.db', permission='w'):
                    "diff_energy": abs(y_qm[i]-y_ml[i])}
             db.write(x, key_value_pairs=kvp)
  
-def plot_two_body(model, des, kernel, figname):
+def plot_two_body(model, figname, rs=[1.0, 5.0]):
     from ase import Atoms
-    rs = np.linspace(0.5, 4.0, 50)
+    from cspbo.calculator import GPR
+    
+    rs = np.linspace(rs[0], rs[1], 50)
     cell = 10*np.eye(3)
     dimers = [Atoms("2Si", positions=[[0,0,0], [r,0,0]], cell=cell) for r in rs]
-    
-    xs = []
+    calc = GPR(ff=model, return_std=False)
+    engs = []
     for dimer in dimers:
-        xs.append(des.calculate(dimer)['x'])
-    data = {"energy": xs}
-    energies = model.predict(data)
-    plt.plot(rs, 2*energies, '-d', label='2-body')
+        dimer.set_calculator(calc)
+        engs.append(dimer.get_potential_energy())
+
+    plt.plot(rs, engs, '-d', label='2-body')
     plt.legend()
     plt.xlabel('R (Angstrom)')
     plt.ylabel('Energy (eV)')

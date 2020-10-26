@@ -1,6 +1,6 @@
 import numpy as np
 from pyxtal.database.element import Element
-from .utilities import new_pt
+from .utilities import new_pt, convert_train_data
 from scipy.linalg import cholesky, cho_solve, solve_triangular
 from scipy.optimize import minimize
 import warnings
@@ -9,8 +9,20 @@ from ase.db import connect
 import os
 
 class GaussianProcess():
-    """ Gaussian Process Regressor. """
-    def __init__(self, kernel=None, descriptor=None, f_coef=10, noise_e=[5e-3, 2e-3, 1e-1]):
+    """ 
+    Gaussian Process Regressor. 
+
+    This class is to fit the interatomic potential from the reference data of energy/forces.
+
+    Arg:
+        kernel (callable): object to compute the covariance matrix
+        descriptor (callable): object to compute the structure to descriptor
+        base_potential (callable): object to compute the base potential before GPR (default is None)
+        f_coef (float): the coefficient of force noise relative to energy
+        noise_e (list): define the energy noise
+    """
+
+    def __init__(self, kernel=None, descriptor=None, base_potential=None, f_coef=10, noise_e=[5e-3, 2e-3, 1e-1]):
         
         self.noise_e = noise_e[0]
         self.f_coef = f_coef
@@ -19,11 +31,13 @@ class GaussianProcess():
 
         self.descriptor = descriptor
         self.kernel = kernel
+        self.base_potential = base_potential
 
         self.x = None
         self.train_x = None
         self.train_y = None
         self.train_db = None
+        self.alpha_ = None
 
     def __str__(self):
         s = "------Gaussian Process Regression------\n"
@@ -152,7 +166,7 @@ class GaussianProcess():
             data: a dictionary of energy/force/db data
             mode: "w" or "a+"
         """
-        if mode == "w": #reset
+        if mode == "w" or self.train_x is None: #reset
             self.train_x = {'energy': [], 'force': []}
             self.train_y = {'energy': [], 'force': []}
             self.train_db = data['db']
@@ -258,6 +272,14 @@ class GaussianProcess():
             S = K_trans1.dot(self.alpha_)[:,0].reshape([len(struc), 6])
         else:
             S = None
+
+        # substract the energy/force offsets due to the base_potential
+        if self.base_potential is not None:
+            energy_off, force_off, stress_off = self.compute_base_potential(struc)
+            E += energy_off
+            F += force_off
+            if stress:
+                S += stress_off
 
         if return_std:
             if self._K_inv is None:
@@ -392,7 +414,8 @@ class GaussianProcess():
                 "descriptor": self.descriptor.save_dict(),
                 "db_filename": db_filename,
                 }
-
+        if self.base_potential is not None:
+            dict0["base_potential"] = self.base_potential.save_dict(),
         return dict0
 
 
@@ -418,6 +441,16 @@ class GaussianProcess():
         else:
             msg = "unknow descriptors {:s}".format(dict0["descriptor"]["name"])
             raise NotImplementedError(msg)
+
+        if "base_potential" in dict0.keys():
+            if dict0["base_potential"]["name"] == "LJ":
+                from .calculator import LJ
+                self.base_potential = LJ()
+                self.base_potential.load_from_dict(dict0["base_potential"])
+            else:
+                msg = "unknow base potential {:s}".format(dict0["base_potential"]["name"])
+                raise NotImplementedError(msg)
+
 
         self.noise_e = dict0["noise"]["energy"]
         self.f_coef = dict0["noise"]["f_coef"]
@@ -462,9 +495,15 @@ class GaussianProcess():
                 atoms = db.get_atoms(id=row.id)
                 energy = row.data.energy
                 force = row.data.force
+
+                # substract the energy/force offsets due to the base_potential
+                if self.base_potential is not None:
+                    energy_off, force_off, _ = self.compute_base_potential(atoms)
+                    energy -= energy_off
+                    force -= force_off
+
                 energy_in = row.data.energy_in
                 force_in = row.data.force_in
-
 
                 d = self.descriptor.calculate(atoms)
                 ele = [Element(ele).z for ele in d['elements']]
@@ -475,7 +514,6 @@ class GaussianProcess():
                 for id in force_in:
                     ids = np.argwhere(d['seq'][:,1]==id).flatten() 
                     _i = d['seq'][ids, 0]
-                    #pts_to_add["force"].append((d['x'][_i,:], d['dxdr'][ids], d['rdxdr'][ids], force[id], ele[_i]))
                     pts_to_add["force"].append((d['x'][_i,:], d['dxdr'][ids], None, force[id], ele[_i]))
                 pts_to_add["db"].append((atoms, energy, force, energy_in, force_in))
 
@@ -486,43 +524,76 @@ class GaussianProcess():
 
         self.set_train_pts(pts_to_add, "w")
 
-    def add_structure(self, data, N_max=6):
+    def add_structure(self, data, N_max=6, tol_e_var=1.2, tol_f_var=1.2):
         """
-        add the training points from a given structure
+        add the training points from a given structure base on the followings:
+            1, compute the (E, F, E_var, F_var) based on the current model
+            2, if E_var is greater than tol_e_var, add energy data
+            3, if F_var is greater than tol_f_var, add force data
         """
+        tol_e_var *= self.noise_e
+        tol_f_var *= self.noise_f
                
         pts_to_add = {"energy": [], "force": [], "db": []}
         (atoms, energy, force) = data
-        energy_in = True
+
+        # substract the energy/force offsets due to the base_potential
+        if self.base_potential is not None:
+            energy_off, force_off, _ = self.compute_base_potential(atoms)
+        else:
+            energy_off, force_off = 0, np.zeros((len(atoms), 3))
+
+        energy -= energy_off
+        force -= force_off
+        my_data = convert_train_data([(atoms, energy, force)], self.descriptor)
+        if self.alpha_ is not None:
+            E, E1, E_std, F, F1, F_std = self.validate_data(my_data, return_std=True)
+            E_std = E_std[0]
+            F_std = F_std.reshape((len(atoms), 3))
+        else:
+            E = E1 = [energy]
+            F = F1 = force.flatten()
+            E_std = 2*tol_e_var
+            F_std = 2*tol_f_var*np.ones((len(atoms), 3))
+           
+        if E_std > tol_e_var:
+            pts_to_add["energy"] = my_data["energy"]
+            N_energy = 1
+            energy_in = True
+        else:
+            N_energy = 0
+            energy_in = False
+
         force_in = []
 
-        d = self.descriptor.calculate(atoms)
-        ele = [Element(ele).z for ele in d['elements']]
-        ele = np.array(ele)
-
-        pts_to_add["energy"].append((d['x'], energy/len(atoms), ele))
         xs_added = []
         for f_id in range(len(atoms)):
-            if len(force_in) <= N_max:
-                include = False
-                X = d['x'][f_id]
-                _ele = ele[f_id]
+            include = False
+            if np.max(F_std[f_id]) > tol_f_var: 
+                X = my_data["energy"][0][0][f_id]
+                _ele = my_data["energy"][0][2][f_id]
                 if len(xs_added) == 0:
                     include = True
                 else:
                     if new_pt((X, _ele), xs_added):
                         include = True
-                if include:
-                    force_in.append(f_id)
-                    xs_added.append((X, _ele))
-                    ids = np.argwhere(d['seq'][:,1]==f_id).flatten() 
-                    _i = d['seq'][ids, 0]
-                    pts_to_add["force"].append((d['x'][_i,:], d['dxdr'][ids], None, force[f_id], ele[_i]))
-        pts_to_add["db"].append((atoms, energy, force, energy_in, force_in))
+            if include:
+                force_in.append(f_id)
+                xs_added.append((X, _ele))
+                pts_to_add["force"].append(my_data["force"][f_id])
+            if len(force_in) == N_max:
+                break
 
-        self.set_train_pts(pts_to_add, "a+")
+        N_forces = len(force_in)
+        N_pts = N_energy + N_forces
+        if N_pts > 0:
+            pts_to_add["db"].append((atoms, energy, force, energy_in, force_in))
+        errors = (E[0]+energy_off, E1[0]+energy_off, E_std, F+force_off.flatten(), F1+force_off.flatten(), F_std) 
+        return pts_to_add, N_pts, errors
 
-        strs = "==== 1 energy and {:d} forces were added".format(len(force_in))
-        print(strs)
+    def compute_base_potential(self, atoms):
+        """
+        compute the energy/forces/stress from the base_potential
+        """
 
-
+        return self.base_potential.calculate(atoms) 

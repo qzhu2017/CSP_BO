@@ -169,9 +169,24 @@ class GaussianProcess():
         if mode == "w" or self.train_x is None: #reset
             self.train_x = {'energy': [], 'force': []}
             self.train_y = {'energy': [], 'force': []}
-            self.train_db = data['db']
-        else:
-            self.train_db.extend(data['db'])
+            self.train_db = []
+
+        N_E = len(self.train_x['energy'])
+        N_F = len(self.train_x['force'])
+        for data in data["db"]:
+            (atoms, energy, force, energy_in, force_in) = data         
+            if energy_in:
+                e_id = deepcopy(N_E + 1)
+                N_E += 1
+            else:
+                e_id = None
+
+            if len(force_in) > 0:
+                f_ids = [N_F+i for i in range(len(force_in))]
+                N_F += len(force_in)
+            else:
+                f_id = None
+            self.train_db.append(atoms, energy, force, energy_in, force_in, e_id, f_ids)
 
         for key in data.keys():
             if key == 'energy':
@@ -182,6 +197,42 @@ class GaussianProcess():
                     self.add_train_pts_force(force_data)
         self.update_y_train()
     
+
+    def remove_train_pts(self, e_ids, f_ids):
+        """
+        delete the training pts for the GPR model
+
+        Args:
+            e_ids: ids to delete in K_EE
+            f_ids: ids to delete in K_FF
+        """
+        data = {"energy":[], "force": [], "db": []}
+        N_E, N_F = len(self.train_x['energy']), len(self.train_x['force'])
+        for id in range(N_E):
+            if id not in e_ids:
+                (X, ele) = self.train_x['energy']
+                E = self.train_y['energy']
+                data['energy'].append((X, E, ele))
+
+        for id in range(N_F):
+            if id not in e_ids:
+                (X, dxdr, _, ele) = self.train_x['force']
+                F = self.train_y['force']
+                data["force"].append(X, dxdr, _, F, ele)
+
+        for data in self.train_db:
+            (atoms, energy, force, energy_in, force_in, e_id, _f_ids) = data         
+            keep = False
+            if e_id in e_ids:
+                energy_in = False
+            _force_in = []       
+            for i, f_id in enumerate(_f_ids):
+                if f_id not in f_ids:
+                    _force_in.append(force_in[i])
+            if energy_in or len(_force_in)>0:
+                data['db'].append((atoms, energy, force, energy_in, _force_in))
+        
+        self.set_train_pts(data) # reset the train data
 
     def update_y_train(self):
         """ 
@@ -320,6 +371,7 @@ class GaussianProcess():
         self.train_x['force'].append((X, dXdR, None, ele))
         self.train_y['force'].append(F)
         #self.update_y_train()
+
 
     def log_marginal_likelihood(self, params, eval_gradient=False, clone_kernel=False):
         
@@ -473,7 +525,7 @@ class GaussianProcess():
 
         with connect(db_filename) as db:
             for _data in self.train_db:
-                (struc, energy, force, energy_in, force_in) = _data
+                (struc, energy, force, energy_in, force_in, _, _) = _data
                 data = {"energy": energy,
                         "force": force,
                         "energy_in": energy_in,
@@ -597,3 +649,44 @@ class GaussianProcess():
         """
 
         return self.base_potential.calculate(atoms) 
+
+
+    def sparsify(self, l_tol=1e-10):
+        """
+        sparify the covariance matrix by removing unimportant configurations from the training database
+        """
+        K = self.kernel.k_total(self.train_x)
+        N_e = len(self.train_x["energy"])
+        pts_e, pts_f = CUR(K, N_e, l_tol)
+        print("{:d} energy and {:d} force points will be removed".format(len(pts_e), len(pts_f)))
+        self.remove_train_pts(pts_e, pts_f)
+
+
+def CUR(K, N_e, l_tol=1e-10):
+    """
+    This is a code to perform CUR decomposition for the covariance matrix:
+    Appendix D in Jinnouchi, et al, Phys. Rev. B, 014105 (2019)
+
+    Args:
+        K: N*N covariance matrix
+        N_e: number of 
+    """
+    N_f = int((len(K)-N_e)/3) # number of force points
+    L, U = np.linalg.eigh(K)
+    N_low = len(L[L<l_tol])
+    omega = np.zeros(len(L))
+    for j in range(len(L)):
+        for eta in range(len(L)):
+            if L[eta] < l_tol:
+                omega[j] += U[j,eta]*U[j,eta]
+    ids = np.argsort(-1*omega)
+    pts_ee = ids[ids<N_e]
+    pts_ff = []
+    if N_f > 0:
+        pts = ids - pts_ee
+        pts = np.array(pts) - N_e
+        for i in range(N_f):
+            if len(pts[pts==i*3])==1 and len(pts[pts==(i*3+1)])==1 and len(pts[pts==(i*3+2)])==1:
+                pts_ff.append(i)
+
+    return pts_ee, pts_ff

@@ -7,6 +7,7 @@ import warnings
 import json
 from ase.db import connect
 import os
+from copy import deepcopy
 
 class GaussianProcess():
     """ 
@@ -173,8 +174,8 @@ class GaussianProcess():
 
         N_E = len(self.train_x['energy'])
         N_F = len(self.train_x['force'])
-        for data in data["db"]:
-            (atoms, energy, force, energy_in, force_in) = data         
+        for d in data["db"]:
+            (atoms, energy, force, energy_in, force_in) = d
             if energy_in:
                 e_id = deepcopy(N_E + 1)
                 N_E += 1
@@ -185,8 +186,8 @@ class GaussianProcess():
                 f_ids = [N_F+i for i in range(len(force_in))]
                 N_F += len(force_in)
             else:
-                f_id = None
-            self.train_db.append(atoms, energy, force, energy_in, force_in, e_id, f_ids)
+                f_ids = []
+            self.train_db.append((atoms, energy, force, energy_in, force_in, e_id, f_ids))
 
         for key in data.keys():
             if key == 'energy':
@@ -210,18 +211,18 @@ class GaussianProcess():
         N_E, N_F = len(self.train_x['energy']), len(self.train_x['force'])
         for id in range(N_E):
             if id not in e_ids:
-                (X, ele) = self.train_x['energy']
-                E = self.train_y['energy']
+                (X, ele) = self.train_x['energy'][id]
+                E = self.train_y['energy'][id]
                 data['energy'].append((X, E, ele))
 
         for id in range(N_F):
-            if id not in e_ids:
-                (X, dxdr, _, ele) = self.train_x['force']
-                F = self.train_y['force']
-                data["force"].append(X, dxdr, _, F, ele)
+            if id not in f_ids:
+                (X, dxdr, _, ele) = self.train_x['force'][id]
+                F = self.train_y['force'][id]
+                data["force"].append((X, dxdr, _, F, ele))
 
-        for data in self.train_db:
-            (atoms, energy, force, energy_in, force_in, e_id, _f_ids) = data         
+        for d in self.train_db:
+            (atoms, energy, force, energy_in, force_in, e_id, _f_ids) = d
             keep = False
             if e_id in e_ids:
                 energy_in = False
@@ -233,6 +234,7 @@ class GaussianProcess():
                 data['db'].append((atoms, energy, force, energy_in, _force_in))
         
         self.set_train_pts(data) # reset the train data
+        self.fit()
 
     def update_y_train(self):
         """ 
@@ -440,7 +442,7 @@ class GaussianProcess():
             json.dump(dict0, fp)
         self.export_ase_db(db_filename, permission="w")
 
-        print("save the GP model to", filename, ", and database to ", db_filename)
+        print("save the GP model to", filename, "and database to", db_filename)
 
     def load(self, filename, N_max=None, opt=False):
         """
@@ -657,12 +659,19 @@ class GaussianProcess():
         """
         K = self.kernel.k_total(self.train_x)
         N_e = len(self.train_x["energy"])
-        pts_e, pts_f = CUR(K, N_e, l_tol)
+        N_f = len(self.train_x["force"])
+        pts_e = CUR(K[:N_e,:N_e], l_tol)
+        pts = CUR(K[N_e:,N_e:], l_tol)
+        pts_f = []
+        if N_f > 0:
+            for i in range(N_f):
+                if len(pts[pts==i*3])==1 and len(pts[pts==(i*3+1)])==1 and len(pts[pts==(i*3+2)])==1:
+                    pts_f.append(i)
         print("{:d} energy and {:d} force points will be removed".format(len(pts_e), len(pts_f)))
         self.remove_train_pts(pts_e, pts_f)
 
 
-def CUR(K, N_e, l_tol=1e-10):
+def CUR(K, l_tol=1e-10):
     """
     This is a code to perform CUR decomposition for the covariance matrix:
     Appendix D in Jinnouchi, et al, Phys. Rev. B, 014105 (2019)
@@ -671,7 +680,6 @@ def CUR(K, N_e, l_tol=1e-10):
         K: N*N covariance matrix
         N_e: number of 
     """
-    N_f = int((len(K)-N_e)/3) # number of force points
     L, U = np.linalg.eigh(K)
     N_low = len(L[L<l_tol])
     omega = np.zeros(len(L))
@@ -680,13 +688,4 @@ def CUR(K, N_e, l_tol=1e-10):
             if L[eta] < l_tol:
                 omega[j] += U[j,eta]*U[j,eta]
     ids = np.argsort(-1*omega)
-    pts_ee = ids[ids<N_e]
-    pts_ff = []
-    if N_f > 0:
-        pts = ids - pts_ee
-        pts = np.array(pts) - N_e
-        for i in range(N_f):
-            if len(pts[pts==i*3])==1 and len(pts[pts==(i*3+1)])==1 and len(pts[pts==(i*3+2)])==1:
-                pts_ff.append(i)
-
-    return pts_ee, pts_ff
+    return ids[:N_low]

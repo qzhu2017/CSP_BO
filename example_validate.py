@@ -4,11 +4,13 @@ from time import time
 from cspbo.utilities import rmse, metric_single, get_strucs, plot
 from cspbo.gaussianprocess_ef import GaussianProcess as gpr
 from cspbo.calculator import GPR
+eV2GPa = 160.21766
+
 
 np.set_printoptions(formatter={'float': '{: 5.2f}'.format})
 
 #N_max, ncpu = 100, 24
-N_max, ncpu = 5, 1
+N_max, ncpu = 5, 'gpu'
 m_file = sys.argv[1]
 db_file = sys.argv[2]
 model = gpr()
@@ -45,7 +47,7 @@ for struc, val in zip(strucs, values):
     F = struc.get_forces()
 
     if stress:
-        S = struc.get_stress()
+        S = struc.get_stress()*eV2GPa
 
     E0 /= len(struc)
     if total_F is None:
@@ -79,4 +81,3 @@ plot((train_F, total_F), (train_F1, total_F0), (l2, l4), "F.png", type="Force")
 if stress:
     l5 = metric_single(total_S, total_S0, "Test Stress") 
     plot([total_S], [total_S0], [l5], "S.png", type="Stress")
-#

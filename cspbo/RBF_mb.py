@@ -587,7 +587,7 @@ def K_ff(x1, x2, dx1dr, dx2dr, rdx1dr, sigma2, l2, zeta=2, grad=False, mask=None
     if mask is not None:
         k[mask] = 0
     dk_dD = (-0.5/l2)*k
-    zd1 = zeta * D1
+    zd2 = -0.5/l2*zeta*zeta*(D1**2)
 
     tmp11 = x2[None, :, :] * x1_norm[:, None, None]
     tmp12 = x1x2_dot[:,:,None] * (x1/x1_norm[:, None])[:,None,:] 
@@ -613,7 +613,7 @@ def K_ff(x1, x2, dx1dr, dx2dr, rdx1dr, sigma2, l2, zeta=2, grad=False, mask=None
         dk_dD = cp.array(dk_dD)
         D1 = cp.array(D1)
         D2 = cp.array(D2)
-        zd1 = cp.array(zd1)
+        zd2 = cp.array(zd2)
         x1x2_dot = cp.array(x1x2_dot)
         dd_dx1 = cp.array(dd_dx1)
         dd_dx2 = cp.array(dd_dx2)
@@ -628,13 +628,13 @@ def K_ff(x1, x2, dx1dr, dx2dr, rdx1dr, sigma2, l2, zeta=2, grad=False, mask=None
         out2 = tmp33[None,:,:,:]/(x1_norm[:,None]*x2_norm[None,:])[:,:,None,None]
         d2d_dx1dx2 = out2 - out1
 
-        dD_dx1 = zd1[:,:,None] * dd_dx1
-        dD_dx2 = zd1[:,:,None] * dd_dx2
-        d2D_dx1dx2 = dd_dx1[:,:,:,None] * dd_dx2[:,:,None,:]
-        d2D_dx1dx2 *= ((zeta-1)*D2)[:,:,None,None] 
+        dd_dx1_dd_dx2 = dd_dx1[:,:,:,None] * dd_dx2[:,:,None,:]
+        dD_dx1_dD_dx2 = zd2[:,:,None,None] * dd_dx1_dd_dx2 
+
+        d2D_dx1dx2 = dd_dx1_dd_dx2 * D2[:,:,None,None] * (zeta-1)
         d2D_dx1dx2 += D1[:,:,None,None]*d2d_dx1dx2
         d2D_dx1dx2 *= zeta
-        d2k_dx1dx2 = -d2D_dx1dx2 - 0.5/l2*dD_dx1[:,:,:,None]*dD_dx2[:,:,None,:] # m, n, d1, d2
+        d2k_dx1dx2 = -d2D_dx1dx2 + dD_dx1_dD_dx2 # m, n, d1, d2
 
         if grad:
 
@@ -704,14 +704,13 @@ def K_ff(x1, x2, dx1dr, dx2dr, rdx1dr, sigma2, l2, zeta=2, grad=False, mask=None
         out2 = tmp33[None,:,:,:]/(x1_norm[:,None]*x2_norm[None,:])[:,:,None,None]
         d2d_dx1dx2 = out2 - out1
 
-        zd1 = zeta * D1
-        dD_dx1 = zd1[:,:,None] * dd_dx1
-        dD_dx2 = zd1[:,:,None] * dd_dx2
-        d2D_dx1dx2 = dd_dx1[:,:,:,None] * dd_dx2[:,:,None,:]
-        d2D_dx1dx2 *= ((zeta-1)*D2)[:,:,None,None] 
+        dd_dx1_dd_dx2 = dd_dx1[:,:,:,None] * dd_dx2[:,:,None,:]
+        dD_dx1_dD_dx2 = zd2[:,:,None,None] * dd_dx1_dd_dx2 
+
+        d2D_dx1dx2 = dd_dx1_dd_dx2 * D2[:,:,None,None] * (zeta-1)
         d2D_dx1dx2 += D1[:,:,None,None]*d2d_dx1dx2
         d2D_dx1dx2 *= zeta
-        d2k_dx1dx2 = -d2D_dx1dx2 - 0.5/l2*dD_dx1[:,:,:,None]*dD_dx2[:,:,None,:] # m, n, d1, d2
+        d2k_dx1dx2 = -d2D_dx1dx2 + dD_dx1_dD_dx2 # m, n, d1, d2
 
         if grad:
             K_ff_0 = np.einsum("ijkl,ikm->ijlm", d2k_dx1dx2, dx1dr) # m, n, d2, 3
@@ -727,7 +726,6 @@ def K_ff(x1, x2, dx1dr, dx2dr, rdx1dr, sigma2, l2, zeta=2, grad=False, mask=None
             tmp1 = dD_dx1[:,:,:,None]*dD_dx2[:,:,None,:]
             K_ff_1 = np.einsum("ijkl,ikm->ijlm", tmp1, dx1dr)
             K_ff_1 = np.einsum("ijkl,jkm->ijlm", K_ff_1, dx2dr)
-            #K_ff_1 = np.einsum("ikm,ijkl,jln->ijmn", dx1dr, tmp1, dx2dr, optimize='optimal')
 
             dKff_dl += np.einsum("ijkl,ij->kl", K_ff_1, dk_dD)/l2/np.sqrt(l2)
 

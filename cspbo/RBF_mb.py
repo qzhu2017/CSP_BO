@@ -570,8 +570,35 @@ def K_ee(x1, x2, sigma2, l2, zeta=2, grad=False, mask=None, eps=1e-8):
 def K_ff(x1, x2, dx1dr, dx2dr, rdx1dr, sigma2, l2, zeta=2, grad=False, mask=None, path=None, eps=1e-8, device='cpu'):
     x1_norm = np.linalg.norm(x1, axis=1) + eps
     x2_norm = np.linalg.norm(x2, axis=1) + eps
+    x1_norm2 = x1_norm**2       
+    x1_norm3 = x1_norm**3        
+    x2_norm3 = x2_norm**3    
+    x2_norm2 = x2_norm**2      
+
     l = np.sqrt(l2)
     l3 = l*l2
+
+    x1x2_dot = x1@x2.T
+    d = x1x2_dot/(eps+x1_norm[:,None]*x2_norm[None,:])
+    D2 = d**(zeta-2)
+    D1 = d*D2
+    D = d*D1
+    k = sigma2*np.exp(-(0.5/l2)*(1-D))
+    if mask is not None:
+        k[mask] = 0
+    dk_dD = (-0.5/l2)*k
+    zd1 = zeta * D1
+
+    tmp11 = x2[None, :, :] * x1_norm[:, None, None]
+    tmp12 = x1x2_dot[:,:,None] * (x1/x1_norm[:, None])[:,None,:] 
+    tmp13 = x1_norm2[:, None, None] * x2_norm[None, :, None] 
+    dd_dx1 = (tmp11-tmp12)/tmp13 
+
+    tmp21 = x1[:, None, :] * x2_norm[None,:,None]
+    tmp22 = x1x2_dot[:,:,None] * (x2/x2_norm[:, None])[None,:,:]
+    tmp23 = x1_norm[:, None, None] * x2_norm2[None, :, None] 
+    dd_dx2 = (tmp21-tmp22)/tmp23 
+
 
     if device == 'gpu':
         x1 = cp.array(x1)
@@ -580,32 +607,16 @@ def K_ff(x1, x2, dx1dr, dx2dr, rdx1dr, sigma2, l2, zeta=2, grad=False, mask=None
         dx2dr = cp.array(dx2dr)
         x1_norm = cp.array(x1_norm)
         x2_norm = cp.array(x2_norm)
-        x1_norm2 = x1_norm**2       
-        x1_norm3 = x1_norm**3        
-        x2_norm3 = x2_norm**3    
-        x2_norm2 = x2_norm**2      
-        x1x2_dot = x1@x2.T
-
-        d = x1x2_dot/(eps+x1_norm[:,None]*x2_norm[None,:])
-        D2 = d**(zeta-2)
-        D1 = d*D2
-        D = d*D1
-
-        #k = sigma2*cp.exp(-(0.5/l2)*(1-D))
-        k = sigma2*np.exp(-(0.5/l2)*(1-D))
-        if mask is not None:
-            k[mask] = 0
-        dk_dD = (-0.5/l2)*k
-
-        tmp11 = x2[None, :, :] * x1_norm[:, None, None]
-        tmp12 = x1x2_dot[:,:,None] * (x1/x1_norm[:, None])[:,None,:] 
-        tmp13 = x1_norm2[:, None, None] * x2_norm[None, :, None] 
-        dd_dx1 = (tmp11-tmp12)/tmp13 
-
-        tmp21 = x1[:, None, :] * x2_norm[None,:,None]
-        tmp22 = x1x2_dot[:,:,None] * (x2/x2_norm[:, None])[None,:,:]
-        tmp23 = x1_norm[:, None, None] * x2_norm2[None, :, None] 
-        dd_dx2 = (tmp21-tmp22)/tmp23 
+        x1_norm3 = cp.array(x1_norm3)
+        x2_norm2 = cp.array(x2_norm2)
+        x2_norm3 = cp.array(x2_norm3)
+        dk_dD = cp.array(dk_dD)
+        D1 = cp.array(D1)
+        D2 = cp.array(D2)
+        zd1 = cp.array(zd1)
+        x1x2_dot = cp.array(x1x2_dot)
+        dd_dx1 = cp.array(dd_dx1)
+        dd_dx2 = cp.array(dd_dx2)
 
         tmp30 = cp.ones(x2.shape)
         tmp31 = (x1[:,None,:]*(tmp30/x2_norm[:,None])[None,:,:])[:,:,None,:]*(x1/x1_norm3[:,None])[:,None,:,None]
@@ -617,7 +628,6 @@ def K_ff(x1, x2, dx1dr, dx2dr, rdx1dr, sigma2, l2, zeta=2, grad=False, mask=None
         out2 = tmp33[None,:,:,:]/(x1_norm[:,None]*x2_norm[None,:])[:,:,None,None]
         d2d_dx1dx2 = out2 - out1
 
-        zd1 = zeta * D1
         dD_dx1 = zd1[:,:,None] * dd_dx1
         dD_dx2 = zd1[:,:,None] * dd_dx2
         d2D_dx1dx2 = dd_dx1[:,:,:,None] * dd_dx2[:,:,None,:]
@@ -627,6 +637,8 @@ def K_ff(x1, x2, dx1dr, dx2dr, rdx1dr, sigma2, l2, zeta=2, grad=False, mask=None
         d2k_dx1dx2 = -d2D_dx1dx2 - 0.5/l2*dD_dx1[:,:,:,None]*dD_dx2[:,:,None,:] # m, n, d1, d2
 
         if grad:
+
+            D = cp.array(D)
             #from time import time
             #t0 = time()
             K_ff_0 = cp.sum(d2k_dx1dx2[:,:,:,:,None] * dx1dr[:,None,:,None,:], axis=2) # m, n, d2, 3
@@ -682,32 +694,6 @@ def K_ff(x1, x2, dx1dr, dx2dr, rdx1dr, sigma2, l2, zeta=2, grad=False, mask=None
                 return cp.asnumpy(Kff),  cp.asnumpy(Ksf)
 
     else:
-        x1_norm2 = x1_norm**2       
-        x1_norm3 = x1_norm**3        
-        x2_norm3 = x2_norm**3    
-        x2_norm2 = x2_norm**2      
-        x1x2_dot = x1@x2.T
-
-        d = x1x2_dot/(eps+x1_norm[:,None]*x2_norm[None,:])
-        D2 = d**(zeta-2)
-        D1 = d*D2
-        D = d*D1
-
-        k = sigma2*np.exp(-(0.5/l2)*(1-D))
-        if mask is not None:
-            k[mask] = 0
-        dk_dD = (-0.5/l2)*k
-
-        tmp11 = x2[None, :, :] * x1_norm[:, None, None]
-        tmp12 = x1x2_dot[:,:,None] * (x1/x1_norm[:, None])[:,None,:] 
-        tmp13 = x1_norm2[:, None, None] * x2_norm[None, :, None] 
-        dd_dx1 = (tmp11-tmp12)/tmp13 
-
-        tmp21 = x1[:, None, :] * x2_norm[None,:,None]
-        tmp22 = x1x2_dot[:,:,None] * (x2/x2_norm[:, None])[None,:,:]
-        tmp23 = x1_norm[:, None, None] * x2_norm2[None, :, None] 
-        dd_dx2 = (tmp21-tmp22)/tmp23 
-
         tmp30 = np.ones(x2.shape)
         tmp31 = (x1[:,None,:]*(tmp30/x2_norm[:,None])[None,:,:])[:,:,None,:]*(x1/x1_norm3[:,None])[:,None,:,None]
         x1x2 = (x1/x1_norm3[:,None])[:,None,:,None]*(x2/x2_norm3[:,None])[None,:,None,:]

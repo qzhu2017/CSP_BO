@@ -624,17 +624,15 @@ def K_ff(x1, x2, dx1dr, dx2dr, rdx1dr, sigma2, l2, zeta=2, grad=False, mask=None
         d2D_dx1dx2 *= ((zeta-1)*D2)[:,:,None,None] 
         d2D_dx1dx2 += D1[:,:,None,None]*d2d_dx1dx2
         d2D_dx1dx2 *= zeta
-        tmp = -d2D_dx1dx2 - 0.5/l2*dD_dx1[:,:,:,None]*dD_dx2[:,:,None,:] # m, n, d1, d2
+        d2k_dx1dx2 = -d2D_dx1dx2 - 0.5/l2*dD_dx1[:,:,:,None]*dD_dx2[:,:,None,:] # m, n, d1, d2
 
         if grad:
             #from time import time
             #t0 = time()
-            #K_ff_0 = cp.einsum("ijkl,ikm->ijlm", tmp, cp.array(dx1dr)) # m, n, d2, 3
-            K_ff_0 = cp.sum(tmp[:,:,:,:,None] * dx1dr[:,None,:,None,:], axis=2) # m, n, d2, 3
+            K_ff_0 = cp.sum(d2k_dx1dx2[:,:,:,:,None] * dx1dr[:,None,:,None,:], axis=2) # m, n, d2, 3
             #print(time()-t0)
             
             #t0 = time()
-            #K_ff_0 = cp.einsum("ijkl,jkm->ijlm", K_ff_0, cp.array(dx2dr))
             K_ff_0 = cp.sum(K_ff_0[:,:,:,:,None] * dx2dr[None,:,:,None,:], axis=2) # m, n, 3, 3
             #print(time()-t0)
             
@@ -647,12 +645,10 @@ def K_ff(x1, x2, dx1dr, dx2dr, rdx1dr, sigma2, l2, zeta=2, grad=False, mask=None
             d2k_dDdl = (D/l3)*dkdD + (2/l)*dkdD
 
             #t0 = time()
-            #dKff_dsigma = cp.einsum("ijkl,ij->kl", K_ff_0, d2k_dDdsigma)
             dKff_dsigma = cp.sum(K_ff_0 * d2k_dDdsigma[:,:,None,None], axis=(0,1))
             #print(time()-t0)
             
             #t0 = time()
-            #dKff_dl = cp.einsum("ijkl,ij->kl", K_ff_0, d2k_dDdl)
             dKff_dl = cp.sum(K_ff_0 * d2k_dDdl[:,:,None,None], axis=(0,1))
             #print(time()-t0)
             tmp1 = dD_dx1[:,:,:,None]*dD_dx2[:,:,None,:]
@@ -668,13 +664,12 @@ def K_ff(x1, x2, dx1dr, dx2dr, rdx1dr, sigma2, l2, zeta=2, grad=False, mask=None
             #print(time()-t0)
 
             #t0 = time()
-            #dKff_dl += cp.einsum("ijkl,ij->kl", K_ff_1, dk_dD)/(l2*np.sqrt(l2))
             dKff_dl += cp.sum(K_ff_1 * dk_dD[:,:,None,None], axis=(0,1))/(l2*np.sqrt(l2))
             #print(time()-t0)
 
             return cp.asnumpy(Kff),  cp.asnumpy(dKff_dsigma),  cp.asnumpy(dKff_dl)
         else:
-            tmp0 = tmp * dk_dD[:,:,None,None]
+            tmp0 = d2k_dx1dx2 * dk_dD[:,:,None,None]
             _kff1 = cp.sum(dx1dr[:,None,:,None,:] * tmp0[:,:,:,:,None], axis=(0,2))
             Kff = cp.sum(_kff1[:,:,:,None] * dx2dr[:,:,None,:], axis=(0,1))
 
@@ -730,13 +725,11 @@ def K_ff(x1, x2, dx1dr, dx2dr, rdx1dr, sigma2, l2, zeta=2, grad=False, mask=None
         d2D_dx1dx2 *= ((zeta-1)*D2)[:,:,None,None] 
         d2D_dx1dx2 += D1[:,:,None,None]*d2d_dx1dx2
         d2D_dx1dx2 *= zeta
-        tmp = -d2D_dx1dx2 - 0.5/l2*dD_dx1[:,:,:,None]*dD_dx2[:,:,None,:] # m, n, d1, d2
+        d2k_dx1dx2 = -d2D_dx1dx2 - 0.5/l2*dD_dx1[:,:,:,None]*dD_dx2[:,:,None,:] # m, n, d1, d2
 
         if grad:
-            K_ff_0 = np.einsum("ijkl,ikm->ijlm", tmp, dx1dr) # m, n, d2, 3
+            K_ff_0 = np.einsum("ijkl,ikm->ijlm", d2k_dx1dx2, dx1dr) # m, n, d2, 3
             K_ff_0 = np.einsum("ijkl,jkm->ijlm", K_ff_0, dx2dr) # m, n, 3, 3
-            #K_ff_0 = np.einsum("ikm,ijkl,jln->ijmn", dx1dr, tmp, dx2dr)
-            #K_ff_0 = np.einsum("ikm,ijkl,jln->ijmn", dx1dr, tmp, dx2dr, optimize='optimal')
 
             Kff = np.einsum("ijkl,ij->kl", K_ff_0, dk_dD) # 3, 3
 
@@ -754,15 +747,11 @@ def K_ff(x1, x2, dx1dr, dx2dr, rdx1dr, sigma2, l2, zeta=2, grad=False, mask=None
 
             return Kff, dKff_dsigma, dKff_dl
         else:
-            tmp0 = np.einsum("ijkl,ij->ijkl", tmp, dk_dD) #m,n,d1,d2
-            #tmp = np.einsum("ijkl,ikm->jlm", tmp0, dx1dr) #m,n,d1,d2  m,d1,3 -> n, d2, 3
-            #Kff = np.einsum("ijk,ijl->kl", tmp, dx2dr) #n d2, 3   n d2 3
+            tmp0 = np.einsum("ijkl,ij->ijkl", d2k_dx1dx2, dk_dD) #m,n,d1,d2
             Kff = np.einsum("ikm,ijkl,jln->mn", dx1dr, tmp0, dx2dr, optimize=path)
             if rdx1dr is None:
                 return Kff
             else:
-                #s_tmp = np.einsum("ijkl,ikm->jlm", tmp0, rdx1dr) #m,n,d1,d2  m,d1,6 -> n, d2, 3
-                #Ksf = np.einsum("ijk,ijl->kl", s_tmp, dx2dr) #[6,3]
                 Ksf = np.einsum("ikm,ijkl,jln->mn", rdx1dr, tmp0, dx2dr, optimize=path) #[6,3]
                 return Kff, Ksf
 
@@ -789,9 +778,6 @@ def K_ef(x1, x2, dx2dr, rdx2dr, sigma2, l2, zeta=2, grad=False, mask=None, path=
 
     zd1 = zeta * D1
     dD_dx2 = -zd1[:,:,None] * dd_dx2
-    #dk_dD = fun_dk_dD(x1, x2, x1_norm, x2_norm, sigma2, l2, zeta, mask) #m, n
-    #dD_dx2, _ = fun_dD_dx2(x1, x2, x1_norm, x2_norm, d, zeta) #m, n, d2
-    #dD_dx2 *= -1
     m = len(x1)
 
     if grad:
@@ -809,10 +795,6 @@ def K_ef(x1, x2, dx2dr, rdx2dr, sigma2, l2, zeta=2, grad=False, mask=None, path=
         if rdx2dr is None:
             return Kef/m
         else:
-            #K_se_0 = -np.einsum("ijk,jkl->ijl", dD_dx2, rdx2dr)
-            #Kse = np.einsum("ijk,ij->k", K_se_0, dk_dD) #[6]
-            #Kse = np.einsum("ij,ijk,jkl->l", dk_dD, dD_dx2, rdx2dr, optimize='greedy') #[6]
             Kse = -np.einsum("ijk,jkl,ij->l", dD_dx2, rdx2dr, dk_dD, optimize=path) #[6]
-
             return Kef/m, Kse/m
 

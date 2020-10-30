@@ -233,8 +233,8 @@ class Dot_mb():
         elif self.ncpu == 'gpu':
             results = []
             for i, j in zip(_is, _js):
-                (x1, dx1dr, _, ele1) = X1[i]
-                (x2, dx2dr, _, ele2) = X2[j]
+                (x1, _, _, ele1, dx1dr, rdx1dr ) = X1[i]
+                (x2, _, _, ele2, dx2dr, _ ) = X2[j]
                 mask = get_mask(ele1, ele2)
                 results.append(kff_single(x1, x2, dx1dr, dx2dr, None, sigma2, sigma02, zeta, grad, mask, path, device='gpu'))
         else:
@@ -302,7 +302,10 @@ class Dot_mb():
             results = []
             for i, j in zip(_is, _js):
                 (x1, ele1) = X1[i]
-                (x2, dx2dr, _, ele2) = X2[j]
+                if self.ncpu == 'gpu':
+                    (x2, dx2dr, _, ele2, _, _) = X2[j]
+                else:
+                    (x2, dx2dr, _, ele2) = X2[j]
                 mask = get_mask(ele1, ele2)
                 results.append(kef_single(x1, x2, dx2dr, None, sigma2, sigma02, zeta, grad, mask, path))
         else:
@@ -381,7 +384,10 @@ class Dot_mb():
             results = []
             for i, j in zip(_is, _js):
                 (x1, ele1) = X1[i]
-                (x2, dx2dr, rdx2dr, ele2) = X2[j]
+                if self.ncpu == 'gpu':
+                    (x2, dx2dr, rdx2dr, ele2, _, _) = X2[j]
+                else:
+                    (x2, dx2dr, rdx2dr, ele2) = X2[j]
                 mask = get_mask(ele1, ele2)
                 results.append(kef_single(x1, x2, dx2dr, rdx2dr, sigma2, sigma02, zeta, False, mask, path))
         else:
@@ -442,8 +448,8 @@ class Dot_mb():
         elif self.ncpu == 'gpu':
             results = []
             for i, j in zip(_is, _js):
-                (x1, dx1dr, rdx1dr, ele1) = X1[i]
-                (x2, dx2dr, _, ele2) = X2[j]
+                (x1, _, _, ele1, dx1dr, rdx1dr ) = X1[i]
+                (x2, _, _, ele2, dx2dr, _ ) = X2[j]
                 mask = get_mask(ele1, ele2)
                 results.append(kff_single(x1, x2, dx1dr, dx2dr, rdx1dr, sigma2, sigma02, zeta, False, mask, path, device='gpu'))
 

@@ -231,8 +231,8 @@ class RBF_mb():
         elif self.ncpu == 'gpu':
             results = []
             for i, j in zip(_is, _js):
-                (x1, dx1dr, _, ele1) = X1[i]
-                (x2, dx2dr, _, ele2) = X2[j]
+                (x1, _, _, ele1, dx1dr, _) = X1[i]
+                (x2, _, _, ele2, dx2dr, _) = X2[j]
                 mask = get_mask(ele1, ele2)
                 results.append(kff_single(x1, x2, dx1dr, dx2dr, None, sigma2, l2, zeta, grad, mask, path, device='gpu'))
         else:
@@ -303,7 +303,10 @@ class RBF_mb():
             results = []
             for i, j in zip(_is, _js):
                 (x1, ele1) = X1[i]
-                (x2, dx2dr, _, ele2) = X2[j]
+                if self.ncpu == 'gpu':
+                    (x2, dx2dr, rdx2dr, ele2, _, _) = X2[j]
+                else:
+                    (x2, dx2dr, _, ele2) = X2[j]
                 mask = get_mask(ele1, ele2)
                 results.append(kef_single(x1, x2, dx2dr, None, sigma2, l2, zeta, grad, mask, path))
         else:
@@ -382,7 +385,10 @@ class RBF_mb():
             results = []
             for i, j in zip(_is, _js):
                 (x1, ele1) = X1[i]
-                (x2, dx2dr, rdx2dr, ele2) = X2[j]
+                if self.ncpu == 'gpu':
+                    (x2, dx2dr, rdx2dr, ele2, _, _) = X2[j]
+                else:
+                    (x2, dx2dr, rdx2dr, ele2) = X2[j]
                 mask = get_mask(ele1, ele2)
                 results.append(kef_single(x1, x2, dx2dr, rdx2dr, sigma2, l2, zeta, False, mask, path))
         else:
@@ -443,8 +449,8 @@ class RBF_mb():
         elif self.ncpu == 'gpu':
             results = []
             for i, j in zip(_is, _js):
-                (x1, dx1dr, rdx1dr, ele1) = X1[i]
-                (x2, dx2dr, rdx2dr, ele2) = X2[j]
+                (x1, _, _, ele1, dx1dr, rdx1dr) = X1[i]
+                (x2, _, _, ele2, dx2dr, rdx2dr) = X2[j]
                 mask = get_mask(ele1, ele2)
                 results.append(kff_single(x1, x2, dx1dr, dx2dr, rdx1dr, sigma2, l2, zeta, False, mask, path, device='gpu'))
         else:
@@ -609,8 +615,6 @@ def K_ff(x1, x2, dx1dr, dx2dr, rdx1dr, sigma2, l2, zeta=2, grad=False, mask=None
     x2_x2_norm3 = x2/x2_norm3[:,None]
 
     if device == 'gpu':
-        dx1dr = cp.array(dx1dr)
-        dx2dr = cp.array(dx2dr)
         x1x2_norm = cp.array(x1x2_norm)
         x1_x1_norm3 = cp.array(x1_x1_norm3)
         x2_x2_norm3 = cp.array(x2_x2_norm3)
@@ -691,7 +695,6 @@ def K_ff(x1, x2, dx1dr, dx2dr, rdx1dr, sigma2, l2, zeta=2, grad=False, mask=None
             if rdx1dr is None:
                 return  cp.asnumpy(Kff)
             else:
-                rdx1dr = cp.asarray(rdx1dr)
                 _Ksf = cp.sum(rdx1dr[:,None,:,None,:] * tmp0[:,:,:,:,None], axis=(0,2))
                 Ksf = cp.sum(_Ksf[:,:,:,None] * dx2dr[:,:,None,:], axis=(0,1))
                 #Ksf = rdx1dr[:,None,:,None,:,None] * tmp0[:,:,:,:,None,None] * dx2dr[None,:,None,:,None,:]

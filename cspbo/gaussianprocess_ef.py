@@ -1,4 +1,5 @@
 import numpy as np
+import cupy as cp
 from pyxtal.database.element import Element
 from .utilities import new_pt, convert_train_data
 from scipy.linalg import cholesky, cho_solve, solve_triangular
@@ -307,10 +308,15 @@ class GaussianProcess():
             if stress:
                 _rdxdr = d['rdxdr'][ids]
                 _rdxdr = _rdxdr.reshape([len(ids), l, 9])[:, :, [0, 4, 8, 1, 2, 5]]
-                data["force"].append((_x, _dxdr, _rdxdr, ele0))
+                if self.kernel.ncpu == 'gpu':
+                    data["force"].append((_x, _dxdr, _rdxdr, ele0, cp.array(_dxdr), cp.array(_rdxdr)))
+                else:
+                    data["force"].append((_x, _dxdr, _rdxdr, ele0))
             else:
-                data["force"].append((_x, _dxdr, None, ele0))
-
+                if self.kernel.ncpu == 'gpu':
+                    data["force"].append((_x, _dxdr, None, ele0, cp.array(_dxdr), None))
+                else:
+                    data["force"].append((_x, _dxdr, None, ele0))
         if stress:
             K_trans, K_trans1 = self.kernel.k_total_with_stress(data, self.train_x)
         else:
@@ -370,7 +376,11 @@ class GaussianProcess():
         N2 is the number of the centered atoms' neighbors within the cutoff
         """
         (X, dXdR, _, F, ele) = force_data
-        self.train_x['force'].append((X, dXdR, None, ele))
+
+        if self.kernel.ncpu == 'gpu':
+            self.train_x['force'].append((X, dXdR, None, ele, cp.array(dXdR), None))
+        else:
+            self.train_x['force'].append((X, dXdR, None, ele))
         self.train_y['force'].append(F)
         #self.update_y_train()
 
@@ -454,8 +464,7 @@ class GaussianProcess():
         #print(filename)
         with open(filename, "r") as fp:
             dict0 = json.load(fp)
-        self.load_from_dict(dict0, N_max=N_max)
-        self.kernel.ncpu = device
+        self.load_from_dict(dict0, N_max=N_max, device=device)
         self.fit(opt=opt)
         print("load the GP model from ", filename)
 
@@ -474,7 +483,7 @@ class GaussianProcess():
         return dict0
 
 
-    def load_from_dict(self, dict0, N_max=None):
+    def load_from_dict(self, dict0, N_max=None, device=1):
         
         #keys = ['kernel', 'descriptor', 'Noise']
 
@@ -505,7 +514,7 @@ class GaussianProcess():
             else:
                 msg = "unknow base potential {:s}".format(dict0["base_potential"]["name"])
                 raise NotImplementedError(msg)
-
+        self.kernel.ncpu = device
 
         self.noise_e = dict0["noise"]["energy"]
         self.f_coef = dict0["noise"]["f_coef"]

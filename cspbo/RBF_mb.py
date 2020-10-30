@@ -62,7 +62,7 @@ class RBF_mb():
             for i in range(NF):
                 (x1, dx1dr, _, ele1) = data["force"][i]
                 mask = get_mask(ele1, ele1)
-                C_ff[i*3:(i+1)*3] = np.diag(kff_single(x1, x1, dx1dr, dx1dr, None, None, sigma2, l2, zeta, False, mask))
+                C_ff[i*3:(i+1)*3] = np.diag(kff_single(x1, x1, dx1dr, dx1dr, None, sigma2, l2, zeta, False, mask))
 
         if C_ff is None:
             return C_ee
@@ -227,14 +227,14 @@ class RBF_mb():
                 (x1, dx1dr, _, ele1) = X1[i]
                 (x2, dx2dr, _, ele2) = X2[j]
                 mask = get_mask(ele1, ele2)
-                results.append(kff_single(x1, x2, dx1dr, dx2dr, None, None, sigma2, l2, zeta, grad, mask, path))
+                results.append(kff_single(x1, x2, dx1dr, dx2dr, None, sigma2, l2, zeta, grad, mask, path))
         elif self.ncpu == 'gpu':
             results = []
             for i, j in zip(_is, _js):
                 (x1, dx1dr, _, ele1) = X1[i]
                 (x2, dx2dr, _, ele2) = X2[j]
                 mask = get_mask(ele1, ele2)
-                results.append(kff_single(x1, x2, dx1dr, dx2dr, None, None, sigma2, l2, zeta, grad, mask, path, device='gpu'))
+                results.append(kff_single(x1, x2, dx1dr, dx2dr, None, sigma2, l2, zeta, grad, mask, path, device='gpu'))
         else:
             #print("Parallel version is on: ")
             fun_vars = []
@@ -242,7 +242,7 @@ class RBF_mb():
                 (x1, dx1dr, _, ele1) = X1[i]
                 (x2, dx2dr, _, ele2) = X2[j]
                 mask = get_mask(ele1, ele2)
-                fun_vars.append((x1, x2, dx1dr, dx2dr, None, None, mask))
+                fun_vars.append((x1, x2, dx1dr, dx2dr, None, mask))
 
             with Pool(self.ncpu) as p:
                 func = partial(kff_para, (sigma2, l2, zeta, grad, path))
@@ -439,14 +439,14 @@ class RBF_mb():
                 (x1, dx1dr, rdx1dr, ele1) = X1[i]
                 (x2, dx2dr, rdx2dr, ele2) = X2[j]
                 mask = get_mask(ele1, ele2)
-                results.append(kff_single(x1, x2, dx1dr, dx2dr, rdx1dr, rdx2dr, sigma2, l2, zeta, False, mask, path))
+                results.append(kff_single(x1, x2, dx1dr, dx2dr, rdx1dr, sigma2, l2, zeta, False, mask, path))
         elif self.ncpu == 'gpu':
             results = []
             for i, j in zip(_is, _js):
                 (x1, dx1dr, rdx1dr, ele1) = X1[i]
                 (x2, dx2dr, rdx2dr, ele2) = X2[j]
                 mask = get_mask(ele1, ele2)
-                results.append(kff_single(x1, x2, dx1dr, dx2dr, rdx1dr, rdx2dr, sigma2, l2, zeta, False, mask, path, device='gpu'))
+                results.append(kff_single(x1, x2, dx1dr, dx2dr, rdx1dr, sigma2, l2, zeta, False, mask, path, device='gpu'))
         else:
             #print("Parallel version is on: ")
             fun_vars = []
@@ -454,7 +454,7 @@ class RBF_mb():
                 (x1, dx1dr, rdx1dr, ele1) = X1[i]
                 (x2, dx2dr, rdx2dr, ele2) = X2[j]
                 mask = get_mask(ele1, ele2)
-                fun_vars.append((x1, x2, dx1dr, dx2dr, rdx1dr, rdx2dr, mask))
+                fun_vars.append((x1, x2, dx1dr, dx2dr, rdx1dr, mask))
 
             with Pool(self.ncpu) as p:
                 func = partial(kff_para, (sigma2, l2, zeta, False, path))
@@ -511,7 +511,7 @@ def kef_para(args, data):
     return K_ef(x1, x2, dx2dr, rdx2dr, sigma2, l2, zeta, grad, mask, path)
  
 
-def kff_single(x1, x2, dx1dr, dx2dr, rdx1dr, rdx2dr, sigma2, l2, zeta, grad=False, mask=None, path=None, device='cpu'):
+def kff_single(x1, x2, dx1dr, dx2dr, rdx1dr, sigma2, l2, zeta, grad=False, mask=None, path=None, device='cpu'):
     """
     Compute the energy-energy kernel between two structures
     Args:
@@ -522,16 +522,16 @@ def kff_single(x1, x2, dx1dr, dx2dr, rdx1dr, rdx2dr, sigma2, l2, zeta, grad=Fals
     Returns:
         Kff: 3*3 array
     """
-    return K_ff(x1, x2, dx1dr, dx2dr, rdx1dr, rdx2dr, sigma2, l2, zeta, grad, mask, path, device=device) 
+    return K_ff(x1, x2, dx1dr, dx2dr, rdx1dr, sigma2, l2, zeta, grad, mask, path, device=device) 
 
 
 def kff_para(args, data): 
     """
     para version
     """
-    (x1, x2, dx1dr, dx2dr, rdx1dr, rdx2dr, mask) = data
+    (x1, x2, dx1dr, dx2dr, rdx1dr, mask) = data
     (sigma2, l2, zeta, grad, path) = args
-    return K_ff(x1, x2, dx1dr, dx2dr, rdx1dr, rdx2dr, sigma2, l2, zeta, grad, mask, path) 
+    return K_ff(x1, x2, dx1dr, dx2dr, rdx1dr, sigma2, l2, zeta, grad, mask, path) 
 
 def K_ee(x1, x2, sigma2, l2, zeta=2, grad=False, mask=None, eps=1e-8):
     """
@@ -546,100 +546,192 @@ def K_ee(x1, x2, sigma2, l2, zeta=2, grad=False, mask=None, eps=1e-8):
     """
     x1_norm = np.linalg.norm(x1, axis=1) + eps
     x2_norm = np.linalg.norm(x2, axis=1) + eps
-    D, _ = fun_D(x1, x2, x1_norm, x2_norm, zeta) #
-    dk_dD = fun_dk_dD(x1, x2, x1_norm, x2_norm, sigma2, l2, zeta, mask) #m, n
+    x1x2_dot = x1@x2.T
+    d = x1x2_dot/(eps+x1_norm[:,None]*x2_norm[None,:])
+    D = d**zeta
 
-    Kee0 = sigma2*np.exp(-0.5*(1-D)/l2)
+    #k = sigma2*cp.exp(-(0.5/l2)*(1-D))
+    k = sigma2*np.exp(-(0.5/l2)*(1-D))
     if mask is not None:
-        Kee0[mask] = 0
-    Kee = np.sum(Kee0)
+        k[mask] = 0
+    dk_dD = (-0.5/l2)*k
+
+    Kee = np.sum(k)
     mn = len(x1)*len(x2)
 
     if grad:
         l3 = np.sqrt(l2)*l2
         dKee_dsigma = 2*Kee/np.sqrt(sigma2)
-        dKee_dl = np.sum(Kee0*(1-D))/l3
+        dKee_dl = np.sum(k*(1-D))/l3
         return Kee/mn, dKee_dsigma/mn, dKee_dl/mn
     else:
         return Kee/mn
 
-def K_ff(x1, x2, dx1dr, dx2dr, rdx1dr, rdx2dr, sigma2, l2, zeta=2, grad=False, mask=None, path=None, eps=1e-8, device='cpu'):
-    if device == 'gpu':
-        x1_norm = cp.array(np.linalg.norm(x1, axis=1) + eps)
-        x2_norm = cp.array(np.linalg.norm(x2, axis=1) + eps)
-        _, d = fun_D_gpu(cp.array(x1), cp.array(x2), x1_norm, x2_norm, zeta)
+def K_ff(x1, x2, dx1dr, dx2dr, rdx1dr, sigma2, l2, zeta=2, grad=False, mask=None, path=None, eps=1e-8, device='cpu'):
+    x1_norm = np.linalg.norm(x1, axis=1) + eps
+    x2_norm = np.linalg.norm(x2, axis=1) + eps
+    l = np.sqrt(l2)
+    l3 = l*l2
 
-        dk_dD = fun_dk_dD_gpu(cp.array(x1), cp.array(x2), x1_norm, x2_norm, sigma2, l2, zeta, mask) #m, n
-        d2D_dx1dx2, (dD_dx1, dD_dx2) = fun_d2D_dx1dx2_gpu(cp.array(x1), cp.array(x2), x1_norm, x2_norm, d, zeta) #m, n, d1, d2
+    if device == 'gpu':
+        x1 = cp.array(x1)
+        x2 = cp.array(x2)
+        dx1dr = cp.array(dx1dr)
+        dx2dr = cp.array(dx2dr)
+        x1_norm = cp.array(x1_norm)
+        x2_norm = cp.array(x2_norm)
+        x1_norm2 = x1_norm**2       
+        x1_norm3 = x1_norm**3        
+        x2_norm3 = x2_norm**3    
+        x2_norm2 = x2_norm**2      
+        x1x2_dot = x1@x2.T
+
+        d = x1x2_dot/(eps+x1_norm[:,None]*x2_norm[None,:])
+        D2 = d**(zeta-2)
+        D1 = d*D2
+        D = d*D1
+
+        #k = sigma2*cp.exp(-(0.5/l2)*(1-D))
+        k = sigma2*np.exp(-(0.5/l2)*(1-D))
+        if mask is not None:
+            k[mask] = 0
+        dk_dD = (-0.5/l2)*k
+
+        tmp11 = x2[None, :, :] * x1_norm[:, None, None]
+        tmp12 = x1x2_dot[:,:,None] * (x1/x1_norm[:, None])[:,None,:] 
+        tmp13 = x1_norm2[:, None, None] * x2_norm[None, :, None] 
+        dd_dx1 = (tmp11-tmp12)/tmp13 
+
+        tmp21 = x1[:, None, :] * x2_norm[None,:,None]
+        tmp22 = x1x2_dot[:,:,None] * (x2/x2_norm[:, None])[None,:,:]
+        tmp23 = x1_norm[:, None, None] * x2_norm2[None, :, None] 
+        dd_dx2 = (tmp21-tmp22)/tmp23 
+
+        tmp30 = cp.ones(x2.shape)
+        tmp31 = (x1[:,None,:]*(tmp30/x2_norm[:,None])[None,:,:])[:,:,None,:]*(x1/x1_norm3[:,None])[:,None,:,None]
+        x1x2 = (x1/x1_norm3[:,None])[:,None,:,None]*(x2/x2_norm3[:,None])[None,:,None,:]
+        tmp32 = x1x2 * x1x2_dot[:,:,None,None]
+    
+        out1 = tmp31-tmp32
+        tmp33 = cp.eye(x2.shape[1])[None,:,:] - x2[:,:,None] * (x2/x2_norm2[:,None])[:,None,:]
+        out2 = tmp33[None,:,:,:]/(x1_norm[:,None]*x2_norm[None,:])[:,:,None,None]
+        d2d_dx1dx2 = out2 - out1
+
+        zd1 = zeta * D1
+        dD_dx1 = zd1[:,:,None] * dd_dx1
+        dD_dx2 = zd1[:,:,None] * dd_dx2
+        d2D_dx1dx2 = dd_dx1[:,:,:,None] * dd_dx2[:,:,None,:]
+        d2D_dx1dx2 *= ((zeta-1)*D2)[:,:,None,None] 
+        d2D_dx1dx2 += D1[:,:,None,None]*d2d_dx1dx2
+        d2D_dx1dx2 *= zeta
         tmp = -d2D_dx1dx2 - 0.5/l2*dD_dx1[:,:,:,None]*dD_dx2[:,:,None,:] # m, n, d1, d2
+
         if grad:
-            from time import time
-            t0 = time()
+            #from time import time
+            #t0 = time()
             #K_ff_0 = cp.einsum("ijkl,ikm->ijlm", tmp, cp.array(dx1dr)) # m, n, d2, 3
-            K_ff_0 = cp.sum(tmp[:,:,:,:,None] * (cp.array(dx1dr))[:,None,:,None,:], axis=2) # m, n, d2, 3
-            print(time()-t0)
+            K_ff_0 = cp.sum(tmp[:,:,:,:,None] * dx1dr[:,None,:,None,:], axis=2) # m, n, d2, 3
+            #print(time()-t0)
             
-            t0 = time()
+            #t0 = time()
             #K_ff_0 = cp.einsum("ijkl,jkm->ijlm", K_ff_0, cp.array(dx2dr))
-            K_ff_0 = cp.sum(K_ff_0[:,:,:,:,None] * (cp.array(dx2dr))[None,:,:,None,:], axis=2) # m, n, 3, 3
-            print(time()-t0)
+            K_ff_0 = cp.sum(K_ff_0[:,:,:,:,None] * dx2dr[None,:,:,None,:], axis=2) # m, n, 3, 3
+            #print(time()-t0)
             
-            t0 = time()
+            #t0 = time()
             #Kff = cp.einsum("ijkl,ij->kl", K_ff_0, dk_dD)
             Kff = cp.sum(K_ff_0 * dk_dD[:,:,None,None], axis=(0,1))
-            print(time()-t0)
+            #print(time()-t0)
 
-            d2k_dDdsigma = fun_d2k_dDdsigma_gpu(dk_dD, sigma2)
-            d2k_dDdl = fun_d2k_dDdl_gpu(dk_dD, sigma2, l2, d) #m, n
+            d2k_dDdsigma = 2*dkdD/np.sqrt(sigma2)
+            d2k_dDdl = (D/l3)*dkdD + (2/l)*dkdD
 
-            t0 = time()
+            #t0 = time()
             #dKff_dsigma = cp.einsum("ijkl,ij->kl", K_ff_0, d2k_dDdsigma)
             dKff_dsigma = cp.sum(K_ff_0 * d2k_dDdsigma[:,:,None,None], axis=(0,1))
-            print(time()-t0)
+            #print(time()-t0)
             
-            t0 = time()
+            #t0 = time()
             #dKff_dl = cp.einsum("ijkl,ij->kl", K_ff_0, d2k_dDdl)
             dKff_dl = cp.sum(K_ff_0 * d2k_dDdl[:,:,None,None], axis=(0,1))
-            print(time()-t0)
+            #print(time()-t0)
             tmp1 = dD_dx1[:,:,:,None]*dD_dx2[:,:,None,:]
 
-            t0 = time()
+            #t0 = time()
             #K_ff_1 = cp.einsum("ijkl,ikm->ijlm", tmp1, dx1dr)
-            K_ff_1 = cp.sum(tmp1[:,:,:,:,None] * (cp.array(dx1dr))[:,None,:,None,:], axis=2)
-            print(time()-t0)
+            K_ff_1 = cp.sum(tmp1[:,:,:,:,None] * dx1dr[:,None,:,None,:], axis=2)
+            #print(time()-t0)
             
-            t0 = time()
+            #t0 = time()
             #K_ff_1 = cp.einsum("ijkl,jkm->ijlm", K_ff_1, dx2dr)
-            K_ff_1 = cp.sum(K_ff_1[:,:,:,:,None] * (cp.array(dx2dr))[None,:,:,None,:], axis=2)
-            print(time()-t0)
+            K_ff_1 = cp.sum(K_ff_1[:,:,:,:,None] * dx2dr[None,:,:,None,:], axis=2)
+            #print(time()-t0)
 
-            t0 = time()
+            #t0 = time()
             #dKff_dl += cp.einsum("ijkl,ij->kl", K_ff_1, dk_dD)/(l2*np.sqrt(l2))
             dKff_dl += cp.sum(K_ff_1 * dk_dD[:,:,None,None], axis=(0,1))/(l2*np.sqrt(l2))
-            print(time()-t0)
+            #print(time()-t0)
 
             return cp.asnumpy(Kff),  cp.asnumpy(dKff_dsigma),  cp.asnumpy(dKff_dl)
         else:
             tmp0 = tmp * dk_dD[:,:,None,None]
-            _kff1 = cp.sum((cp.array(dx1dr))[:,None,:,None,:] * tmp0[:,:,:,:,None], axis=(0,2))
-            Kff = cp.sum(_kff1[:,:,:,None] * (cp.array(dx2dr))[:,:,None,:], axis=(0,1))
-            
+            _kff1 = cp.sum(dx1dr[:,None,:,None,:] * tmp0[:,:,:,:,None], axis=(0,2))
+            Kff = cp.sum(_kff1[:,:,:,None] * dx2dr[:,:,None,:], axis=(0,1))
+
             if rdx1dr is None:
                 return  cp.asnumpy(Kff)
             else:
-                _Ksf = cp.sum((cp.array(rdx1dr))[:,None,:,None,:] * tmp0[:,:,:,:,None], axis=(0,2))
-                Ksf = cp.sum(_Ksf[:,:,:,None] * (cp.array(dx2dr))[:,:,None,:], axis=(0,1))
+                rdx1dr = cp.asarray(rdx1dr)
+                _Ksf = cp.sum(rdx1dr[:,None,:,None,:] * tmp0[:,:,:,:,None], axis=(0,2))
+                Ksf = cp.sum(_Ksf[:,:,:,None] * dx2dr[:,:,None,:], axis=(0,1))
                 return cp.asnumpy(Kff),  cp.asnumpy(Ksf)
 
     else:
-        x1_norm = np.linalg.norm(x1, axis=1) + eps
-        x2_norm = np.linalg.norm(x2, axis=1) + eps
-        _, d = fun_D(x1, x2, x1_norm, x2_norm, zeta)
+        x1_norm2 = x1_norm**2       
+        x1_norm3 = x1_norm**3        
+        x2_norm3 = x2_norm**3    
+        x2_norm2 = x2_norm**2      
+        x1x2_dot = x1@x2.T
 
-        dk_dD = fun_dk_dD(x1, x2, x1_norm, x2_norm, sigma2, l2, zeta, mask) #m, n
-        d2D_dx1dx2, (dD_dx1, dD_dx2) = fun_d2D_dx1dx2(x1, x2, x1_norm, x2_norm, d, zeta) #m, n, d1, d2
+        d = x1x2_dot/(eps+x1_norm[:,None]*x2_norm[None,:])
+        D2 = d**(zeta-2)
+        D1 = d*D2
+        D = d*D1
+
+        k = sigma2*np.exp(-(0.5/l2)*(1-D))
+        if mask is not None:
+            k[mask] = 0
+        dk_dD = (-0.5/l2)*k
+
+        tmp11 = x2[None, :, :] * x1_norm[:, None, None]
+        tmp12 = x1x2_dot[:,:,None] * (x1/x1_norm[:, None])[:,None,:] 
+        tmp13 = x1_norm2[:, None, None] * x2_norm[None, :, None] 
+        dd_dx1 = (tmp11-tmp12)/tmp13 
+
+        tmp21 = x1[:, None, :] * x2_norm[None,:,None]
+        tmp22 = x1x2_dot[:,:,None] * (x2/x2_norm[:, None])[None,:,:]
+        tmp23 = x1_norm[:, None, None] * x2_norm2[None, :, None] 
+        dd_dx2 = (tmp21-tmp22)/tmp23 
+
+        tmp30 = np.ones(x2.shape)
+        tmp31 = (x1[:,None,:]*(tmp30/x2_norm[:,None])[None,:,:])[:,:,None,:]*(x1/x1_norm3[:,None])[:,None,:,None]
+        x1x2 = (x1/x1_norm3[:,None])[:,None,:,None]*(x2/x2_norm3[:,None])[None,:,None,:]
+        tmp32 = x1x2 * x1x2_dot[:,:,None,None]
+    
+        out1 = tmp31-tmp32
+        tmp33 = np.eye(x2.shape[1])[None,:,:] - x2[:,:,None] * (x2/x2_norm2[:,None])[:,None,:]
+        out2 = tmp33[None,:,:,:]/(x1_norm[:,None]*x2_norm[None,:])[:,:,None,None]
+        d2d_dx1dx2 = out2 - out1
+
+        zd1 = zeta * D1
+        dD_dx1 = zd1[:,:,None] * dd_dx1
+        dD_dx2 = zd1[:,:,None] * dd_dx2
+        d2D_dx1dx2 = dd_dx1[:,:,:,None] * dd_dx2[:,:,None,:]
+        d2D_dx1dx2 *= ((zeta-1)*D2)[:,:,None,None] 
+        d2D_dx1dx2 += D1[:,:,None,None]*d2d_dx1dx2
+        d2D_dx1dx2 *= zeta
         tmp = -d2D_dx1dx2 - 0.5/l2*dD_dx1[:,:,:,None]*dD_dx2[:,:,None,:] # m, n, d1, d2
-        #print(dk_dD[:5,:5])
+
         if grad:
             K_ff_0 = np.einsum("ijkl,ikm->ijlm", tmp, dx1dr) # m, n, d2, 3
             K_ff_0 = np.einsum("ijkl,jkm->ijlm", K_ff_0, dx2dr) # m, n, 3, 3
@@ -648,10 +740,9 @@ def K_ff(x1, x2, dx1dr, dx2dr, rdx1dr, rdx2dr, sigma2, l2, zeta=2, grad=False, m
 
             Kff = np.einsum("ijkl,ij->kl", K_ff_0, dk_dD) # 3, 3
 
-            d2k_dDdsigma = fun_d2k_dDdsigma(dk_dD, sigma2) #m,n
-            d2k_dDdl = fun_d2k_dDdl(dk_dD, sigma2, l2, d) #m, n
-            #print(d2k_dDdsigma)
-            #print(d2k_dDdl)
+            d2k_dDdsigma = 2*dkdD/np.sqrt(sigma2)
+            d2k_dDdl = (D/l3)*dkdD + (2/l)*dkdD
+            
             dKff_dsigma = np.einsum("ijkl,ij->kl", K_ff_0, d2k_dDdsigma) 
             dKff_dl = np.einsum("ijkl,ij->kl", K_ff_0, d2k_dDdl)
             tmp1 = dD_dx1[:,:,:,None]*dD_dx2[:,:,None,:]
@@ -679,19 +770,37 @@ def K_ef(x1, x2, dx2dr, rdx2dr, sigma2, l2, zeta=2, grad=False, mask=None, path=
 
     x1_norm = np.linalg.norm(x1, axis=1) + eps
     x2_norm = np.linalg.norm(x2, axis=1) + eps
-    _, d = fun_D(x1, x2, x1_norm, x2_norm, zeta)
+    x2_norm2 = x2_norm**2      
+    x1x2_dot = x1@x2.T
+    d = x1x2_dot/(eps+x1_norm[:,None]*x2_norm[None,:])
+    D2 = d**(zeta-2)
+    D1 = d*D2
+    D = d*D1
 
-    dk_dD = fun_dk_dD(x1, x2, x1_norm, x2_norm, sigma2, l2, zeta, mask) #m, n
-    dD_dx2, _ = fun_dD_dx2(x1, x2, x1_norm, x2_norm, d, zeta) #m, n, d2
-    dD_dx2 *= -1
+    k = sigma2*np.exp(-(0.5/l2)*(1-D))
+    if mask is not None:
+        k[mask] = 0
+    dk_dD = (-0.5/l2)*k
+
+    tmp21 = x1[:, None, :] * x2_norm[None,:,None]
+    tmp22 = x1x2_dot[:,:,None] * (x2/x2_norm[:, None])[None,:,:]
+    tmp23 = x1_norm[:, None, None] * x2_norm2[None, :, None] 
+    dd_dx2 = (tmp21-tmp22)/tmp23 
+
+    zd1 = zeta * D1
+    dD_dx2 = -zd1[:,:,None] * dd_dx2
+    #dk_dD = fun_dk_dD(x1, x2, x1_norm, x2_norm, sigma2, l2, zeta, mask) #m, n
+    #dD_dx2, _ = fun_dD_dx2(x1, x2, x1_norm, x2_norm, d, zeta) #m, n, d2
+    #dD_dx2 *= -1
     m = len(x1)
 
     if grad:
         K_ef_0 = -np.einsum("ijk,jkl->ijl", dD_dx2, dx2dr) # [m, n, d2] [n, d2, 3] -> [m,n,3]
         Kef = np.einsum("ijk,ij->k", K_ef_0, dk_dD) # [m, n, 3] [m, n] -> 3
 
-        d2k_dDdsigma = fun_d2k_dDdsigma(dk_dD, sigma2) #m,n
-        d2k_dDdl = fun_d2k_dDdl(dk_dD, sigma2, l2, 1-d) #m, n
+        d2k_dDdsigma = 2*dkdD/np.sqrt(sigma2)
+        d2k_dDdl = (D/l3)*dkdD + (2/l)*dkdD
+
         dKef_dsigma = np.einsum("ijk,ij->k", K_ef_0, d2k_dDdsigma) 
         dKef_dl     = np.einsum("ijk,ij->k", K_ef_0, d2k_dDdl)
         return Kef/m, dKef_dsigma/m, dKef_dl/m
@@ -707,43 +816,3 @@ def K_ef(x1, x2, dx2dr, rdx2dr, sigma2, l2, zeta=2, grad=False, mask=None, path=
 
             return Kef/m, Kse/m
 
-# =================== Algebras for k, dkdD, d2kdDdsigma ==========================
-
-def fun_k(x1, x2, x1_norm, x2_norm, sigma2, l2, zeta=2, mask=None):
-    D, d = fun_D(x1, x2, x1_norm, x2_norm, zeta)
-    _k = sigma2*np.exp(-0.5*(1-D)/l2)
-    if mask is not None:
-        _k[mask] = 0
-    return _k, _k.sum()
-
-def fun_dk_dD(x1, x2, x1_norm, x2_norm, sigma2, l2, zeta=2, mask=None):
-    k, _ = fun_k(x1, x2, x1_norm, x2_norm, sigma2, l2, zeta, mask)
-    return -0.5*k/l2
-
-def fun_d2k_dDdsigma(dkdD, sigma2):
-    return 2*dkdD/np.sqrt(sigma2)
-
-def fun_d2k_dDdl(dkdD, sigma2, l2, D):
-    l = np.sqrt(l2)
-    l3 = l*l2
-    return D*dkdD/l3 + 2*dkdD/l
-
-# GPU
-def fun_k_gpu(x1, x2, x1_norm, x2_norm, sigma2, l2, zeta=2, mask=None):
-    D, d = fun_D_gpu(x1, x2, x1_norm, x2_norm, zeta)
-    _k = sigma2*np.exp(-(0.5/l2)*(1-D))
-    if mask is not None:
-        _k[mask] = 0
-    return _k, _k.sum()
-
-def fun_dk_dD_gpu(x1, x2, x1_norm, x2_norm, sigma2, l2, zeta=2, mask=None):
-    k, _ = fun_k_gpu(x1, x2, x1_norm, x2_norm, sigma2, l2, zeta, mask)
-    return (-0.5/l2)*k
-
-def fun_d2k_dDdsigma_gpu(dkdD, sigma2):
-    return (2/np.sqrt(sigma2))*dkdD
-
-def fun_d2k_dDdl_gpu(dkdD, sigma2, l2, D):
-    l = np.sqrt(l2)
-    l3 = l*l2
-    return (D/l3)*dkdD + (2/l)*dkdD

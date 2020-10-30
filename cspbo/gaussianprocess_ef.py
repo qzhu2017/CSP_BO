@@ -444,7 +444,7 @@ class GaussianProcess():
 
         print("save the GP model to", filename, "and database to", db_filename)
 
-    def load(self, filename, N_max=None, opt=False):
+    def load(self, filename, N_max=None, opt=False, device=1):
         """
         Save the model
         Args:
@@ -455,6 +455,7 @@ class GaussianProcess():
         with open(filename, "r") as fp:
             dict0 = json.load(fp)
         self.load_from_dict(dict0, N_max=N_max)
+        self.kernel.ncpu = device
         self.fit(opt=opt)
         print("load the GP model from ", filename)
 

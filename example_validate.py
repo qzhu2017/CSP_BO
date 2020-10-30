@@ -26,11 +26,16 @@ t0 = time()
 # get _structures
 strucs, values = get_strucs(db_file, N_max=N_max)
 (E0, F0, S0) = values[0]
+stress = False
 if isinstance(S0, np.ndarray):
-    stress = True
-else:
-    stress = False
+    try:
+        if S0[0] is not None:
+            stress = True
+    except:
+        if S0 !=  None:
+            stress = True
 
+print(stress)
 # set calculator
 calc = GPR(ff=model, return_std=False, stress=stress)
 

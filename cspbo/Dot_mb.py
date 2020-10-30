@@ -1,4 +1,5 @@
 import numpy as np
+import cupy as cp
 from .kernel_base import *
 from functools import partial
 from multiprocessing import Pool, cpu_count
@@ -149,7 +150,7 @@ class Dot_mb():
             _is = indices[0].flatten()
             _js = indices[1].flatten()
 
-        if self.ncpu == 1:
+        if self.ncpu == 1 or self.ncpu == 'gpu':
             results = []
             for i, j in zip(_is, _js):
                 (x1, ele1) = X1[i]
@@ -228,7 +229,14 @@ class Dot_mb():
                 (x1, dx1dr, _, ele1) = X1[i]
                 (x2, dx2dr, _, ele2) = X2[j]
                 mask = get_mask(ele1, ele2)
-                results.append(kff_single(x1, x2, dx1dr, dx2dr, None, None, sigma2, sigma02, zeta, grad, mask, path))
+                results.append(kff_single(x1, x2, dx1dr, dx2dr, None, sigma2, sigma02, zeta, grad, mask, path))
+        elif self.ncpu == 'gpu':
+            results = []
+            for i, j in zip(_is, _js):
+                (x1, dx1dr, _, ele1) = X1[i]
+                (x2, dx2dr, _, ele2) = X2[j]
+                mask = get_mask(ele1, ele2)
+                results.append(kff_single(x1, x2, dx1dr, dx2dr, None, sigma2, sigma02, zeta, grad, mask, path, device='gpu'))
         else:
             #print("Parallel version is on: ")
             fun_vars = []
@@ -236,7 +244,7 @@ class Dot_mb():
                 (x1, dx1dr, _, ele1) = X1[i]
                 (x2, dx2dr, _, ele2) = X2[j]
                 mask = get_mask(ele1, ele2)
-                fun_vars.append((x1, x2, dx1dr, dx2dr, None, None, mask))
+                fun_vars.append((x1, x2, dx1dr, dx2dr, None, mask))
 
             with Pool(self.ncpu) as p:
                 func = partial(kff_para, (sigma2, sigma02, zeta, grad, path))
@@ -290,7 +298,7 @@ class Dot_mb():
         _is = indices[0].flatten()
         _js = indices[1].flatten()
 
-        if self.ncpu == 1:
+        if self.ncpu == 1 or self.ncpu == 'gpu':
             results = []
             for i, j in zip(_is, _js):
                 (x1, ele1) = X1[i]
@@ -369,7 +377,7 @@ class Dot_mb():
         _is = indices[0].flatten()
         _js = indices[1].flatten()
 
-        if self.ncpu == 1:
+        if self.ncpu == 1 or self.ncpu == 'gpu':
             results = []
             for i, j in zip(_is, _js):
                 (x1, ele1) = X1[i]
@@ -428,17 +436,25 @@ class Dot_mb():
             results = []
             for i, j in zip(_is, _js):
                 (x1, dx1dr, rdx1dr, ele1) = X1[i]
-                (x2, dx2dr, rdx2dr, ele2) = X2[j]
+                (x2, dx2dr, _, ele2) = X2[j]
                 mask = get_mask(ele1, ele2)
-                results.append(kff_single(x1, x2, dx1dr, dx2dr, rdx1dr, rdx2dr, sigma2, sigma02, zeta, False, mask, path))
+                results.append(kff_single(x1, x2, dx1dr, dx2dr, rdx1dr, sigma2, sigma02, zeta, False, mask, path))
+        elif self.ncpu == 'gpu':
+            results = []
+            for i, j in zip(_is, _js):
+                (x1, dx1dr, rdx1dr, ele1) = X1[i]
+                (x2, dx2dr, _, ele2) = X2[j]
+                mask = get_mask(ele1, ele2)
+                results.append(kff_single(x1, x2, dx1dr, dx2dr, rdx1dr, sigma2, sigma02, zeta, False, mask, path, device='gpu'))
+
         else:
             #print("Parallel version is on: ")
             fun_vars = []
             for i, j in zip(_is, _js):
                 (x1, dx1dr, rdx1dr, ele1) = X1[i]
-                (x2, dx2dr, rdx2dr, ele2) = X2[j]
+                (x2, dx2dr, _, ele2) = X2[j]
                 mask = get_mask(ele1, ele2)
-                fun_vars.append((x1, x2, dx1dr, dx2dr, rdx1dr, rdx2dr, mask))
+                fun_vars.append((x1, x2, dx1dr, dx2dr, rdx1dr, mask))
 
             with Pool(self.ncpu) as p:
                 func = partial(kff_para, (sigma2, sigma02, zeta, False, path))
@@ -495,7 +511,7 @@ def kef_para(args, data):
     return K_ef(x1, x2, dx2dr, rdx2dr, sigma2, sigma02, zeta, grad, mask, path)
  
 
-def kff_single(x1, x2, dx1dr, dx2dr, rdx1dr, rdx2dr, sigma2, sigma02, zeta, grad=False, mask=None, path=None):
+def kff_single(x1, x2, dx1dr, dx2dr, rdx1dr, sigma2, sigma02, zeta, grad=False, mask=None, path=None, device='cpu'):
 
     """
     Compute the energy-energy kernel between two structures
@@ -507,15 +523,15 @@ def kff_single(x1, x2, dx1dr, dx2dr, rdx1dr, rdx2dr, sigma2, sigma02, zeta, grad
     Returns:
         Kff: 3*3 array
     """
-    return K_ff(x1, x2, dx1dr, dx2dr, rdx1dr, rdx2dr, sigma2, sigma02, zeta, grad, mask, path) 
+    return K_ff(x1, x2, dx1dr, dx2dr, rdx1dr, sigma2, sigma02, zeta, grad, mask, path, device=device) 
 
 def kff_para(args, data): 
     """
     para version
     """
-    (x1, x2, dx1dr, dx2dr, rdx1dr, rdx2dr, mask) = data
+    (x1, x2, dx1dr, dx2dr, rdx1dr, mask) = data
     (sigma2, sigma02, zeta, grad, path) = args
-    return K_ff(x1, x2, dx1dr, dx2dr, rdx1dr, rdx2dr, sigma2, sigma02, zeta, grad, mask, path) 
+    return K_ff(x1, x2, dx1dr, dx2dr, rdx1dr, sigma2, sigma02, zeta, grad, mask, path) 
 
 
 def K_ee(x1, x2, sigma2, sigma02, zeta=2, grad=False, mask=None, eps=1e-8):
@@ -545,13 +561,71 @@ def K_ee(x1, x2, sigma2, sigma02, zeta=2, grad=False, mask=None, eps=1e-8):
     else:
         return Kee/mn
 
-def K_ff(x1, x2, dx1dr, dx2dr, rdx1dr, rdx2dr, sigma2, sigma02, zeta=2, grad=False, mask=None, path=None, eps=1e-8):
+def K_ff(x1, x2, dx1dr, dx2dr, rdx1dr, sigma2, sigma02, zeta=2, grad=False, mask=None, path=None, eps=1e-8, device='cpu'):
     x1_norm = np.linalg.norm(x1, axis=1) + eps
     x2_norm = np.linalg.norm(x2, axis=1) + eps
-    _, d = fun_D(x1, x2, x1_norm, x2_norm, zeta)
+    x1_norm2 = x1_norm**2       
+    x1_norm3 = x1_norm**3        
+    x2_norm3 = x2_norm**3    
+    x2_norm2 = x2_norm**2      
 
-    dk_dD = fun_dk_dD(x1, x2, x1_norm, x2_norm, sigma2, sigma02, zeta, mask) #m, n
-    d2D_dx1dx2, _ = fun_d2D_dx1dx2(x1, x2, x1_norm, x2_norm, d, zeta) #m, n, d1, d2
+    x1x2_norm = x1_norm[:,None]*x2_norm[None,:]    
+    x1_x1_norm3 = x1/x1_norm3[:,None]
+    x2_x2_norm3 = x2/x2_norm3[:,None]
+
+    x1x2_dot = x1@x2.T
+    d = x1x2_dot/(eps+x1_norm[:,None]*x2_norm[None,:])
+    D2 = d**(zeta-2)
+    D1 = d*D2
+    D = d*D1
+    #k = sigma2*(D+sigma02)
+    dk_dD = sigma2*np.ones([len(x1), len(x2)])
+
+    if mask is not None:
+        dk_dD[mask] = 0
+
+    tmp11 = x2[None, :, :] * x1_norm[:, None, None]
+    tmp12 = x1x2_dot[:,:,None] * (x1/x1_norm[:, None])[:,None,:] 
+    tmp13 = x1_norm2[:, None, None] * x2_norm[None, :, None] 
+    dd_dx1 = (tmp11-tmp12)/tmp13 
+
+    tmp21 = x1[:, None, :] * x2_norm[None,:,None]
+    tmp22 = x1x2_dot[:,:,None] * (x2/x2_norm[:, None])[None,:,:]
+    tmp23 = x1_norm[:, None, None] * x2_norm2[None, :, None] 
+    dd_dx2 = (tmp21-tmp22)/tmp23 
+
+    tmp30 = np.ones(x2.shape)/x2_norm[:,None]
+    tmp31 = x1[:,None,:] * tmp30[None,:,:]
+    tmp33 = np.eye(x2.shape[1])[None,:,:] - x2[:,:,None] * (x2/x2_norm2[:,None])[:,None,:]
+
+    if device == 'gpu':
+        dx1dr = cp.array(dx1dr)
+        dx2dr = cp.array(dx2dr)
+        x1x2_norm = cp.array(x1x2_norm)
+        x1_x1_norm3 = cp.array(x1_x1_norm3)
+        x2_x2_norm3 = cp.array(x2_x2_norm3)
+
+        dk_dD = cp.array(dk_dD)
+        D1 = cp.array(D1)
+        D2 = cp.array(D2)
+        x1x2_dot = cp.array(x1x2_dot)
+        dd_dx1 = cp.array(dd_dx1)
+        dd_dx2 = cp.array(dd_dx2)
+
+        tmp31 = cp.array(tmp31)
+        tmp33 = cp.array(tmp33)
+
+    tmp31 = tmp31[:,:,None,:] * x1_x1_norm3[:,None,:,None]
+    tmp32 = x1_x1_norm3[:,None,:,None] * x2_x2_norm3[None,:,None,:] * x1x2_dot[:,:,None,None]
+    out1 = tmp31-tmp32
+    out2 = tmp33[None,:,:,:]/x1x2_norm[:,:,None,None]
+    d2d_dx1dx2 = out2 - out1
+
+    dd_dx1_dd_dx2 = dd_dx1[:,:,:,None] * dd_dx2[:,:,None,:]
+    d2D_dx1dx2 = dd_dx1_dd_dx2 * D2[:,:,None,None] * (zeta-1)
+    d2D_dx1dx2 += D1[:,:,None,None]*d2d_dx1dx2
+    d2D_dx1dx2 *= zeta
+    d2k_dx1dx2 = d2D_dx1dx2
 
     if grad:
         K_ff_0 = np.einsum("ikm,ijkl,jln->ijmn", dx1dr, d2D_dx1dx2, dx2dr, optimize=path)
@@ -563,13 +637,26 @@ def K_ff(x1, x2, dx1dr, dx2dr, rdx1dr, rdx2dr, sigma2, sigma02, zeta=2, grad=Fal
 
         return Kff, dKff_dsigma, dKff_dsigma0
     else:
-        tmp0 = np.einsum("ijkl,ij->ijkl", d2D_dx1dx2, dk_dD) #m,n,d1,d2
-        Kff = np.einsum("ikm,ijkl,jln->mn", dx1dr, tmp0, dx2dr, optimize=path)
-        if rdx1dr is None:
-            return Kff
+        if device == 'gpu':
+            tmp0 = d2k_dx1dx2 * dk_dD[:,:,None,None]
+            _kff1 = cp.sum(dx1dr[:,None,:,None,:] * tmp0[:,:,:,:,None], axis=(0,2))
+            Kff = cp.sum(_kff1[:,:,:,None] * dx2dr[:,:,None,:], axis=(0,1))
+
+            if rdx1dr is None:
+                return  cp.asnumpy(Kff)
+            else:
+                rdx1dr = cp.asarray(rdx1dr)
+                _Ksf = cp.sum(rdx1dr[:,None,:,None,:] * tmp0[:,:,:,:,None], axis=(0,2))
+                Ksf = cp.sum(_Ksf[:,:,:,None] * dx2dr[:,:,None,:], axis=(0,1))
+                return cp.asnumpy(Kff),  cp.asnumpy(Ksf)
         else:
-            Ksf = np.einsum("ikm,ijkl,jln->mn", rdx1dr, tmp0, dx2dr, optimize=path) #[6,3]
-            return Kff, Ksf
+            tmp0 = np.einsum("ijkl,ij->ijkl", d2D_dx1dx2, dk_dD) #m,n,d1,d2
+            Kff = np.einsum("ikm,ijkl,jln->mn", dx1dr, tmp0, dx2dr, optimize=path)
+            if rdx1dr is None:
+                return Kff
+            else:
+                Ksf = np.einsum("ikm,ijkl,jln->mn", rdx1dr, tmp0, dx2dr, optimize=path) #[6,3]
+                return Kff, Ksf
 
 def K_ef(x1, x2, dx2dr, rdx2dr, sigma2, sigma02, zeta=2, grad=False, mask=None, path=None, eps=1e-8):
 
@@ -598,11 +685,6 @@ def K_ef(x1, x2, dx2dr, rdx2dr, sigma2, sigma02, zeta=2, grad=False, mask=None, 
 
 
 # =================== Algebras for k, dkdD, d2kdDdsigma ==========================
-def fun_k(x1, x2, x1_norm, x2_norm, sigma2, sigma02):
-    D, d = fun_D(x1, x2, x1_norm, x2_norm)
-    _k = sigma2*(D+sigma02)
-    return _k, _k.sum()
-
 def fun_dk_dD(x1, x2, x1_norm, x2_norm, sigma2, sigma02, zeta=2, mask=None):
     D, _ = fun_D(x1, x2, x1_norm, x2_norm, zeta)
     dkdD = sigma2*np.ones([len(x1), len(x2)])

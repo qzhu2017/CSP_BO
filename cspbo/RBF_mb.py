@@ -685,6 +685,8 @@ def K_ff(x1, x2, dx1dr, dx2dr, rdx1dr, sigma2, l2, zeta=2, grad=False, mask=None
             tmp0 = d2k_dx1dx2 * dk_dD[:,:,None,None]
             _kff1 = cp.sum(dx1dr[:,None,:,None,:] * tmp0[:,:,:,:,None], axis=(0,2))
             Kff = cp.sum(_kff1[:,:,:,None] * dx2dr[:,:,None,:], axis=(0,1))
+            #Kff = dx1dr[:,None,:,None,:,None] * tmp0[:,:,:,:,None,None] * dx2dr[None,:,None,:,None,:]
+            #Kff = Kff.sum(axis=(0,1,2,3))
 
             if rdx1dr is None:
                 return  cp.asnumpy(Kff)
@@ -692,6 +694,8 @@ def K_ff(x1, x2, dx1dr, dx2dr, rdx1dr, sigma2, l2, zeta=2, grad=False, mask=None
                 rdx1dr = cp.asarray(rdx1dr)
                 _Ksf = cp.sum(rdx1dr[:,None,:,None,:] * tmp0[:,:,:,:,None], axis=(0,2))
                 Ksf = cp.sum(_Ksf[:,:,:,None] * dx2dr[:,:,None,:], axis=(0,1))
+                #Ksf = rdx1dr[:,None,:,None,:,None] * tmp0[:,:,:,:,None,None] * dx2dr[None,:,None,:,None,:]
+                #Ksf = Ksf.sum(axis=(0,1,2,3))
                 return cp.asnumpy(Kff),  cp.asnumpy(Ksf)
 
         else:

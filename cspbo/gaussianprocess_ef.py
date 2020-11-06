@@ -86,7 +86,9 @@ class GaussianProcess():
             self.kernel.update(params[:-1])
             self.noise_e = params[-1]
             self.noise_f = self.f_coef*params[-1]
-        K = self.kernel.k_total(self.train_x)
+        K = self.kernel.k_total(self.set_train_force_x_in_chunks(self.train_x), self.train_x, same=True)
+        #print(len(self.train_x['force']))
+        #import sys; sys.exit()
 
         # add noise matrix
         #K[np.diag_indices_from(K)] += self.noise
@@ -108,20 +110,25 @@ class GaussianProcess():
                         "GaussianProcessRegressor estimator."
                         % self.kernel,) + exc.args
             raise
+
         self.alpha_ = cho_solve((self.L_, True), self.y_train)  # Line 3
+        #print(self.alpha_)
+        #import sys; sys.exit()
+        #self.alpha_ = np.load("alpha.npy")
+        
         return self
 
     def predict(self, X, stress=False, total_E=False, return_std=False, return_cov=False):
         if stress:
-            K_trans, K_trans1 = self.kernel.k_total_with_stress(X, self.train_x)
+            K_trans, K_trans1 = self.kernel.k_total_with_stress(X, self.train_x, same=False)
             pred1 = K_trans1.dot(self.alpha_)
         else:
+            print(len(self.train_x['force']))
             K_trans = self.kernel.k_total(X, self.train_x)
-        #print(K_trans[0,:])
-        #print(self.alpha_[:,0])
-        #print(K_trans[0,:]*self.alpha_[:,0])
-        #import sys
-        #sys.exit()
+            print(K_trans.shape)
+
+            import sys; sys.exit()
+        
         pred = K_trans.dot(self.alpha_)
         y_mean = pred[:, 0]
 
@@ -161,7 +168,7 @@ class GaussianProcess():
     
     def set_train_pts(self, data, mode="w"):
         """
-        Set the training pts for the GPR model
+        Set the training pts for the GPR mode
         two modes ("write" and "append") are allowed
 
         Args:
@@ -195,11 +202,26 @@ class GaussianProcess():
                 for eng_data in data[key]:
                     self.add_train_pts_energy(eng_data)
             elif key == 'force':
-                for force_data in data[key]:
-                    self.add_train_pts_force(force_data)
+                #for force_data in data[key]:
+                #    self.add_train_pts_force(force_data)
+                self.add_train_pts_force(data[key])
         self.update_y_train()
-    
 
+    def set_train_force_x_in_chunks(self, train_x):
+        train_x_chunks = {}
+        for key in train_x.keys():
+            if key == 'energy':
+                train_x_chunks[key] = train_x[key]
+            elif key == 'force':
+                train_x_chunks[key] = []
+                X, dXdR, _, ELE, indices = train_x['force'][0]
+                c = 0
+                for i, ind in enumerate(indices):
+                    train_x_chunks[key].append((X[c:c+ind], cp.asnumpy(dXdR[c:c+ind]), None, ELE[c:c+ind], None))
+                    c += ind
+
+        return train_x_chunks
+    
     def remove_train_pts(self, e_ids, f_ids):
         """
         delete the training pts for the GPR model
@@ -241,7 +263,6 @@ class GaussianProcess():
         """ 
         convert self.train_y to 1D numpy array
         """
-
         Npt_E = len(self.train_y["energy"])
         Npt_F = 3*len(self.train_y["force"])
         y_train = np.zeros([Npt_E+Npt_F, 1])
@@ -261,8 +282,9 @@ class GaussianProcess():
         validate the given dataset
         """
         if test_data is None:
-            test_X_E = {"energy": self.train_x['energy']}
-            test_X_F = {"force": self.train_x['force']}
+            train_x = self.set_train_force_x_in_chunks(self.train_x)
+            test_X_E = {"energy": train_x['energy']}
+            test_X_F = {"force": train_x['force']}
             E = self.y_train[:len(test_X_E['energy'])].flatten()
             F = self.y_train[len(test_X_E['energy']):].flatten()
         else:
@@ -375,15 +397,66 @@ class GaussianProcess():
         F: atomic force: 1*3
         N2 is the number of the centered atoms' neighbors within the cutoff
         """
-        (X, dXdR, _, F, ele) = force_data
+        icol = 0
+        for fd in force_data:
+            (x, dxdr, _, f, ele) = fd
+            icol += x.shape[0]
+        jcol = x.shape[1]
+        
+        ELE = []
+        indices = []
+        X = np.zeros([icol, jcol])
+        dXdR = np.zeros([icol, jcol, 3])
+
+        count = 0
+        for i, fd in enumerate(force_data):
+            (x, dxdr, _, f, ele) = fd
+            shp = x.shape[0]
+            indices.append(shp)
+            X[count:count+shp, :jcol] = x
+            dXdR[count:count+shp, :jcol, :3] = dxdr
+            ELE.append(ele)
+            self.train_y['force'].append(f)
+            count += shp
+        ELE = np.ravel(ELE)
 
         if self.kernel.ncpu == 'gpu':
-            self.train_x['force'].append((X, dXdR, None, ele, cp.array(dXdR), None))
+            self.train_x['force'].append((X, cp.array(dXdR), None, ELE, indices))
         else:
-            self.train_x['force'].append((X, dXdR, None, ele))
-        self.train_y['force'].append(F)
+            self.train_x['force'].append((X. dXdR, None, ELE, indices))
+
+        #if self.kernel.ncpu == 'gpu':
+        #    self.train_x['force'].append((X, dXdR, None, ele, cp.array(dXdR), None))
+        #else:
+        #    self.train_x['force'].append((X, dXdR, None, ele))
         #self.update_y_train()
 
+    #def add_train_pts_force_bundle(self, force_data):
+    #    """ The function is similar to add_train_pts_force but in large chunk. """
+    #    ith_col = 0
+    #    for fd in force_data:
+    #        (x, dxdr, _, f, ele) = fd
+    #        ith_col += x.shape[0]
+    #    jth_col = x.shape[1]
+    #    
+    #    ELE = []
+    #    X = np.zeros([ith_col, jth_col])
+    #    dXdR = np.zeros([ith_col, jth_col, 3])
+
+    #    count = 0
+    #    for i, fd in enumerate(force_data):
+    #        (x, dxdr, _, f, ele) = fd
+    #        shp = x.shape[0]
+    #        X[count:count+shp, :jth_col] = x
+    #        dXdR[count:count+shp, :jth_col, :3] = dxdr
+    #        ELE.append(ele)
+    #        self.train_y['force'].append(f)
+    #    ELE = np.ravel(ELE)
+    #    
+    #    if self.kernel.ncpu == 'gpu':
+    #        self.train_x['force'].append((X, dXdR, None, ELE, cp.array(dXdR), None))
+    #    else:
+    #        self.train_x['force'].append((X, dXdR, None, ELE))
 
     def log_marginal_likelihood(self, params, eval_gradient=False, clone_kernel=False):
         

@@ -87,8 +87,6 @@ class GaussianProcess():
             self.noise_e = params[-1]
             self.noise_f = self.f_coef*params[-1]
         K = self.kernel.k_total(self.set_train_force_x_in_chunks(self.train_x), self.train_x, same=True)
-        #print(len(self.train_x['force']))
-        #import sys; sys.exit()
 
         # add noise matrix
         #K[np.diag_indices_from(K)] += self.noise
@@ -123,11 +121,7 @@ class GaussianProcess():
             K_trans, K_trans1 = self.kernel.k_total_with_stress(X, self.train_x, same=False)
             pred1 = K_trans1.dot(self.alpha_)
         else:
-            print(len(self.train_x['force']))
             K_trans = self.kernel.k_total(X, self.train_x)
-            print(K_trans.shape)
-
-            import sys; sys.exit()
         
         pred = K_trans.dot(self.alpha_)
         y_mean = pred[:, 0]

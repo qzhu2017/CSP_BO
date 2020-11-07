@@ -79,18 +79,13 @@ class RBF_mb():
                 if len(data1[key1])>0 and len(data2[key2])>0:
                     if key1 == 'energy' and key2 == 'energy':
                         C_ee = self.kee_many(data1[key1], data2[key2], same=same)
-                        print(C_ee.shape)
                     elif key1 == 'energy' and key2 == 'force':
                         C_ef = self.kef_many(data1[key1], data2[key2])
-                        print(len(data2[key2]))
-                        print(len(data2[key2][0]))
-                        print(C_ef.shape)
                     elif key1 == 'force' and key2 == 'energy':
                         if not same:
                             C_fe = self.kfe_many(data2[key2], data1[key1]).T
                         else:
                             C_fe = C_ef.T 
-                        #print(C_fe.shape)
                     elif key1 == 'force' and key2 == 'force':
                         C_ff = self.kff_many(data1[key1], data2[key2])
 
@@ -215,9 +210,9 @@ class RBF_mb():
             for i in range(len(X1)):
                 (x1, dx1dr, _, ele1) = X1[i]
                 mask = get_mask(ele1, ele_all[c:])
-                results.append(kff_single(x1, x_all[c:], dx1dr, dxdr_all[c:], None, x2_indices, sigma2, l2, zeta, grad, mask, path))
-                c += x2_indices[0]
-                x2_indices.pop(0)
+                results.append(kff_single(x1, x_all[c:], dx1dr, dxdr_all[c:], None, x2_indices[i:], sigma2, l2, zeta, grad, mask, path))
+                c += x2_indices[i]
+                #x2_indices.pop(0)
         elif self.ncpu == 'gpu':
             results = []
             c = 0
@@ -226,9 +221,9 @@ class RBF_mb():
                 (x1, dx1dr, _, ele1, _) = X1[i]
                 #mask = get_mask(ele1, ele_all[c:])
                 mask = None
-                results.append(kff_single(x1, x_all[c:], dx1dr, dxdr_all[c:], None, x2_indices, sigma2, l2, zeta, grad, mask, path, device='gpu'))
-                c += x2_indices[0]
-                x2_indices.pop(0)
+                results.append(kff_single(x1, x_all[c:], dx1dr, dxdr_all[c:], None, x2_indices[i:], sigma2, l2, zeta, grad, mask, path, device='gpu'))
+                c += x2_indices[i]
+                #x2_indices.pop(0)
         else:
             fun_vars = []
             for i, j in zip(_is, _js):
@@ -274,7 +269,6 @@ class RBF_mb():
         """
         sigma2, l2, zeta = self.sigma**2, self.l**2, self.zeta
         x_all, dxdr_all, _, ele_all, x2_indices = X2[0]
-        print(x2_indices)
         m1, m2 = len(X1), len(x2_indices)
         C = np.zeros([m1, 3*m2])
         C_s = np.zeros([m1, 3*m2])

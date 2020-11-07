@@ -110,9 +110,6 @@ class GaussianProcess():
             raise
 
         self.alpha_ = cho_solve((self.L_, True), self.y_train)  # Line 3
-        #print(self.alpha_)
-        #import sys; sys.exit()
-        #self.alpha_ = np.load("alpha.npy")
         
         return self
 
@@ -309,7 +306,6 @@ class GaussianProcess():
         """
         make prediction for a given structure
         """
-
         d = self.descriptor.calculate(struc) 
         ele = [Element(ele).z for ele in d['elements']]
         ele = np.array(ele)
@@ -325,14 +321,18 @@ class GaussianProcess():
                 _rdxdr = d['rdxdr'][ids]
                 _rdxdr = _rdxdr.reshape([len(ids), l, 9])[:, :, [0, 4, 8, 1, 2, 5]]
                 if self.kernel.ncpu == 'gpu':
-                    data["force"].append((_x, _dxdr, _rdxdr, ele0, cp.array(_dxdr), cp.array(_rdxdr)))
+                    data["force"].append((_x, cp.array(_dxdr), cp.array(_rdxdr), ele0, None))
+                    #data["force"].append((_x, _dxdr, _rdxdr, ele0, cp.array(_dxdr), cp.array(_rdxdr)))
                 else:
-                    data["force"].append((_x, _dxdr, _rdxdr, ele0))
+                    data["force"].append((_x, _dxdr, _rdxdr, ele0, None))
+                    #data["force"].append((_x, _dxdr, _rdxdr, ele0))
             else:
                 if self.kernel.ncpu == 'gpu':
-                    data["force"].append((_x, _dxdr, None, ele0, cp.array(_dxdr), None))
+                    data["force"].append((_x, cp.array(_dxdr), None, ele0, None)) 
+                    #data["force"].append((_x, _dxdr, None, ele0, cp.array(_dxdr), None))
                 else:
-                    data["force"].append((_x, _dxdr, None, ele0))
+                    data["force"].append((_x, _dxdr, None, ele0, None))
+                    #data["force"].append((_x, _dxdr, None, ele0))
         if stress:
             K_trans, K_trans1 = self.kernel.k_total_with_stress(data, self.train_x)
         else:

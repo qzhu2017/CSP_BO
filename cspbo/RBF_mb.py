@@ -80,6 +80,7 @@ class RBF_mb():
                     if key1 == 'energy' and key2 == 'energy':
                         C_ee = self.kee_many(data1[key1], data2[key2], same=same)
                     elif key1 == 'energy' and key2 == 'force':
+                        
                         C_ef = self.kef_many(data1[key1], data2[key2])
                     elif key1 == 'force' and key2 == 'energy':
                         if not same:
@@ -405,6 +406,7 @@ class RBF_mb():
                     if key1 == 'energy' and key2 == 'energy':
                         C_ee = self.kee_many(data1[key1], data2[key2])
                     elif key1 == 'energy' and key2 == 'force':
+                        #print("ENERGY AND FORCE HEREEEEEEEEEEEEEEEEEEEEE")
                         C_ef = self.kef_many(data1[key1], data2[key2])
                     elif key1 == 'force' and key2 == 'energy':
                         C_fe, C_se = self.kef_many_with_stress(data2[key2], data1[key1])
@@ -428,10 +430,11 @@ class RBF_mb():
         m1, m2 = len(X1), len(X2)
         C = np.zeros([m1, 3*m2])
         C1 = np.zeros([m1, 6*m2])
-        a = np.einsum("ik,jk->ijk", X1[0][0], X2[0][0])
-        b = X2[0][1]
-        c = np.einsum("ik,jk->ij", X1[0][0], X2[0][0])
-        path = np.einsum_path('ijk,jkl,ij->l', a, b, c, optimize='greedy')[0]
+        #a = np.einsum("ik,jk->ijk", X1[0][0], X2[0][0])
+        #b = X2[0][1]
+        #c = np.einsum("ik,jk->ij", X1[0][0], X2[0][0])
+        #path = np.einsum_path('ijk,jkl,ij->l', a, b, c, optimize='greedy')[0]
+        path = None
        
         # This loop is rather expansive, a simple way is to do multi-process
         indices = np.indices((m1, m2))
@@ -442,12 +445,12 @@ class RBF_mb():
             results = []
             for i, j in zip(_is, _js):
                 (x1, ele1) = X1[i]
-                if self.ncpu == 'gpu':
-                    (x2, dx2dr, rdx2dr, ele2, _, _) = X2[j]
-                else:
-                    (x2, dx2dr, rdx2dr, ele2) = X2[j]
+                #if self.ncpu == 'gpu':
+                (x2, dx2dr, rdx2dr, ele2, _) = X2[j]
+                #else:
+                #    (x2, dx2dr, rdx2dr, ele2) = X2[j]
                 mask = get_mask(ele1, ele2)
-                results.append(kef_single(x1, x2, dx2dr, rdx2dr, sigma2, l2, zeta, False, mask, path))
+                results.append(kfe_single(x1, x2, cp.asnumpy(dx2dr), cp.asnumpy(rdx2dr), sigma2, l2, zeta, False, mask, path))
         else:
             #print("Parallel version is on: ")
             fun_vars = []
@@ -484,23 +487,25 @@ class RBF_mb():
             C_grad:
         """
         sigma2, l2, zeta = self.sigma**2, self.l**2, self.zeta
-        m1, m2 = len(X1), len(X2)
+        x_all, dxdr_all, _, ele_all, x2_indices = X2[0]
+        m1, m2 = len(X1), len(x2_indices)
         C = np.zeros([3*m1, 3*m2])
         C1 = np.zeros([6*m1, 3*m2])
-        a, b, c = X1[0][1], np.einsum("ik,jl->ijkl", X1[0][0], X2[0][0]), X2[0][1]
-        path = np.einsum_path('ikm,ijkl,jln->mn', a, b, c, optimize='greedy')[0]
+        #a, b, c = X1[0][1], np.einsum("ik,jl->ijkl", X1[0][0], X2[0][0]), X2[0][1]
+        #path = np.einsum_path('ikm,ijkl,jln->mn', a, b, c, optimize='greedy')[0]
+        path = None
 
         if self.ncpu == 1:
             results = []
             for i in range(len(X1)):
-                (x1, dx1dr, rdx1dr, ele1) = X1[i]
+                (x1, dx1dr, rdx1dr, ele1, _) = X1[i]
                 #mask = get_mask(ele1, ele_all)
                 mask = None
                 results.append(kff_single(x1, x_all, dx1dr, dxdr_all, rdx1dr, x2_indices, sigma2, l2, zeta, False, mask, path))
         elif self.ncpu == 'gpu':
             results = []
             for i in range(len(X1)):
-                (x1, _, _, ele1, dx1dr, rdx1dr) = X1[i]
+                (x1, dx1dr, rdx1dr, ele1, _) = X1[i]
                 #mask = get_mask(ele1, ele_all)
                 mask = None
                 results.append(kff_single(x1, x_all, dx1dr, dxdr_all, rdx1dr, x2_indices, sigma2, l2, zeta, False, mask, path, device='gpu'))

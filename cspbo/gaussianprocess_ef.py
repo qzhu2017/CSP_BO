@@ -101,7 +101,7 @@ class GaussianProcess():
             # self.L_ changed, self._K_inv needs to be recomputed
             self._K_inv = None
         except np.linalg.LinAlgError as exc:
-            print(K)
+            #print(K)
             exc.args = ("The kernel, %s, is not returning a "
                         "positive definite matrix. Try gradually "
                         "increasing the 'alpha' parameter of your "

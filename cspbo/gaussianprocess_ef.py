@@ -384,7 +384,7 @@ class GaussianProcess():
             indices.append(shp)
             X[count:count+shp, :jcol] = x
             dXdR[count:count+shp, :jcol, :3] = dxdr
-            ELE.append(ele)
+            ELE.extend(ele)
             self.train_y['force'].append(f)
             count += shp
         ELE = np.ravel(ELE)

@@ -389,16 +389,10 @@ class GaussianProcess():
             count += shp
         ELE = np.ravel(ELE)
 
-        if self.kernel.ncpu == 'gpu':
+        if self.kernel.device == 'gpu':
             self.train_x['force'].append((X, cp.array(dXdR), None, ELE, indices))
         else:
             self.train_x['force'].append((X. dXdR, None, ELE, indices))
-
-        #if self.kernel.ncpu == 'gpu':
-        #    self.train_x['force'].append((X, dXdR, None, ele, cp.array(dXdR), None))
-        #else:
-        #    self.train_x['force'].append((X, dXdR, None, ele))
-        #self.update_y_train()
 
     def log_marginal_likelihood(self, params, eval_gradient=False, clone_kernel=False):
         
@@ -529,7 +523,7 @@ class GaussianProcess():
             else:
                 msg = "unknow base potential {:s}".format(dict0["base_potential"]["name"])
                 raise NotImplementedError(msg)
-        self.kernel.ncpu = device
+        self.kernel.device = device
 
         self.noise_e = dict0["noise"]["energy"]
         self.f_coef = dict0["noise"]["f_coef"]

@@ -1,11 +1,12 @@
 import numpy as np
 from .kernel_base import *
 import cupy as cp
-from functools import partial
-from multiprocessing import Pool, cpu_count
-from time import time
 
 class RBF_mb():
+    """
+    .. math::
+        k(x_i, x_j) = \sigma ^2 * \\exp\\left(- \\frac{d(x_i, x_j)^2}{2l^2} \\right)
+    """
     def __init__(self, para=[1., 1.], bounds=[[1e-2, 5e+1], [1e-1, 1e+1]], zeta=3, device='cpu'):
         self.name = 'RBF_mb'
         self.bounds = bounds
@@ -54,15 +55,16 @@ class RBF_mb():
             for i in range(NE):
                 (x1, ele1) = data["energy"][i]
                 mask = get_mask(ele1, ele1)
-                C_ee[i] = kee_single(x1, x1, sigma2, l2, zeta, False, mask) 
+                C_ee[i] = K_ee(x1, x1, sigma2, l2, zeta, False, mask) 
 
         if "force" in data:
             NF = len(data["force"])
             C_ff = np.zeros(3*NF)
             for i in range(NF):
-                (x1, dx1dr, _, ele1) = data["force"][i]
+                (x1, dx1dr, ele1) = data["force"][i]
                 mask = get_mask(ele1, ele1)
-                C_ff[i*3:(i+1)*3] = np.diag(kff_single(x1, x1, dx1dr, dx1dr, None, sigma2, l2, zeta, False, mask))
+                tmp = K_ff(x1, x1, dx1dr, dx1dr, sigma2, l2, zeta, False, mask, wrap=True)
+                C_ff[i*3:(i+1)*3] = np.diag(tmp)
 
         if C_ff is None:
             return C_ee
@@ -76,6 +78,7 @@ class RBF_mb():
         Compute the covairance for train data
         Used for energy/force prediction
         """
+
         if data2 is None:
             data2 = data1
 
@@ -207,10 +210,10 @@ class RBF_mb():
         """
 
         sigma2, l2, zeta = self.sigma**2, self.l**2, self.zeta
-        x_all, dxdr_all, _, ele_all, x2_indices = X2[0]
+        x_all, dxdr_all, ele_all, x2_indices = X2
 
-        if len(X1) == 1: #unpack X1, used for training
-            X, dXdR, _, ELE, indices = X1[0]
+        if isinstance(X1, tuple): #unpack X1, used for training
+            X, dXdR, ELE, indices = X1
             X1 = []
             c = 0
             for ind in indices:
@@ -285,12 +288,13 @@ class RBF_mb():
             C: M*N 2D array
             C_grad:
         """
+        
         sigma2, l2, zeta = self.sigma**2, self.l**2, self.zeta
 
-        if len(X2) > 1:  #pack X2 to big array
-            X2 = pack_x2(X2, stress=True)
+        if isinstance(X2, list):  #pack X2 to big array in tuple
+            X2 = pack_x2(X2, stress)
 
-        x_all, dxdr_all, _, ele_all, x2_indices = X2[0]
+        x_all, dxdr_all, ele_all, x2_indices = X2
         m1, m2, m2p = len(X1), len(x2_indices), len(x_all)
        
         x2_inds = [(0, x2_indices[0])]
@@ -378,7 +382,7 @@ def K_ee(x1, x2, sigma2, l2, zeta=2, grad=False, mask=None, eps=1e-8):
     else:
         return Kee/mn
 
-def K_ff(x1, x2, dx1dr, dx2dr, sigma2, l2, zeta=2, grad=False, mask=None, eps=1e-8, device='cpu'):
+def K_ff(x1, x2, dx1dr, dx2dr, sigma2, l2, zeta=2, grad=False, mask=None, eps=1e-8, device='cpu', wrap=False):
     """
     Compute the Kff between one and many configurations
     x2, dx1dr, dx2dr will be called from the cuda device in the GPU mode
@@ -401,28 +405,37 @@ def K_ff(x1, x2, dx1dr, dx2dr, sigma2, l2, zeta=2, grad=False, mask=None, eps=1e
         x1_norm3 = cp.array(x1_norm3)
         x1_x1_norm3 = cp.array(x1_x1_norm3)
         x1x2_dot = cp.array(x1x2_dot)
-        
         x2_norm = cp.linalg.norm(x2, axis=1) + eps
-        x1x2_norm = x1_norm[:,None]*x2_norm[None,:]
-        x2_norm3 = x2_norm**3    
         x2_norm2 = x2_norm**2
-
-        d = x1x2_dot/(eps+x1x2_norm)
-        D2 = d**(zeta-2)
-        D1 = d*D2
-        D = d*D1
-        k = sigma2*np.exp(-(0.5/l2)*(1-D))
-        if mask is not None: 
-            k[mask] = 0
-    
-        dk_dD = (-0.5/l2)*k
-        zd2 = -0.5/l2*zeta*zeta*(D1**2)
-
-        x2_x2_norm3 = x2/x2_norm3[:,None]
         tmp30 = cp.ones(x2.shape)/x2_norm[:,None]
-        tmp31 = x1[:,None,:] * tmp30[None,:,:]
         tmp33 = cp.eye(x2.shape[1])[None,:,:] - x2[:,:,None] * (x2/x2_norm2[:,None])[:,None,:]
-        #print("Kff 1", time()-t0)
+    else: 
+        x2_norm = np.linalg.norm(x2, axis=1) + eps
+        x2_norm2 = x2_norm**2      
+        tmp30 = np.ones(x2.shape)/x2_norm[:,None]
+        tmp33 = np.eye(x2.shape[1])[None,:,:] - x2[:,:,None] * (x2/x2_norm2[:,None])[:,None,:]
+
+
+    x2_norm3 = x2_norm**3    
+    x1x2_norm = x1_norm[:,None]*x2_norm[None,:]
+    x2_x2_norm3 = x2/x2_norm3[:,None]
+
+    d = x1x2_dot/(eps+x1x2_norm)
+    D2 = d**(zeta-2)
+    D1 = d*D2
+    D = d*D1
+    if device == 'gpu':
+        k = sigma2*cp.exp(-(0.5/l2)*(1-D))
+    else:
+        k = sigma2*np.exp(-(0.5/l2)*(1-D))
+
+    if mask is not None: 
+        k[mask] = 0
+    
+    dk_dD = (-0.5/l2)*k
+    zd2 = -0.5/l2*zeta*zeta*(D1**2)
+
+    tmp31 = x1[:,None,:] * tmp30[None,:,:]
 
     #t0 = time()
     tmp11 = x2[None, :, :] * x1_norm[:, None, None]
@@ -475,6 +488,8 @@ def K_ff(x1, x2, dx1dr, dx2dr, sigma2, l2, zeta=2, grad=False, mask=None, eps=1e
         tmp0 = d2k_dx1dx2 * dk_dD[:,:,None,None] #n1, n2, d, d
         _kff1 = (dx1dr[:,None,:,None,:] * tmp0[:,:,:,:,None]).sum(axis=(0,2)) # n1,n2,3
         kff = (_kff1[:,:,:,None] * dx2dr[:,:,None,:]).sum(axis=1)  # n2, 3, 3
+        if wrap:
+            kff = kff.sum(axis=0)
         return kff
 
 def K_ef(x1, x2, dx2dr, sigma2, l2, zeta=2, grad=False, mask=None, eps=1e-8, device='gpu'):

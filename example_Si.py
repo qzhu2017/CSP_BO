@@ -13,16 +13,16 @@ parser = OptionParser()
 parser.add_option("-f", "--file", dest="file",
                   help="gp model file, REQUIRED",
                   metavar="file")
-parser.add_option("-n", "--ncpu", dest="ncpu", default=4, type=int,
+parser.add_option("-d", "--device", dest="device", default='cpu',
                   help="gp model file, REQUIRED",
-                  metavar="ncpu")
+                  metavar="device")
 
 
 (options, args) = parser.parse_args()
 
 model = gpr()
 model.load(options.file, N_max=None)
-model.kernel.ncpu = options.ncpu
+model.kernel.device = options.device
 
 train_E, train_E1, train_F, train_F1 = model.validate_data()
 l1 = metric_single(train_E, train_E1, "Train Energy") 

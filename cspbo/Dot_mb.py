@@ -13,6 +13,7 @@ class Dot_mb():
         self.update(para)
         self.zeta = zeta
         self.device = device
+
     def __str__(self):
         return "{:.3f}**2 *Dot(length={:.3f})".format(self.sigma, self.sigma0)
 
@@ -54,15 +55,16 @@ class Dot_mb():
             for i in range(NE):
                 (x1, ele1) = data["energy"][i]
                 mask = get_mask(ele1, ele1)
-                C_ee[i] = kee_single(x1, x1, sigma2, sigma02, zeta, False, mask) 
+                C_ee[i] = K_ee(x1, x1, sigma2, sigma02, zeta, False, mask) 
 
         if "force" in data:
             NF = len(data["force"])
             C_ff = np.zeros(3*NF)
             for i in range(NF):
-                (x1, dx1dr, _, ele1) = data["force"][i]
+                (x1, dx1dr, ele1) = data["force"][i]
                 mask = get_mask(ele1, ele1)
-                C_ff[i*3:(i+1)*3] = np.diag(kff_single(x1, x1, dx1dr, dx1dr, None, None, sigma2, sigma02, zeta, False, mask))
+                tmp = K_ff(x1, x1, dx1dr, dx1dr, sigma2, sigma02, zeta, False, mask, wrap=True)
+                C_ff[i*3:(i+1)*3] = np.diag(tmp)
 
         if C_ff is None:
             return C_ee
@@ -72,11 +74,14 @@ class Dot_mb():
             return np.hstack((C_ee, C_ff))
 
     def k_total(self, data1, data2=None, same=False):
+        """
+        Compute the covairance for train data
+        Used for energy/force prediction
+        """
+
         if data2 is None:
             data2 = data1
-            same = True
-        else:
-            same = False
+
         C_ee, C_ef, C_fe, C_ff = None, None, None, None
         for key1 in data1.keys():
             for key2 in data2.keys():
@@ -92,10 +97,7 @@ class Dot_mb():
                             C_fe = C_ef.T 
                     elif key1 == 'force' and key2 == 'force':
                         C_ff = self.kff_many(data1[key1], data2[key2])
-        #print(C_ee)
-        #print(C_ef)
-        #print(C_ff[:5,:5])
-        #import sys; sys.exit()
+
         return build_covariance(C_ee, C_ef, C_fe, C_ff)
         
     def k_total_with_grad(self, data1):
@@ -163,7 +165,6 @@ class Dot_mb():
         C1 = np.zeros([m1, m2])
         C2 = np.zeros([m1, m2])
 
-        # This loop is rather expansive, a simple way is to do multi-process
         if same:
             indices = np.triu_indices(m1)
             (_is, _js) = indices
@@ -198,24 +199,29 @@ class Dot_mb():
     def kff_many(self, X1, X2, same=False, grad=False, stress=False):
         """
         Compute the energy-force kernel between structures and atoms
+        dXdR is a stacked array if stress is True
         Args:
-            X1: list of tuples ([X, dXdR, rdXdR, ele])
-            X2: list of tuples ([X, dXdR, rdXdR, ele])
-            same: avoid double counting if true
-            grad: output gradient if true
+            X1: list of tuples ([X, dXdR, ele])
+            X2: stacked ([X, dXdR, ele])
+            grad: compute gradient if true
+            stress: compute stress if true
         Returns:
-            C: M*N 2D array
+            C:
             C_grad:
         """
+
+
         sigma2, sigma02, zeta = self.sigma**2, self.sigma0**2, self.zeta
-        x_all, dxdr_all, _, ele_all, x2_indices = X2[0]
-        if len(X1) == 1: #unpack X1, used for training
-            X, dXdR, _, ELE, indices = X1[0]
+        x_all, dxdr_all, ele_all, x2_indices = X2
+
+        if isinstance(X1, tuple): #unpack X1, used for training
+            X, dXdR, ELE, indices = X1
             X1 = []
             c = 0
             for ind in indices:
                 X1.append((X[c:c+ind], dXdR[c:c+ind], ELE[c:c+ind]))
                 c += ind
+
         # num of X1, num of X2, num of big X2
         m1, m2, m2p = len(X1), len(x2_indices), len(x_all)
 
@@ -287,10 +293,10 @@ class Dot_mb():
             C_grad:
         """
         sigma2, sigma02, zeta = self.sigma**2, self.sigma0**2, self.zeta
-        if len(X2) > 1:  #pack X2 to big array
+        if isinstance(X2, list):  #pack X2 to big array in tuple
             X2 = pack_x2(X2, stress)
 
-        x_all, dxdr_all, _, ele_all, x2_indices = X2[0]
+        (x_all, dxdr_all, ele_all, x2_indices) = X2
         m1, m2, m2p = len(X1), len(x2_indices), len(x_all)
        
         x2_inds = [(0, x2_indices[0])]
@@ -371,24 +377,46 @@ def K_ee(x1, x2, sigma2, sigma02, zeta=2, grad=False, mask=None, eps=1e-8):
     else:
         return Kee/mn
 
-def K_ff(x1, x2, dx1dr, dx2dr, sigma2, sigma02, zeta=2, grad=False, mask=None, eps=1e-8, device='cpu'):
+def K_ff(x1, x2, dx1dr, dx2dr, sigma2, sigma02, zeta=2, grad=False, mask=None, eps=1e-8, device='cpu', wrap=False):
+    m2 = len(x2)
     x1_norm = np.linalg.norm(x1, axis=1) + eps
-    x2_norm = np.linalg.norm(x2, axis=1) + eps
     x1_norm2 = x1_norm**2       
     x1_norm3 = x1_norm**3        
-    x2_norm3 = x2_norm**3    
-    x2_norm2 = x2_norm**2      
-
-    x1x2_norm = x1_norm[:,None]*x2_norm[None,:]    
     x1_x1_norm3 = x1/x1_norm3[:,None]
+    x1x2_dot = x1@x2.T
+
+    if device == 'gpu':
+        x1 = cp.array(x1)
+        x2 = cp.array(x2)
+        x1_norm = cp.array(x1_norm)
+        x1_norm2 = cp.array(x1_norm2)
+        x1_norm3 = cp.array(x1_norm3)
+        x1_x1_norm3 = cp.array(x1_x1_norm3)
+        x1x2_dot = cp.array(x1x2_dot)
+        x2_norm = cp.linalg.norm(x2, axis=1) + eps
+        x2_norm2 = x2_norm**2      
+        tmp30 = cp.ones(x2.shape)/x2_norm[:,None]
+        tmp33 = cp.eye(x2.shape[1])[None,:,:] - x2[:,:,None] * (x2/x2_norm2[:,None])[:,None,:]
+    else:
+        x2_norm = np.linalg.norm(x2, axis=1) + eps
+        x2_norm2 = x2_norm**2      
+        tmp30 = np.ones(x2.shape)/x2_norm[:,None]
+        tmp33 = np.eye(x2.shape[1])[None,:,:] - x2[:,:,None] * (x2/x2_norm2[:,None])[:,None,:]
+
+    x2_norm3 = x2_norm**3    
+    x1x2_norm = x1_norm[:,None]*x2_norm[None,:]    
     x2_x2_norm3 = x2/x2_norm3[:,None]
 
-    x1x2_dot = x1@x2.T
     d = x1x2_dot/(eps+x1_norm[:,None]*x2_norm[None,:])
     D2 = d**(zeta-2)
     D1 = d*D2
     D = d*D1
-    dk_dD = sigma2*np.ones([len(x1), len(x2)])
+
+    if device == 'gpu':
+        dk_dD = sigma2*cp.ones([len(x1), len(x2)])
+    else:
+        dk_dD = sigma2*np.ones([len(x1), len(x2)])
+
     if mask is not None:
         dk_dD[mask] = 0
 
@@ -402,26 +430,10 @@ def K_ff(x1, x2, dx1dr, dx2dr, sigma2, sigma02, zeta=2, grad=False, mask=None, e
     tmp23 = x1_norm[:, None, None] * x2_norm2[None, :, None] 
     dd_dx2 = (tmp21-tmp22)/tmp23 
 
-    tmp30 = np.ones(x2.shape)/x2_norm[:,None]
+
+
     tmp31 = x1[:,None,:] * tmp30[None,:,:]
-    tmp33 = np.eye(x2.shape[1])[None,:,:] - x2[:,:,None] * (x2/x2_norm2[:,None])[:,None,:]
 
-    if device == 'gpu':
-        dx1dr = cp.array(dx1dr)
-        dx2dr = cp.array(dx2dr)
-        x1x2_norm = cp.array(x1x2_norm)
-        x1_x1_norm3 = cp.array(x1_x1_norm3)
-        x2_x2_norm3 = cp.array(x2_x2_norm3)
-
-        dk_dD = cp.array(dk_dD)
-        D1 = cp.array(D1)
-        D2 = cp.array(D2)
-        x1x2_dot = cp.array(x1x2_dot)
-        dd_dx1 = cp.array(dd_dx1)
-        dd_dx2 = cp.array(dd_dx2)
-
-        tmp31 = cp.array(tmp31)
-        tmp33 = cp.array(tmp33)
 
     tmp31 = tmp31[:,:,None,:] * x1_x1_norm3[:,None,:,None]
     tmp32 = x1_x1_norm3[:,None,:,None] * x2_x2_norm3[None,:,None,:] * x1x2_dot[:,:,None,None]
@@ -435,10 +447,25 @@ def K_ff(x1, x2, dx1dr, dx2dr, sigma2, sigma02, zeta=2, grad=False, mask=None, e
     d2D_dx1dx2 *= zeta
     d2k_dx1dx2 = d2D_dx1dx2
 
-    if not grad:
+    if grad:
+        #K_ff_0 = np.einsum("ikm,ijkl,jln->ijmn", dx1dr, d2D_dx1dx2, dx2dr, optimize=path)
+        tmp = (dx1dr[:,None,:,None,:] * d2D_dx1dx2[:,:,:,:,None]).sum(axis=(2)) #ijlm
+        K_ff_0 = (tmp[:,:,:,:,None] * dx2dr[None,:,:,None,:]).sum(axis=2) #ijlm, jln ijlmn
+        Kff = (K_ff_0 * dk_dD[:,:,None,None]).sum(axis=0) # 3, 3
+        d2k_dDdsigma = 2*dk_dD/np.sqrt(sigma2)
+        dKff_dsigma = (K_ff_0*d2k_dDdsigma[:,:,None,None]).sum(axis=0) 
+        if device == 'gpu':
+            dKff_dsigma0 = cp.zeros([m2, 3, 3])
+            return cp.concatenate((Kff, dKff_dsigma, dKff_dsigma0), axis=-1)
+        else:
+            dKff_dsigma0 = np.zeros([m2, 3, 3])
+            return np.concatenate((Kff, dKff_dsigma, dKff_dsigma0), axis=-1)
+    else:
         tmp0 = d2k_dx1dx2 * dk_dD[:,:,None,None] #n1, n2, d, d
         _kff1 = (dx1dr[:,None,:,None,:] * tmp0[:,:,:,:,None]).sum(axis=(0,2)) # n1,n2,3
         kff = (_kff1[:,:,:,None] * dx2dr[:,:,None,:]).sum(axis=1)  # n2, 3, 3
+        if wrap:
+            kff = kff.sum(axis=0)
         return kff
 
 def K_ef(x1, x2, dx2dr, sigma2, sigma02, zeta=2, grad=False, mask=None, eps=1e-8, device='cpu'):
@@ -481,19 +508,14 @@ def K_ef(x1, x2, dx2dr, sigma2, sigma02, zeta=2, grad=False, mask=None, eps=1e-8
     kef1 = (-dD_dx2[:,:,:,None]*dx2dr[None,:,:,:]).sum(axis=2) #[m, n, 9]
     Kef = (kef1*dk_dD[:,:,None]).sum(axis=0) #[n, 9]
     if grad:
-        if device == 'gpu':
-            D = cp.array(D)
-        l = np.sqrt(l2)
-        l3 = l2*l
         d2k_dDdsigma = 2*dk_dD/np.sqrt(sigma2)
-        d2k_dDdl = (D/l3)*dk_dD + (2/l)*dk_dD
-
         dKef_dsigma = (kef1*d2k_dDdsigma[:,:,None]).sum(axis=0) 
-        dKef_dl     = (kef1*d2k_dDdl[:,:,None]).sum(axis=0)
         if device == 'gpu':
-            return cp.concatenate((Kef/m, dKef_dsigma/m, dKef_dl/m), axis=-1)
+            dKef_dsigma0 = cp.zeros([len(x2), 3])
+            return cp.concatenate((Kef/m, dKef_dsigma/m, dKef_dsigma0/m), axis=-1)
         else:
-            return np.concatenate((Kef/m, dKef_dsigma/m, dKef_dl/m), axis=-1)
+            dKef_dsigma0 = np.zeros([len(x2), 3])
+            return np.concatenate((Kef/m, dKef_dsigma/m, dKef_dsigma0/m), axis=-1)
     else:
         return Kef/m
 

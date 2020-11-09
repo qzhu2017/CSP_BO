@@ -46,7 +46,7 @@ class GaussianProcess():
         s += "Kernel: {:s}".format(str(self.kernel))
         if hasattr(self, "train_x"):
             s += " {:d} energy ({:.3f})".format(len(self.train_x["energy"]), self.noise_e)
-            s += " {:d} forces ({:.3f})\n".format(len(self.train_x["force"][0][-1]), self.noise_f)
+            s += " {:d} forces ({:.3f})\n".format(len(self.train_x["force"][-1]), self.noise_f)
         return s
 
     def __repr__(self):
@@ -127,7 +127,10 @@ class GaussianProcess():
         if 'energy' in X:
             Npts += len(X["energy"])
         if 'force' in X:
-            Npts += 3*len(X["force"][0][-1])
+            if isinstance(X["force"], tuple): #big array
+                Npts += 3*len(X["force"][-1])
+            else:
+                Npts += 3*len(X["force"])
 
         factors = np.ones(Npts)
 
@@ -265,9 +268,9 @@ class GaussianProcess():
             F = self.y_train[len(test_X_E['energy']):].flatten()
         else:
             test_X_E = {"energy": [(data[0], data[2]) for data in test_data['energy']]}
-            test_X_F = {"force": [(data[0], data[1], data[2], data[4]) for data in test_data['force']]}
+            test_X_F = {"force": [(data[0], data[1], data[3]) for data in test_data['force']]}
             E = np.array([data[1] for data in test_data['energy']])
-            F = np.array([data[3] for data in test_data['force']]).flatten()
+            F = np.array([data[2] for data in test_data['force']]).flatten()
 
         if total_E:
             for i in range(len(E)):
@@ -366,9 +369,11 @@ class GaussianProcess():
         F: atomic force: 1*3
         N2 is the number of the centered atoms' neighbors within the cutoff
         """
+
+        # pack the new data
         icol = 0
         for fd in force_data:
-            (x, dxdr, _, f, ele) = fd
+            (x, dxdr, f, ele) = fd
             icol += x.shape[0]
         jcol = x.shape[1]
         
@@ -379,7 +384,7 @@ class GaussianProcess():
 
         count = 0
         for i, fd in enumerate(force_data):
-            (x, dxdr, _, f, ele) = fd
+            (x, dxdr, f, ele) = fd
             shp = x.shape[0]
             indices.append(shp)
             X[count:count+shp, :jcol] = x
@@ -388,11 +393,25 @@ class GaussianProcess():
             self.train_y['force'].append(f)
             count += shp
         ELE = np.ravel(ELE)
-
         if self.kernel.device == 'gpu':
-            self.train_x['force'].append((X, cp.array(dXdR), None, ELE, indices))
+            dXdR = cp.array(dXdR)
+
+        # stack the data to the existing data
+        if len(self.train_x['force']) == 4:
+            (_X, _dXdR, _ELE, _indices) = self.train_x['force']
+            _X = np.concatenate((_X, X), axis=0)
+            _indices.extend(indices)
+            _ELE = np.concatenate((_ELE, ELE), axis=0)
+            if self.kernel.device == 'gpu':
+                _dXdR = cp.concatenate((_dXdR, dXdR), axis=0)
+            else:
+                _dXdR = np.concatenate((_dXdR, dXdR), axis=0)
+
+            self.train_x['force'] = (_X, _dXdR, _ELE, _indices)
         else:
-            self.train_x['force'].append((X. dXdR, None, ELE, indices))
+            self.train_x['force'] = (X, dXdR, ELE, indices)
+
+                
 
     def log_marginal_likelihood(self, params, eval_gradient=False, clone_kernel=False):
         

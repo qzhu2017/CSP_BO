@@ -64,6 +64,32 @@ def fun_d2D_dx1dx2(x1, x2, x1_norm, x2_norm, d, zeta=2):
 
 # ===================== Side functions =========================
 
+def pack_x2(X2, stress=False):
+    icol = 0
+    for fd in X2:
+        icol += fd[0].shape[0]
+    jcol = fd[0].shape[1]
+    
+    ELE = []
+    indices = []
+    X = np.zeros([icol, jcol])
+    if stress:
+        dXdR = np.zeros([icol, jcol, 9])
+    else:
+        dXdR = np.zeros([icol, jcol, 3])
+
+    count = 0
+    for fd in X2:
+        (x, dxdr, ele) = fd
+        shp = x.shape[0]
+        indices.append(shp)
+        X[count:count+shp, :jcol] = x
+        dXdR[count:count+shp, :jcol, :] = dxdr
+        ELE.extend(ele)
+        count += shp
+    ELE = np.ravel(ELE)
+    return [(X, dXdR, None, ELE, indices)]
+
 def build_covariance(c_ee, c_ef, c_fe, c_ff, c_se=None, c_sf=None):
     """
     Need to rework
@@ -91,7 +117,12 @@ def build_covariance(c_ee, c_ef, c_fe, c_ff, c_se=None, c_sf=None):
         return c_fe
 
 def get_mask(ele1, ele2):
+    #try:
     ans = ele1[:,None] - ele2[None,:]
+    #except:
+    #    print(ele1.shape, ele2.shape)
+    #    print(ele1)
+    #    print(ele2)
     ids = np.where(ans!=0)
     if len(ids[0]) == 0:
         return None

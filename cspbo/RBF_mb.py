@@ -173,7 +173,6 @@ class RBF_mb():
         Args:
             X1: list of tuples ([X, dXdR, rdXdR, ele])
             X2: list of tuples ([X, dXdR, rdXdR, ele])
-            same: avoid double counting if true
             grad: output gradient if true
         Returns:
             C: M
@@ -185,11 +184,17 @@ class RBF_mb():
             X, dXdR, _, ELE, indices = X1[0]
             X1 = []
             c = 0
+            dXdR = cp.asnumpy(dXdR)
             for ind in indices:
-                X1.append((X[c:c+ind], cp.asnumpy(dXdR[c:c+ind]), None, ELE[c:c+ind], None))
+                X1.append((X[c:c+ind], dXdR[c:c+ind], None, ELE[c:c+ind], None))
                 c += ind
 
-        m1, m2 = len(X1), len(x2_indices)
+        m1, m2, m2p = len(X1), len(x2_indices), len(x_all)
+
+        x2_inds = [(0, x2_indices[0])]
+        for i in range(1, len(x2_indices)):
+            ID = x2_inds[i-1][1]
+            x2_inds.append( (ID, ID+x2_indices[i]) )
 
         if self.ncpu == 1: # Work on the cpu
             device = 'cpu'
@@ -198,42 +203,39 @@ class RBF_mb():
             C_l = np.zeros([3*m1, 3*m2])
         else:
             device = 'gpu'       
-            C = cp.zeros([3*m1, 3*m2])
-            C_s = cp.zeros([3*m1, 3*m2])
-            C_l = cp.zeros([3*m1, 3*m2])
-
-        path = None
+            C = cp.zeros([m1, m2p, 3, 3])
+            C_s = cp.zeros([m1, m2p, 3, 3])
+            C_l = cp.zeros([m1, m2p, 3, 3])
         
-        c = 0
-        for i in range(len(X1)):
+        for i in range(m1):
             (x1, dx1dr, _, ele1, _) = X1[i]
-            if device == 'gpu':
-                dx1dr = cp.array(dx1dr)
             #(x1, _, _, ele1, dx1dr, _) = X1[i]
             mask = get_mask(ele1, ele_all[c:])
-            res = K_ff(x1, x_all[c:], dx1dr, dxdr_all[c:], None, x2_indices[i:], sigma2, l2, zeta, grad, mask, path, device='gpu')
-            c += x2_indices[i]
+            if device == 'gpu':
+                dx1dr = cp.array(dx1dr)
+                if mask is not None:
+                    mask = cp.array(mask)
 
-            if grad:  # Need to rework dKff_
-                Kff, dKff_sigma, dKff_l = res
-                C[i*3:(i+1)*3, j*3:(j+1)*3] = Kff
-                C_s[i*3:(i+1)*3, j*3:(j+1)*3] = dKff_sigma
-                C_s[j*3:(j+1)*3, i*3:(i+1)*3] = dKff_sigma.T
-                C_l[i*3:(i+1)*3, j*3:(j+1)*3] = dKff_l
-                C_l[j*3:(j+1)*3, i*3:(i+1)*3] = dKff_l.T
-            else:
-                C[i*3:(i+1)*3, i*3:] = res
-                C[(i+1)*3:, i*3:(i+1)*3] = (res[:,3:]).T
+            res = K_ff(x1, x_all, dx1dr, dxdr_all, sigma2, l2, zeta, grad, mask, device='gpu')
+            C[i, :, :, :] = res
+
 
         if device == 'gpu':
             C = cp.asnumpy(C)
-            C_s = cp.asnumpy(C_s)
-            C_l = cp.asnumpy(C_l)
+
+        _C = np.zeros([m1*3, m2*3])
+        for j, ind in enumerate(x2_inds):
+            tmp = C[:, ind[0]:ind[1], :, :].sum(axis=1)
+            for i in range(m1):
+                _C[i*3:(i+1)*3, j*3:(j+1)*3]  = tmp[i, :, :]
+
+        #import sys; sys.exit()
+        #print(_C)
         
         if grad:
             return C, C_s, C_l                  
         else:
-            return C
+            return _C
 
     def kef_many(self, X1, X2, grad=False):  # Make the X2 (force) into big array
         """
@@ -249,72 +251,40 @@ class RBF_mb():
         sigma2, l2, zeta = self.sigma**2, self.l**2, self.zeta
 
         if len(X2) > 1:  #pack X2 to big array
-            icol = 0
-            for fd in X2:
-                icol += fd[0].shape[0]
-            jcol = fd[0].shape[1]
-            
-            ELE = []
-            indices = []
-            X = np.zeros([icol, jcol])
-            dXdR = np.zeros([icol, jcol, 3])
-
-            count = 0
-            for fd in X2:
-                (x, dxdr, _, ele) = fd
-                shp = x.shape[0]
-                indices.append(shp)
-                X[count:count+shp, :jcol] = x
-                dXdR[count:count+shp, :jcol, :3] = dxdr
-                ELE.extend(ele)
-                count += shp
-
-            ELE = np.ravel(ELE)
-            X2 = [(X, dXdR, None, ELE, indices)]
-            #import sys; sys.exit()
+            X2 = pack_x2(X2, stress=True)
 
         x_all, dxdr_all, _, ele_all, x2_indices = X2[0]
-        m1, m2 = len(X1), len(x2_indices)
+        m1, m2, m2p = len(X1), len(x2_indices), len(x_all)
        
-        path = None
-
+        x2_inds = [(0, x2_indices[0])]
+        for i in range(1, len(x2_indices)):
+            ID = x2_inds[i-1][1]
+            x2_inds.append( (ID, ID+x2_indices[i]) )
+       
         if self.ncpu == 1:
             device = 'cpu'
-            C = np.zeros([m1, 3*m2])
-            C_s = np.zeros([m1, 3*m2])
-            C_l = np.zeros([m1, 3*m2])
+            C = np.zeros([3, m1, m2p, 3])
         else:
             device = 'gpu'
-            C = cp.zeros([m1, 3*m2])
-            C_s = cp.zeros([m1, 3*m2])
-            C_l = cp.zeros([m1, 3*m2])
- 
+            C = cp.zeros([m1, m2p, 3])
+            dxdr_all = cp.array(dxdr_all)
 
         results = []
         for i in range(m1):
             (x1, ele1) = X1[i]
             mask = get_mask(ele1, ele_all)
-            res = K_ef(x1, x_all, dxdr_all, None, x2_indices, sigma2, l2, zeta, grad, mask, path, device=device)
-
-            if grad:
-                Kef, dKef_sigma, dKef_l = res
-                C[i, :] = Kef
-                C_s[i, :] = dKef_sigma
-                C_l[i, :] = dKef_l
-            else:
-                C[i, :] += res
+            
+            res = K_ef(x1, x_all, dxdr_all, sigma2, l2, zeta, grad, mask, device=device)
+            C[i, :, :] = res
 
         if device == 'gpu':
-            C = cp.asnumpy(C)
-            C_s = cp.asnumpy(C_s)
-            C_l = cp.asnumpy(C_l)
-
-        #import sys; sys.exit()
+            ans = cp.zeros([m1, m2*3])
+            for j, ind in enumerate(x2_inds):
+                ans[:, j*3:(j+1)*3] =  C[:, ind[0]:ind[1], :].sum(axis=1)
         
-        if grad:
-            return C, C_s, C_l                  
-        else:
-            return C
+            C = cp.asnumpy(ans)
+
+        return C
 
     def k_total_with_stress(self, data1, data2):
         C_ee, C_ef, C_fe, C_ff = None, None, None, None
@@ -343,62 +313,44 @@ class RBF_mb():
             C: M*9N 2D array
         """
 
-        # if X2 is not a big array, stack it
-        
         sigma2, l2, zeta = self.sigma**2, self.l**2, self.zeta
         if len(X2) > 1:  #pack X2 to big array
-            icol = 0
-            for fd in X2:
-                icol += fd[0].shape[0]
-            jcol = fd[0].shape[1]
-            
-            ELE = []
-            indices = []
-            X = np.zeros([icol, jcol])
-            dXdR = np.zeros([icol, jcol, 3])
-            RdXdR = np.zeros([icol, jcol, 6])
+            X2 = pack_x2(X2, stress=True)
 
-            count = 0
-            for fd in X2:
-                (x, dxdr, rdxdr, ele) = fd
-                shp = x.shape[0]
-                indices.append(shp)
-                X[count:count+shp, :jcol] = x
-                dXdR[count:count+shp, :jcol, :3] = dxdr
-                RdXdR[count:count+shp, :jcol, :6] = rdxdr
-                ELE.extend(ele)
-                count += shp
-            ELE = np.ravel(ELE)
-            X2 = [(X, dXdR, RdXdR, ELE, indices)]
+        x_all, dxdr_all, _, ele_all, x2_indices = X2[0]
+        m1, m2, m2p = len(X1), len(x2_indices), len(x_all)
+
+        # create x2_indices
+        x2_inds = [(0, x2_indices[0])]
+        for i in range(1, len(x2_indices)):
+            ID = x2_inds[i-1][1]
+            x2_inds.append( (ID, ID+x2_indices[i]) )
  
-        x_all, dxdr_all, rdxdr_all, ele_all, x2_indices = X2[0]
-        m1, m2 = len(X1), len(x2_indices)
-        path = None
-
         if self.ncpu == 1:
             device = 'cpu'
-            C = np.zeros([m1, 3*m2])
-            C1 = np.zeros([m1, 6*m2])
+            C = np.zeros([m1, m2p, 9])
         else:
             device = 'gpu'
-            C = cp.zeros([m1, 3*m2])
-            C1 = cp.zeros([m1, 6*m2])
+            C = cp.zeros([m1, m2p, 9])
             dxdr_all = cp.array(dxdr_all)
-            rdxdr_all = cp.array(rdxdr_all)
 
         for i in range(m1):
             (x1, ele1) = X1[i]
             mask = get_mask(ele1, ele_all)
-            (Kef, Kes) = K_ef(x1, x_all, dxdr_all, rdxdr_all, x2_indices, sigma2, l2, zeta, False, mask, path, device=device) 
-            C[i, :] += Kef
-            C1[i, :] += Kes
-
+            C[i, :, :] = K_ef(x1, x_all, dxdr_all, sigma2, l2, zeta, False, mask, device=device) 
+        
         if device == 'gpu':
             C = cp.asnumpy(C)
-            C1 = cp.asnumpy(C1)
+
+        _C = np.zeros([m1, m2*3])
+        _C1 = np.zeros([m1, m2*6])
+        for j, ind in enumerate(x2_inds):
+            tmp = C[:, ind[0]:ind[1], :].sum(axis=1) #m1, 9
+            _C[:, j*3:(j+1)*3] = tmp[:, :3]
+            _C1[:, j*6:(j+1)*6:] = tmp[:, 3:]
 
 
-        return C, C1
+        return _C, _C1
 
 
     def kff_many_with_stress(self, X1, X2):
@@ -415,33 +367,45 @@ class RBF_mb():
         """
         sigma2, l2, zeta = self.sigma**2, self.l**2, self.zeta
         x_all, dxdr_all, _, ele_all, x2_indices = X2[0]
-        m1, m2 = len(X1), len(x2_indices)
+        m1, m2, m2p = len(X1), len(x2_indices), len(x_all)
+
+        x2_inds = [(0, x2_indices[0])]
+        for i in range(1, len(x2_indices)):
+            ID = x2_inds[i-1][1]
+            x2_inds.append( (ID, ID+x2_indices[i]) )
+            
         if self.ncpu == 1:
             device = 'cpu'
-            C = np.zeros([3*m1, 3*m2])
-            C1 = np.zeros([6*m1, 3*m2])
+            C = np.zeros([m1, m2p, 9, 3])
+            ans = np.zeros([m1*9, m2*3])
         else:
             device = 'gpu'
-            C = cp.zeros([3*m1, 3*m2])
-            C1 = cp.zeros([6*m1, 3*m2])
-        path = None
+            C = cp.zeros([m1, m2p, 9, 3])
+            ans = cp.zeros([m1*9, m2*3])
 
         for i in range(m1):
-            (x1, dx1dr, rdx1dr, ele1) = X1[i]
+            (x1, dx1dr, ele1) = X1[i]
             if device == 'gpu':
                 dx1dr = cp.array(dx1dr)
-                rdx1dr = cp.array(rdx1dr)
-
             mask = get_mask(ele1, ele_all)
-            (Kff, Ksf) = K_ff(x1, x_all, dx1dr, dxdr_all, rdx1dr, x2_indices, sigma2, l2, zeta, False, mask, path, device=device) 
-            C[i*3:(i+1)*3, :] += Kff
-            C1[i*6:(i+1)*6, :] += Ksf
+            K = K_ff(x1, x_all, dx1dr, dxdr_all, sigma2, l2, zeta, False, mask, device=device) 
+            C[i, :, :, :] = K
 
         if device == 'gpu':
             C = cp.asnumpy(C)
-            C1 = cp.asnumpy(C1)
+            #print("asnumpy", time()-t0)
 
-        return C, C1
+        _C = np.zeros([m1*3, m2*3])
+        _C1 = np.zeros([m1*6, m2*3])
+        for j, ind in enumerate(x2_inds):
+            tmp = C[:, ind[0]:ind[1], :, :].sum(axis=1)
+            for i in range(m1):
+                _C[i*3:(i+1)*3, j*3:(j+1)*3]  = tmp[i, :3, :]
+                _C1[i*6:(i+1)*6, j*3:(j+1)*3] = tmp[i, 3:, :]
+        #print("loop", time()-t0)
+
+        #import sys; sys.exit()
+        return _C, _C1
 
 
 def K_ee(x1, x2, sigma2, l2, zeta=2, grad=False, mask=None, eps=1e-8):
@@ -478,33 +442,19 @@ def K_ee(x1, x2, sigma2, l2, zeta=2, grad=False, mask=None, eps=1e-8):
     else:
         return Kee/mn
 
-def K_ff(x1, x2, dx1dr, dx2dr, rdx1dr, x2_indices, sigma2, l2, zeta=2, grad=False, mask=None, path=None, eps=1e-8, device='cpu'):
+def K_ff(x1, x2, dx1dr, dx2dr, sigma2, l2, zeta=2, grad=False, mask=None, eps=1e-8, device='cpu'):
     #print(x1.shape, x2.shape, type(x1), type(x2))
     #t0 = time()
     l = np.sqrt(l2)
     l3 = l*l2
+
     x1_norm = np.linalg.norm(x1, axis=1) + eps
-    x2_norm = np.linalg.norm(x2, axis=1) + eps
     x1_norm2 = x1_norm**2       
     x1_norm3 = x1_norm**3        
     x1x2_dot = x1@x2.T
     x1_x1_norm3 = x1/x1_norm3[:,None]
-    x1x2_norm = x1_norm[:,None]*x2_norm[None,:]
-
-    d = x1x2_dot/(eps+x1x2_norm)
-    D2 = d**(zeta-2)
-    D1 = d*D2
-    D = d*D1
-    k = sigma2*np.exp(-(0.5/l2)*(1-D))
-
-    if mask is not None: 
-        k[mask] = 0
-    
-    dk_dD = (-0.5/l2)*k
-    zd2 = -0.5/l2*zeta*zeta*(D1**2)
 
     #print("Kff 0", time()-t0)
-
 
     if device == 'gpu':
         #t0 = time()
@@ -514,22 +464,29 @@ def K_ff(x1, x2, dx1dr, dx2dr, rdx1dr, x2_indices, sigma2, l2, zeta=2, grad=Fals
         x1_norm2 = cp.array(x1_norm2)
         x1_norm3 = cp.array(x1_norm3)
         x1_x1_norm3 = cp.array(x1_x1_norm3)
-        x2_norm = cp.array(x2_norm)
         x1x2_dot = cp.array(x1x2_dot)
-        x1x2_norm = cp.array(x1x2_norm)
         
-        dk_dD = cp.array(dk_dD)
-        D1 = cp.array(D1)
-        D2 = cp.array(D2)
-        zd2 = cp.array(zd2)
-
+        x2_norm = cp.linalg.norm(x2, axis=1) + eps
+        x1x2_norm = x1_norm[:,None]*x2_norm[None,:]
         x2_norm3 = x2_norm**3    
         x2_norm2 = x2_norm**2
+
+        d = x1x2_dot/(eps+x1x2_norm)
+        D2 = d**(zeta-2)
+        D1 = d*D2
+        D = d*D1
+        k = sigma2*np.exp(-(0.5/l2)*(1-D))
+        if mask is not None: 
+            k[mask] = 0
+    
+        dk_dD = (-0.5/l2)*k
+        zd2 = -0.5/l2*zeta*zeta*(D1**2)
 
         x2_x2_norm3 = x2/x2_norm3[:,None]
         tmp30 = cp.ones(x2.shape)/x2_norm[:,None]
         tmp31 = x1[:,None,:] * tmp30[None,:,:]
         tmp33 = cp.eye(x2.shape[1])[None,:,:] - x2[:,:,None] * (x2/x2_norm2[:,None])[:,None,:]
+        #print("Kff 1", time()-t0)
 
     #t0 = time()
     tmp11 = x2[None, :, :] * x1_norm[:, None, None]
@@ -557,7 +514,7 @@ def K_ff(x1, x2, dx1dr, dx2dr, rdx1dr, x2_indices, sigma2, l2, zeta=2, grad=Fals
     d2D_dx1dx2 *= zeta
     d2k_dx1dx2 = -d2D_dx1dx2 + dD_dx1_dD_dx2 # m, n, d1, d2
    
-    #print("Kff 3", time()-t0)
+    #print("Kff 2", time()-t0)
     if grad:
         if device == 'gpu':
             D = cp.array(D)
@@ -600,52 +557,15 @@ def K_ff(x1, x2, dx1dr, dx2dr, rdx1dr, x2_indices, sigma2, l2, zeta=2, grad=Fals
             return Kff, dKff_dsigma, dKff_dl
 
     else:
-        if device == 'gpu':
-            tmp0 = d2k_dx1dx2 * dk_dD[:,:,None,None]
-            _kff1 = cp.sum(dx1dr[:,None,:,None,:] * tmp0[:,:,:,:,None], axis=(0,2))
-            kff = cp.sum(_kff1[:,:,:,None] * dx2dr[:,:,None,:], axis=1)  # n2, d2, 3
-            Kff = cp.zeros([3, len(x2_indices)*3])
-
-            c = 0
-            if rdx1dr is None:
-                for i, ind in enumerate(x2_indices):
-                    Kff[:, i*3:(i+1)*3] = cp.sum(kff[c:c+ind,:,:], axis=0)
-                    c += ind
-                return Kff
-            else:
-                _ksf1 = cp.sum(rdx1dr[:,None,:,None,:] * tmp0[:,:,:,:,None], axis=(0,2))
-                ksf = cp.sum(_ksf1[:,:,:,None] * dx2dr[:,:,None,:], axis=1)  # n2, d2, 3
-                Ksf = cp.zeros([6, len(x2_indices)*3])
-                for i, ind in enumerate(x2_indices):
-                    Kff[:, i*3:(i+1)*3] = cp.sum(kff[c:c+ind,:,:], axis=0)
-                    Ksf[:, i*3:(i+1)*3] = cp.sum(ksf[c:c+ind,:,:], axis=0)
-                    c += ind
-                return Kff, Ksf
-            
-        else:
-            tmp0 = d2k_dx1dx2 * dk_dD[:,:,None,None]
-            _kff1 = np.sum(dx1dr[:,None,:,None,:] * tmp0[:,:,:,:,None], axis=(0,2))
-            kff = np.sum(_kff1[:,:,:,None] * dx2dr[:,:,None,:], axis=1)  # n2, d2, 3
-            Kff = np.zeros([3, len(x2_indices)*3])
-            
-            c = 0
-            if rdx1dr is None:
-                for i, ind in enumerate(x2_indices):
-                    Kff[:, i*3:(i+1)*3] = np.sum(kff[c:c+ind,:,:], axis=0)
-                    c += ind
-                return Kff
-            else:
-                _ksf1 = np.sum(rdx1dr[:,None,:,None,:] * tmp0[:,:,:,:,None], axis=(0,2))
-                ksf = np.sum(_ksf1[:,:,:,None] * dx2dr[:,:,None,:], axis=1)  # n2, d2, 3
-                Ksf = np.zeros([6, len(x2_indices)*3])
-                for i, ind in enumerate(x2_indices):
-                    Kff[:, i*3:(i+1)*3] = np.sum(kff[c:c+ind,:,:], axis=0)
-                    Ksf[:, i*3:(i+1)*3] = np.sum(ksf[c:c+ind,:,:], axis=0)
-                    c += ind
-                return Kff, Ksf
+        #t0 = time()
+        tmp0 = d2k_dx1dx2 * dk_dD[:,:,None,None] #n1, n2, d, d
+        _kff1 = (dx1dr[:,None,:,None,:] * tmp0[:,:,:,:,None]).sum(axis=(0,2)) # n1,n2,3
+        kff = (_kff1[:,:,:,None] * dx2dr[:,:,None,:]).sum(axis=1)  # n2, 3, 3
+        #print("Kff 2", time()-t0)
+        return kff
 
 
-def K_ef(x1, x2, dx2dr, rdx2dr, x2_indices, sigma2, l2, zeta=2, grad=False, mask=None, path=None, eps=1e-8, device='gpu'):
+def K_ef(x1, x2, dx2dr, sigma2, l2, zeta=2, grad=False, mask=None, eps=1e-8, device='gpu'):
     #device = 'cpu'
     #print(type(x1), type(x2), x1.shape, x2.shape)
     t0 = time()
@@ -670,7 +590,6 @@ def K_ef(x1, x2, dx2dr, rdx2dr, x2_indices, sigma2, l2, zeta=2, grad=False, mask
         x2_norm = cp.array(x2_norm)
         x2_norm2 = cp.array(x2_norm2)
         x1x2_dot = cp.array(x1x2_dot)
-        #dD_dx2 = cp.array(dD_dx2)
         D1 = cp.array(D1)
         dk_dD = cp.array(dk_dD)
 
@@ -683,6 +602,7 @@ def K_ef(x1, x2, dx2dr, rdx2dr, x2_indices, sigma2, l2, zeta=2, grad=False, mask
     zd1 = zeta * D1
     dD_dx2 = -zd1[:,:,None] * dd_dx2
     m = len(x1)
+
     #print("Kef 1", time()-t0)
     if grad:
         K_ef_0 = -np.einsum("ijk,jkl->ijl", dD_dx2, dx2dr) # [m, n, d2] [n, d2, 3] -> [m,n,3]
@@ -695,44 +615,34 @@ def K_ef(x1, x2, dx2dr, rdx2dr, x2_indices, sigma2, l2, zeta=2, grad=False, mask
         dKef_dl     = np.einsum("ijk,ij->k", K_ef_0, d2k_dDdl)
         return Kef/m, dKef_dsigma/m, dKef_dl/m
     else:
-        if device == 'gpu':
-            kef1 = cp.sum(-dD_dx2[:,:,:,None]*dx2dr[None,:,:,:], axis=2)
-            kef2 = cp.sum(kef1*dk_dD[:,:,None], axis=0)
-            Kef = cp.zeros([len(x2_indices)*3])
-            
-            c = 0
-            if rdx2dr is None:
-                for i, ind in enumerate(x2_indices):
-                    Kef[i*3:(i+1)*3] = cp.sum(kef2[c:c+ind,:], axis=0)
-                    c += ind
-                return Kef/m
-            else:
-                kse1 = cp.sum(-dD_dx2[:,:,:,None]*rdx2dr[None,:,:,:], axis=2)
-                kse2 = cp.sum(kse1*dk_dD[:,:,None], axis=0)
-                Kse = cp.zeros([len(x2_indices)*6])
-                for i, ind in enumerate(x2_indices):
-                    Kef[i*3:(i+1)*3] = cp.sum(kef2[c:c+ind,:], axis=0)
-                    Kse[i*6:(i+1)*6] = cp.sum(kse2[c:c+ind,:], axis=0)
-                    c += ind
+        kef1 = (-dD_dx2[:,:,:,None]*dx2dr[None,:,:,:]).sum(axis=2) #[m, n, 9]
+        Kef = (kef1*dk_dD[:,:,None]).sum(axis=0) #[n, 9]
+        return Kef/m
 
-                return Kef/m, Kse/m
-        else:
-            kef1 = np.sum(-dD_dx2[:,:,:,None]*dx2dr[None,:,:,:], axis=2)
-            kef2 = np.sum(kef1*dk_dD[:,:,None], axis=0)
-            Kef = np.zeros([1, len(x2_indices)*3])
-            
-            c = 0
-            if rdx2dr is None:
-                for i, ind in enumerate(x2_indices):
-                    Kef[:, i*3:(i+1)*3] = np.sum(kef2[c:c+ind,:], axis=0)
-                    c += ind
-                return Kef/m
-            else:
-                kse1 = np.sum(-dD_dx2[:,:,:,None]*rdx2dr[None,:,:,:], axis=2)
-                kse2 = np.sum(kse1*dk_dD[:,:,None], axis=0)
-                Kse = np.zeros([1, 6*len(x2_indices)])
-                for i, ind in enumerate(x2_indices):
-                    Kef[:, i*3:(i+1)*3] = np.sum(kef2[c:c+ind,:], axis=0)
-                    Kse[:, i*6:(i+1)*6] = np.sum(kse2[c:c+ind,:], axis=0)
-                
-                return Kef/m, Kse/m
+
+def pack_x2(X2, stress=False):
+    icol = 0
+    for fd in X2:
+        icol += fd[0].shape[0]
+    jcol = fd[0].shape[1]
+    
+    ELE = []
+    indices = []
+    X = np.zeros([icol, jcol])
+    if stress:
+        dXdR = np.zeros([icol, jcol, 9])
+    else:
+        dXdR = np.zeros([icol, jcol, 3])
+
+    count = 0
+    for fd in X2:
+        (x, dxdr, ele) = fd
+        shp = x.shape[0]
+        indices.append(shp)
+        X[count:count+shp, :jcol] = x
+        dXdR[count:count+shp, :jcol, :] = dxdr
+        ELE.extend(ele)
+        count += shp
+    ELE = np.ravel(ELE)
+    return [(X, dXdR, None, ELE, indices)]
+

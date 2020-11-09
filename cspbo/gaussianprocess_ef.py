@@ -305,9 +305,9 @@ class GaussianProcess():
             if stress:
                 _rdxdr = d['rdxdr'][ids]
                 _rdxdr = _rdxdr.reshape([len(ids), l, 9])[:, :, [0, 4, 8, 1, 2, 5]]
-                data["force"].append((_x, _dxdr, _rdxdr, ele0))
+                data["force"].append((_x, np.concatenate((_dxdr, _rdxdr), axis=2), ele0))
             else:
-                data["force"].append((_x, _dxdr, None, ele0))
+                data["force"].append((_x, _dxdr, ele0))
         if stress:
             K_trans, K_trans1 = self.kernel.k_total_with_stress(data, self.train_x)
         else:

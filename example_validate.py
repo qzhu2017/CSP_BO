@@ -2,6 +2,8 @@ import sys
 import numpy as np
 from time import time
 from cspbo.utilities import rmse, metric_single, get_strucs, plot
+#from cspbo_bak.gaussianprocess_ef import GaussianProcess as gpr
+#from cspbo_bak.calculator import GPR
 from cspbo.gaussianprocess_ef import GaussianProcess as gpr
 from cspbo.calculator import GPR
 eV2GPa = 160.21766
@@ -10,19 +12,17 @@ eV2GPa = 160.21766
 np.set_printoptions(formatter={'float': '{: 5.2f}'.format})
 
 #N_max, ncpu = 100, 24
-N_max, ncpu = 5, 'gpu'
+N_max, device = None, 'gpu'
 m_file = sys.argv[1]
 db_file = sys.argv[2]
 model = gpr()
-model.load(m_file, N_max=None, opt=False, device=ncpu)
-#model.kernel.ncpu = ncpu
-print(model.kernel.ncpu)
+model.load(m_file, N_max=None, opt=True, device=device)
+print(model.kernel.device)
 
 train_E, train_E1, train_F, train_F1 = model.validate_data()
 l1 = metric_single(train_E, train_E1, "Train Energy") 
 l2 = metric_single(train_F, train_F1, "Train Forces") 
 
-t0 = time()
 # get _structures
 strucs, values = get_strucs(db_file, N_max=N_max)
 (E0, F0, S0) = values[0]
@@ -43,6 +43,7 @@ total_E0, total_E = [], []
 total_F0, total_F = None, None
 total_S0, total_S = None, None
 
+t0 = time()
 count = 0
 for struc, val in zip(strucs, values):
     count += 1

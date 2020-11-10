@@ -7,11 +7,10 @@ from cspbo.calculator import GPR
 
 np.set_printoptions(formatter={'float': '{: 5.2f}'.format})
 
-ncpu = 4
+device = 'gpu'
 m_file = sys.argv[1]
 model = gpr()
-model.load(m_file, N_max=200)
-model.kernel.ncpu = ncpu
+model.load(m_file, N_max=4, device= device)
 
 train_E, train_E1, train_F, train_F1 = model.validate_data()
 l1 = metric_single(train_E, train_E1, "Train Energy") 

@@ -1,13 +1,14 @@
 import numpy as np
 from .kernel_base import *
 import cupy as cp
+from .utilities import tuple_to_list, list_to_tuple
 
 class RBF_mb():
     """
     .. math::
         k(x_i, x_j) = \sigma ^2 * \\exp\\left(- \\frac{d(x_i, x_j)^2}{2l^2} \\right)
     """
-    def __init__(self, para=[1., 1.], bounds=[[1e-2, 5e+1], [1e-1, 1e+1]], zeta=3, device='cpu'):
+    def __init__(self, para=[1., 1.], bounds=[[1e-2, 5e+1], [1e-1, 1e+1]], zeta=2, device='cpu'):
         self.name = 'RBF_mb'
         self.bounds = bounds
         self.update(para)
@@ -213,12 +214,7 @@ class RBF_mb():
         x_all, dxdr_all, ele_all, x2_indices = X2
 
         if isinstance(X1, tuple): #unpack X1, used for training
-            X, dXdR, ELE, indices = X1
-            X1 = []
-            c = 0
-            for ind in indices:
-                X1.append((X[c:c+ind], dXdR[c:c+ind], ELE[c:c+ind]))
-                c += ind
+            X1 = tuple_to_list(X1)
 
         # num of X1, num of X2, num of big X2
         m1, m2, m2p = len(X1), len(x2_indices), len(x_all)
@@ -292,7 +288,7 @@ class RBF_mb():
         sigma2, l2, zeta = self.sigma**2, self.l**2, self.zeta
 
         if isinstance(X2, list):  #pack X2 to big array in tuple
-            X2 = pack_x2(X2, stress)
+            X2 = list_to_tuple(X2, stress)
 
         x_all, dxdr_all, ele_all, x2_indices = X2
         m1, m2, m2p = len(X1), len(x2_indices), len(x_all)
@@ -496,7 +492,7 @@ def K_ef(x1, x2, dx2dr, sigma2, l2, zeta=2, grad=False, mask=None, eps=1e-8, dev
     """
     Compute the Kef between one structure and many atomic configurations
     """
-
+    m = len(x1)
     x1_norm = np.linalg.norm(x1, axis=1) + eps
     x2_norm = np.linalg.norm(x2, axis=1) + eps
     x2_norm2 = x2_norm**2
@@ -529,8 +525,6 @@ def K_ef(x1, x2, dx2dr, sigma2, l2, zeta=2, grad=False, mask=None, eps=1e-8, dev
 
     zd1 = zeta * D1
     dD_dx2 = -zd1[:,:,None] * dd_dx2
-    m = len(x1)
-
     kef1 = (-dD_dx2[:,:,:,None]*dx2dr[None,:,:,:]).sum(axis=2) #[m, n, 9]
     Kef = (kef1*dk_dD[:,:,None]).sum(axis=0) #[n, 9]
     if grad:

@@ -1,7 +1,7 @@
 import numpy as np
 import cupy as cp
 from pyxtal.database.element import Element
-from .utilities import new_pt, convert_train_data
+from .utilities import new_pt, convert_train_data, list_to_tuple, tuple_to_list
 from scipy.linalg import cholesky, cho_solve, solve_triangular
 from scipy.optimize import minimize
 import warnings
@@ -82,7 +82,7 @@ class GaussianProcess():
         hyper_params = self.kernel.parameters() + [self.noise_e]
         hyper_bounds = self.kernel.bounds + [self.noise_bounds]
         if opt:
-            params, loss = self.optimize(obj_func, hyper_params, hyper_bounds, )
+            params, loss = self.optimize(obj_func, hyper_params, hyper_bounds)
             self.kernel.update(params[:-1])
             self.noise_e = params[-1]
             self.noise_f = self.f_coef*params[-1]
@@ -173,9 +173,11 @@ class GaussianProcess():
             self.train_x = {'energy': [], 'force': []}
             self.train_y = {'energy': [], 'force': []}
             self.train_db = []
-
-        N_E = len(self.train_x['energy'])
-        N_F = len(self.train_x['force'])
+            N_E = 0
+            N_F = 0
+        else:
+            N_E = len(self.train_x['energy'])
+            N_F = len(self.train_x['force'][-1])
         for d in data["db"]:
             (atoms, energy, force, energy_in, force_in) = d
             if energy_in:
@@ -196,9 +198,8 @@ class GaussianProcess():
                 for eng_data in data[key]:
                     self.add_train_pts_energy(eng_data)
             elif key == 'force':
-                #for force_data in data[key]:
-                #    self.add_train_pts_force(force_data)
-                self.add_train_pts_force(data[key])
+                if len(data[key])>0:
+                    self.add_train_pts_force(data[key])
         self.update_y_train()
 
     
@@ -211,7 +212,9 @@ class GaussianProcess():
             f_ids: ids to delete in K_FF
         """
         data = {"energy":[], "force": [], "db": []}
-        N_E, N_F = len(self.train_x['energy']), len(self.train_x['force'])
+        force_data = tuple_to_list(self.train_x['force'])
+
+        N_E, N_F = len(self.train_x['energy']), len(force_data)
         for id in range(N_E):
             if id not in e_ids:
                 (X, ele) = self.train_x['energy'][id]
@@ -220,9 +223,9 @@ class GaussianProcess():
 
         for id in range(N_F):
             if id not in f_ids:
-                (X, dxdr, _, ele) = self.train_x['force'][id]
+                (X, dxdr, ele) = force_data[id]
                 F = self.train_y['force'][id]
-                data["force"].append((X, dxdr, _, F, ele))
+                data["force"].append((X, dxdr, F, ele))
 
         for d in self.train_db:
             (atoms, energy, force, energy_in, force_in, e_id, _f_ids) = d
@@ -371,28 +374,7 @@ class GaussianProcess():
         """
 
         # pack the new data
-        icol = 0
-        for fd in force_data:
-            (x, dxdr, f, ele) = fd
-            icol += x.shape[0]
-        jcol = x.shape[1]
-        
-        ELE = []
-        indices = []
-        X = np.zeros([icol, jcol])
-        dXdR = np.zeros([icol, jcol, 3])
-
-        count = 0
-        for i, fd in enumerate(force_data):
-            (x, dxdr, f, ele) = fd
-            shp = x.shape[0]
-            indices.append(shp)
-            X[count:count+shp, :jcol] = x
-            dXdR[count:count+shp, :jcol, :3] = dxdr
-            ELE.extend(ele)
-            self.train_y['force'].append(f)
-            count += shp
-        ELE = np.ravel(ELE)
+        (X, dXdR, ELE, indices, F) = list_to_tuple(force_data, include_force=True)
         if self.kernel.device == 'gpu':
             dXdR = cp.array(dXdR)
 
@@ -408,10 +390,10 @@ class GaussianProcess():
                 _dXdR = np.concatenate((_dXdR, dXdR), axis=0)
 
             self.train_x['force'] = (_X, _dXdR, _ELE, _indices)
+            self.train_y['force'].extend(F)
         else:
             self.train_x['force'] = (X, dXdR, ELE, indices)
-
-                
+            self.train_y['force'] = F
 
     def log_marginal_likelihood(self, params, eval_gradient=False, clone_kernel=False):
         
@@ -438,7 +420,6 @@ class GaussianProcess():
             return (-np.inf, np.zeros_like(params)) if eval_gradient else -np.inf
 
         y_train = self.y_train
-
         alpha = cho_solve((L, True), y_train)
 
         # log marginal likelihood
@@ -466,6 +447,7 @@ class GaussianProcess():
         opt_res = minimize(fun, theta0, method="L-BFGS-B", bounds=bounds, 
             jac=True, options={'maxiter': 10, 'ftol': 1e-3})
         #print(opt_res)
+        #import sys; sys.exit()
         return opt_res.x, opt_res.fun
 
     def save(self, filename, db_filename):
@@ -511,7 +493,7 @@ class GaussianProcess():
         return dict0
 
 
-    def load_from_dict(self, dict0, N_max=None, device=1):
+    def load_from_dict(self, dict0, N_max=None, device='cpu'):
         
         #keys = ['kernel', 'descriptor', 'Noise']
 
@@ -606,7 +588,7 @@ class GaussianProcess():
                 for id in force_in:
                     ids = np.argwhere(d['seq'][:,1]==id).flatten() 
                     _i = d['seq'][ids, 0]
-                    pts_to_add["force"].append((d['x'][_i,:], d['dxdr'][ids], None, force[id], ele[_i]))
+                    pts_to_add["force"].append((d['x'][_i,:], d['dxdr'][ids], force[id], ele[_i]))
                 pts_to_add["db"].append((atoms, energy, force, energy_in, force_in))
 
                 if count % 50 == 0:

@@ -128,11 +128,11 @@ def convert_train_data(data, des,  N_force=100000):
                 ids = np.argwhere(d['seq'][:,1]==i).flatten()
                 _i = d['seq'][ids, 0] 
                 if len(xs_added) == 0:
-                    force_data.append((d['x'][_i,:], d['dxdr'][ids], None, forces[i], ele[_i]))
+                    force_data.append((d['x'][_i,:], d['dxdr'][ids], forces[i], ele[_i]))
                     f_ids.append(i)
                 else:
                     if new_pt((X, ele[i]), xs_added):
-                        force_data.append((d['x'][_i,:], d['dxdr'][ids], None, forces[i], ele[_i]))
+                        force_data.append((d['x'][_i,:], d['dxdr'][ids], forces[i], ele[_i]))
                         f_ids.append(i)
                         xs_added.append((X, ele[i]))
 
@@ -166,7 +166,7 @@ def get_data(db_name, des, N_force=100000, lists=None, select=False, ncpu=1):
             if len(force_data) < N_force:
                 ids = np.argwhere(X[id]['seq'][:,1]==i).flatten()
                 _i = X[id]['seq'][ids, 0] 
-                force_data.append((X[id]['x'][_i,:], X[id]['dxdr'][ids], None, Y['forces'][id][i], ele[_i]))
+                force_data.append((X[id]['x'][_i,:], X[id]['dxdr'][ids], Y['forces'][id][i], ele[_i]))
                 f_ids.append(i)
 
         db_data.append((structures[id], Y['energy'][id], Y['forces'][id], True, f_ids))
@@ -464,5 +464,48 @@ def plot_two_body(model, figname, rs=[1.0, 5.0]):
     plt.savefig(figname)
     plt.close()
     print("save the figure to ", figname)
+
+def list_to_tuple(force_data, stress=False, include_force=False):
+    icol = 0
+    for fd in force_data:
+        icol += fd[0].shape[0]
+    jcol = fd[0].shape[1]
+    
+    ELE = []
+    indices = []
+    F = []
+    X = np.zeros([icol, jcol])
+    if stress:
+        dXdR = np.zeros([icol, jcol, 9])
+    else:
+        dXdR = np.zeros([icol, jcol, 3])
+
+    count = 0
+    for fd in force_data:
+        if include_force:
+            (x, dxdr, f, ele) = fd
+            F.append(f)
+        else:
+            (x, dxdr, ele) = fd
+        shp = x.shape[0]
+        indices.append(shp)
+        X[count:count+shp, :jcol] = x
+        dXdR[count:count+shp, :jcol, :] = dxdr
+        ELE.extend(ele)
+        count += shp
+    ELE = np.ravel(ELE)
+    if include_force:
+        return (X, dXdR, ELE, indices, F)
+    else:
+        return (X, dXdR, ELE, indices)
+
+def tuple_to_list(force_data):
+    X, dXdR, ELE, indices = force_data
+    X1 = []
+    c = 0
+    for ind in indices:
+        X1.append((X[c:c+ind], dXdR[c:c+ind], ELE[c:c+ind])) 
+        c += ind
+    return X1
 
 

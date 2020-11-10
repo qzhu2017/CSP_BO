@@ -8,11 +8,11 @@ from cspbo.RBF_mb import RBF_mb
 from cspbo.Dot_mb import Dot_mb
 
 #N_start, N_step, N_max, zeta, ncpu, fac = 4, 1, 2554, 2, 10, 1.2
-N_start, N_step, N_max, zeta, device, fac, N_force = 1, 1, 50, 2, 'gpu', 1.2, 8
+N_start, N_step, N_max, zeta, device, fac, N_force = 1, 1, None, 2, 'gpu', 1.2, 8
 
 des = build_desc("SO3", lmax=3, nmax=3, rcut=4.0)
-kernel = RBF_mb(para=[1, 0.5], zeta=zeta, device=device)
-#kernel = Dot_mb(para=[2, 0.5], zeta=zeta, device=device)
+#kernel = RBF_mb(para=[1, 0.5], zeta=zeta, device=device)
+kernel = Dot_mb(para=[2, 0.5], zeta=zeta, device=device)
 lj = None #LJ(parameters={"rc": 5.0, "sigma": 2.13})
 
 model = gpr(kernel=kernel, 
@@ -34,6 +34,8 @@ metric_single(F, F1, "Train Forces")
 print("\n")
 
 (strucs, energies, forces) = get_train_data(db_file)
+if N_max is None:
+    N_max = len(strucs)
 
 for id in range(N_max):
     data = (strucs[id], energies[id], forces[id])

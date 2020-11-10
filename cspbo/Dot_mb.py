@@ -1,6 +1,7 @@
 import numpy as np
 import cupy as cp
 from .kernel_base import *
+from .utilities import tuple_to_list, list_to_tuple
 
 class Dot_mb():
     """
@@ -215,13 +216,8 @@ class Dot_mb():
         x_all, dxdr_all, ele_all, x2_indices = X2
 
         if isinstance(X1, tuple): #unpack X1, used for training
-            X, dXdR, ELE, indices = X1
-            X1 = []
-            c = 0
-            for ind in indices:
-                X1.append((X[c:c+ind], dXdR[c:c+ind], ELE[c:c+ind]))
-                c += ind
-
+            X1 = tuple_to_list(X1)
+            
         # num of X1, num of X2, num of big X2
         m1, m2, m2p = len(X1), len(x2_indices), len(x_all)
 
@@ -294,7 +290,7 @@ class Dot_mb():
         """
         sigma2, sigma02, zeta = self.sigma**2, self.sigma0**2, self.zeta
         if isinstance(X2, list):  #pack X2 to big array in tuple
-            X2 = pack_x2(X2, stress)
+            X2 = list_to_tuple(X2, stress)
 
         (x_all, dxdr_all, ele_all, x2_indices) = X2
         m1, m2, m2p = len(X1), len(x2_indices), len(x_all)
@@ -429,8 +425,6 @@ def K_ff(x1, x2, dx1dr, dx2dr, sigma2, sigma02, zeta=2, grad=False, mask=None, e
     tmp22 = x1x2_dot[:,:,None] * (x2/x2_norm[:, None])[None,:,:]
     tmp23 = x1_norm[:, None, None] * x2_norm2[None, :, None] 
     dd_dx2 = (tmp21-tmp22)/tmp23 
-
-
 
     tmp31 = x1[:,None,:] * tmp30[None,:,:]
 

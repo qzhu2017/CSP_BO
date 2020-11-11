@@ -243,11 +243,19 @@ class Dot_mb():
         
         for i in range(m1):
             (x1, dx1dr, ele1) = X1[i]
-            mask = get_mask(ele1, ele_all)
             if self.device == 'gpu':
                 dx1dr = cp.array(dx1dr)
-
-            C[i] = K_ff(x1, x_all, dx1dr, dxdr_all, sigma2, sigma02, zeta, grad, mask, device=self.device)
+            batch = 2000
+            # split the big array to smaller size
+            if m2p > batch:
+                for j in range(int(np.ceil(m2p/batch))):
+                    start = j*batch
+                    end = min([(j+1)*batch, m2p])
+                    mask = get_mask(ele1, ele_all[start:end])
+                    C[i, start:end, :, :] = K_ff(x1, x_all[start:end], dx1dr, dxdr_all[start:end], sigma2, sigma02, zeta, grad, mask, device=self.device)
+            else:
+                mask = get_mask(ele1, ele_all)
+                C[i] = K_ff(x1, x_all, dx1dr, dxdr_all, sigma2, sigma02, zeta, grad, mask, device=self.device)
 
         if self.device == 'gpu':
             C = cp.asnumpy(C)

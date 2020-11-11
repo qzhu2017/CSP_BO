@@ -1,4 +1,5 @@
 import numpy as np
+import cupy as cp
 from ase.neighborlist import neighbor_list
 from functools import partial
 from multiprocessing import Pool, cpu_count
@@ -476,9 +477,14 @@ def list_to_tuple(force_data, stress=False, include_force=False):
     F = []
     X = np.zeros([icol, jcol])
     if stress:
-        dXdR = np.zeros([icol, jcol, 9])
+        length = 9
     else:
-        dXdR = np.zeros([icol, jcol, 3])
+        length = 3
+
+    if isinstance(force_data[0][1], np.ndarray):
+        dXdR = np.zeros([icol, jcol, length])
+    else: #on cuda
+        dXdR = cp.zeros([icol, jcol, length])
 
     count = 0
     for fd in force_data:

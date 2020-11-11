@@ -598,7 +598,7 @@ class GaussianProcess():
 
         self.set_train_pts(pts_to_add, "w")
 
-    def add_structure(self, data, N_max=6, tol_e_var=1.2, tol_f_var=1.2):
+    def add_structure(self, data, N_max=10, tol_e_var=1.2, tol_f_var=1.2):
         """
         add the training points from a given structure base on the followings:
             1, compute the (E, F, E_var, F_var) based on the current model
@@ -688,7 +688,8 @@ class GaussianProcess():
                 if len(pts[pts==i*3])==1 and len(pts[pts==(i*3+1)])==1 and len(pts[pts==(i*3+2)])==1:
                     pts_f.append(i)
         print("{:d} energy and {:d} force points will be removed".format(len(pts_e), len(pts_f)))
-        self.remove_train_pts(pts_e, pts_f)
+        if len(pts_e) + len(pts_f) > 0:
+            self.remove_train_pts(pts_e, pts_f)
 
 
 def CUR(K, l_tol=1e-10):

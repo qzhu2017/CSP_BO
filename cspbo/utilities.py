@@ -4,8 +4,8 @@ from ase.neighborlist import neighbor_list
 from functools import partial
 from multiprocessing import Pool, cpu_count
 from ase.db import connect
-from .descriptors.rdf import RDF
-from pymatgen.io.ase import AseAtomsAdaptor
+#from .descriptors.rdf import RDF
+#from pymatgen.io.ase import AseAtomsAdaptor
 from pyxtal.database.element import Element
 from pyxtal.crystal import random_crystal
 from random import choice
@@ -176,51 +176,51 @@ def get_data(db_name, des, N_force=100000, lists=None, select=False, ncpu=1):
 
 
 
-def convert_rdf(db_file, N=None):
+#def convert_rdf(db_file, N=None):
+#
+#    train_Y, ds = [], []
+#    with connect(db_file) as db:
+#        for row in db.select():
+#            s = db.get_atoms(id=row.id)
+#            if hasattr(row, 'ff_energy'):
+#                eng = row.ff_energy
+#            else:
+#                eng = row.data.energy/len(s)
+#            train_Y.append(eng)
+#            pmg_struc = AseAtomsAdaptor().get_structure(s)
+#            ds.append(RDF(pmg_struc, R_max=10).RDF[1])
+#            if N is not None and len(train_Y) == N:
+#                break
+#    return ds, np.array(train_Y)
 
-    train_Y, ds = [], []
-    with connect(db_file) as db:
-        for row in db.select():
-            s = db.get_atoms(id=row.id)
-            if hasattr(row, 'ff_energy'):
-                eng = row.ff_energy
-            else:
-                eng = row.data.energy/len(s)
-            train_Y.append(eng)
-            pmg_struc = AseAtomsAdaptor().get_structure(s)
-            ds.append(RDF(pmg_struc, R_max=10).RDF[1])
-            if N is not None and len(train_Y) == N:
-                break
-    return ds, np.array(train_Y)
-
-def smear(data, sigma=0.2):
-    """
-    Apply Gaussian smearing to spectrum y value.
-    Args:
-        sigma: Std dev for Gaussian smear function
-    """
-    diff = [data[0, i + 1] - data[0, i] for i in range(np.shape(data)[0] - 1)]
-    avg_x_per_step = np.sum(diff) / len(diff)
-    data[1, :] = gaussian_filter1d(data[1, :], sigma / avg_x_per_step)
-    return data
-
-def get_rdf(s, r_min=0.5, r_max=8.0, N_bins=40, sigma=0.2):
-    # plot atomic RDF
-    # needs a cutoff
-    rdf = np.zeros([len(s)+2, N_bins]) 
-    _is, _js, _ds = neighbor_list('ijd', s, rcut)
-    dr = (r_max-r_min)/(N_bins-1)
-    bins = np.arange(r_min, r_max, R_bin)
-    cutoff = Cosine(neighbors, bins)
-
-    for i in range(len(s)):
-        neighbors = _ds[_is == i]
-        des = np.histogram(neighbors, bins=bins)
-        rdf[i, :] = smear(np.vstack(bins, des), sigma)[1, :]
-    rdf /= s.get_volume()
-    rdf[-2,:] = bins
-    rdf[-1,:] = Cosine(bins, r_max)
-    return rdf
+#def smear(data, sigma=0.2):
+#    """
+#    Apply Gaussian smearing to spectrum y value.
+#    Args:
+#        sigma: Std dev for Gaussian smear function
+#    """
+#    diff = [data[0, i + 1] - data[0, i] for i in range(np.shape(data)[0] - 1)]
+#    avg_x_per_step = np.sum(diff) / len(diff)
+#    data[1, :] = gaussian_filter1d(data[1, :], sigma / avg_x_per_step)
+#    return data
+#
+#def get_rdf(s, r_min=0.5, r_max=8.0, N_bins=40, sigma=0.2):
+#    # plot atomic RDF
+#    # needs a cutoff
+#    rdf = np.zeros([len(s)+2, N_bins]) 
+#    _is, _js, _ds = neighbor_list('ijd', s, rcut)
+#    dr = (r_max-r_min)/(N_bins-1)
+#    bins = np.arange(r_min, r_max, R_bin)
+#    cutoff = Cosine(neighbors, bins)
+#
+#    for i in range(len(s)):
+#        neighbors = _ds[_is == i]
+#        des = np.histogram(neighbors, bins=bins)
+#        rdf[i, :] = smear(np.vstack(bins, des), sigma)[1, :]
+#    rdf /= s.get_volume()
+#    rdf[-2,:] = bins
+#    rdf[-1,:] = Cosine(bins, r_max)
+#    return rdf
 
 def get_2b(s, rcut=4.0, kernel='all'):
     

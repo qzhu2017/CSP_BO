@@ -12,10 +12,11 @@ eV2GPa = 160.21766
 np.set_printoptions(formatter={'float': '{: 5.2f}'.format})
 
 #N_max, ncpu = 100, 24
-N_max, device = None, 'gpu'
+N_max, device = 10, 'gpu'
 m_file = sys.argv[1]
 db_file = sys.argv[2]
 model = gpr()
+#model.load(m_file, N_max=2, opt=True, device=device)
 model.load(m_file, N_max=None, opt=True, device=device)
 print(model.kernel.device)
 

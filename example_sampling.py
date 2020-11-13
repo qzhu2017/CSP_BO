@@ -20,7 +20,7 @@ if len(sys.argv) == 2:
                 descriptor=des, 
                 base_potential=lj,
                 noise_e=[5e-3, 2e-3, 5e-3], 
-                f_coef=25,
+                f_coef=30,
                )
     db_file = sys.argv[1]
     db_ids = range(N_start)
@@ -44,8 +44,8 @@ print("\n")
 if N_max is None:
     N_max = len(strucs)
 
-#for id in range(1100, N_max):
-for id in range(N_max):
+for id in range(1200, N_max):
+#for id in range(N_max):
     data = (strucs[id], energies[id], forces[id])
     pts, N_pts, (E, E1, E_std, F, F1, F_std) = model.add_structure(data)
     print("{:4d} E_True/Pred: {:8.4f} -> {:8.4f} Error_E/F: {:8.4f}[{:8.4f}] {:8.4f}[{:8.4f}]".format(\

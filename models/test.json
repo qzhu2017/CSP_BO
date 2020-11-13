@@ -1,0 +1,1 @@
+{"noise": {"energy": 0.005, "f_coef": 35, "bounds": [0.002, 0.005]}, "kernel": {"name": "Dot_mb", "sigma": 27.617033553440514, "sigma0": 0.01, "zeta": 2, "bounds": [[0.01, 50.0], [0.01, 10.0]]}, "descriptor": {"nmax": 3, "lmax": 3, "rcut": 4.0, "alpha": 2.0, "derivative": true, "stress": true, "_type": "SO3"}, "db_filename": "models/test.db"}

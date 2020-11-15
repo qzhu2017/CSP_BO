@@ -244,8 +244,17 @@ class RBF_mb():
             mask = get_mask(ele1, ele_all)
             if self.device == 'gpu':
                 dx1dr = cp.array(dx1dr)
-            C[i] = K_ff(x1, x_all, dx1dr, dxdr_all, sigma2, l2, zeta, grad, mask, device=self.device)
-
+            batch = 1000
+            # split the big array to smaller size
+            if m2p > batch:
+                for j in range(int(np.ceil(m2p/batch))):
+                    start = j*batch
+                    end = min([(j+1)*batch, m2p])
+                    mask = get_mask(ele1, ele_all[start:end])
+                    C[i, start:end, :, :] = K_ff(x1, x_all[start:end], dx1dr, dxdr_all[start:end], sigma2, l2, zeta, grad, mask, device=self.device)
+            else:
+                mask = get_mask(ele1, ele_all)
+                C[i] = K_ff(x1, x_all, dx1dr, dxdr_all, sigma2, l2, zeta, grad, mask, device=self.device)
         if self.device == 'gpu':
             C = cp.asnumpy(C)
 
@@ -463,19 +472,17 @@ def K_ff(x1, x2, dx1dr, dx2dr, sigma2, l2, zeta=2, grad=False, mask=None, eps=1e
 
         K_ff_0 = (d2k_dx1dx2[:,:,:,:,None] * dx1dr[:,None,:,None,:]).sum(axis=2) 
         K_ff_0 = (K_ff_0[:,:,:,:,None] * dx2dr[None,:,:,None,:]).sum(axis=2) 
-        Kff = (K_ff_0 * dk_dD[:,:,None,None]).sum(axis=(0,1))
+        Kff = (K_ff_0 * dk_dD[:,:,None,None]).sum(axis=0)
 
         d2k_dDdsigma = 2*dk_dD/np.sqrt(sigma2)
         d2k_dDdl = (D/l3)*dk_dD + (2/l)*dk_dD
 
-        dKff_dsigma = (K_ff_0 * d2k_dDdsigma[:,:,None,None]).sum(axis=(0,1))
-
-        dKff_dl = (K_ff_0 * d2k_dDdl[:,:,None,None]).sum(axis=(0,1))
+        dKff_dsigma = (K_ff_0 * d2k_dDdsigma[:,:,None,None]).sum(axis=0)
+        dKff_dl = (K_ff_0 * d2k_dDdl[:,:,None,None]).sum(axis=0)
 
         K_ff_1 = (dD_dx1_dD_dx2[:,:,:,:,None] * dx1dr[:,None,:,None,:]).sum(axis=2)
         K_ff_1 = (K_ff_1[:,:,:,:,None] * dx2dr[None,:,:,None,:]).sum(axis=2)
-        dKff_dl += (K_ff_1 * dk_dD[:,:,None,None]).sum(axis=(0,1))/(l2*np.sqrt(l2))
-
+        dKff_dl += (K_ff_1 * dk_dD[:,:,None,None]).sum(axis=0)/(l2*np.sqrt(l2))
         if device == 'cpu':
             return np.concatenate((Kff, dKff_dsigma, dKff_dl), axis=-1)
         else:

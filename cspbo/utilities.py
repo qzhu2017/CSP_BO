@@ -466,52 +466,73 @@ def plot_two_body(model, figname, rs=[1.0, 5.0]):
     plt.close()
     print("save the figure to ", figname)
 
-def list_to_tuple(force_data, stress=False, include_force=False):
+def list_to_tuple(data, stress=False, include_value=False, mode='force'):
     icol = 0
-    for fd in force_data:
+    for fd in data:
         icol += fd[0].shape[0]
     jcol = fd[0].shape[1]
     
     ELE = []
     indices = []
-    F = []
+    values = []
     X = np.zeros([icol, jcol])
-    if stress:
-        length = 9
-    else:
-        length = 3
+    if mode == 'force':
+        if stress:
+            length = 9
+        else:
+            length = 3
 
-    if isinstance(force_data[0][1], np.ndarray):
-        dXdR = np.zeros([icol, jcol, length])
-    else: #on cuda
-        dXdR = cp.zeros([icol, jcol, length])
+        if isinstance(data[0][1], np.ndarray):
+            dXdR = np.zeros([icol, jcol, length])
+        else: #on cuda
+            dXdR = cp.zeros([icol, jcol, length])
 
     count = 0
-    for fd in force_data:
-        if include_force:
-            (x, dxdr, f, ele) = fd
-            F.append(f)
+    for fd in data:
+        if mode == 'force':
+            if include_value:
+                (x, dxdr, f, ele) = fd
+                values.append(f)
+            else:
+                (x, dxdr, ele) = fd
+            shp = x.shape[0]
+            dXdR[count:count+shp, :jcol, :] = dxdr
         else:
-            (x, dxdr, ele) = fd
-        shp = x.shape[0]
+            if include_value:
+                (x, e, ele) = fd
+                values.append(e)
+            else:
+                (x, ele) = fd
+            shp = x.shape[0]
         indices.append(shp)
         X[count:count+shp, :jcol] = x
-        dXdR[count:count+shp, :jcol, :] = dxdr
         ELE.extend(ele)
         count += shp
-    ELE = np.ravel(ELE)
-    if include_force:
-        return (X, dXdR, ELE, indices, F)
-    else:
-        return (X, dXdR, ELE, indices)
 
-def tuple_to_list(force_data):
-    X, dXdR, ELE, indices = force_data
+    ELE = np.ravel(ELE)
+    if mode == 'force':
+        if include_value:
+            return (X, dXdR, ELE, indices, values)
+        else:
+            return (X, dXdR, ELE, indices)
+    else:
+        if include_value:
+            return (X, ELE, indices, values)
+        else:
+            return (X, ELE, indices)
+        
+
+def tuple_to_list(data, mode='force'):
     X1 = []
     c = 0
-    for ind in indices:
-        X1.append((X[c:c+ind], dXdR[c:c+ind], ELE[c:c+ind])) 
-        c += ind
+    if mode == 'force':
+        X, dXdR, ELE, indices = data
+        for ind in indices:
+            X1.append((X[c:c+ind], dXdR[c:c+ind], ELE[c:c+ind])) 
+            c += ind
+    else:
+        X, ELE, indices = data
+        for ind in indices:
+            X1.append((X[c:c+ind], ELE[c:c+ind])) 
+            c += ind
     return X1
-
-

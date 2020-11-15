@@ -45,7 +45,7 @@ class GaussianProcess():
         s = "------Gaussian Process Regression------\n"
         s += "Kernel: {:s}".format(str(self.kernel))
         if hasattr(self, "train_x"):
-            s += " {:d} energy ({:.3f})".format(len(self.train_x["energy"]), self.noise_e)
+            s += " {:d} energy ({:.3f})".format(len(self.train_x["energy"][-1]), self.noise_e)
             s += " {:d} forces ({:.3f})\n".format(len(self.train_x["force"][-1]), self.noise_f)
         return s
 
@@ -73,9 +73,8 @@ class GaussianProcess():
                     #from scipy.optimize import approx_fprime
                     #print("from ", grad)
                     #print("scipy", approx_fprime(params, self.log_marginal_likelihood, 1e-5))
-                    #import sys
-                    #sys.exit()
                     print(strs)
+                    #import sys; sys.exit()
                 return (-lml, -grad)
             else:
                 return -self.log_marginal_likelihood(params, clone_kernel=False)
@@ -125,7 +124,10 @@ class GaussianProcess():
 
         Npts = 0
         if 'energy' in X:
-            Npts += len(X["energy"])
+            if isinstance(X["energy"], tuple): #big array
+                Npts += len(X["energy"][-1])
+            else:
+                Npts += len(X["energy"])
         if 'force' in X:
             if isinstance(X["force"], tuple): #big array
                 Npts += 3*len(X["force"][-1])
@@ -135,7 +137,10 @@ class GaussianProcess():
         factors = np.ones(Npts)
 
         if total_E:
-            N_atoms = np.array([len(x) for x in X["energy"]]) 
+            if isinstance(X["energy"], tuple): #big array
+                N_atoms = np.array([len(x) for x in X["energy"][-1]]) 
+            else:
+                N_atoms = np.array([len(x) for x in X["energy"]]) 
             factors[:len(N_atoms)] = N_atoms
         y_mean *= factors
         
@@ -176,7 +181,7 @@ class GaussianProcess():
             N_E = 0
             N_F = 0
         else:
-            N_E = len(self.train_x['energy'])
+            N_E = len(self.train_x['energy'][-1])
             N_F = len(self.train_x['force'][-1])
         for d in data["db"]:
             (atoms, energy, force, energy_in, force_in) = d
@@ -195,8 +200,9 @@ class GaussianProcess():
 
         for key in data.keys():
             if key == 'energy':
-                for eng_data in data[key]:
-                    self.add_train_pts_energy(eng_data)
+                #for eng_data in data[key]:
+                #    self.add_train_pts_energy(eng_data)
+                self.add_train_pts_energy(data[key])
             elif key == 'force':
                 if len(data[key])>0:
                     self.add_train_pts_force(data[key])
@@ -212,12 +218,13 @@ class GaussianProcess():
             f_ids: ids to delete in K_FF
         """
         data = {"energy":[], "force": [], "db": []}
+        energy_data = tuple_to_list(self.train_x['energy'], mode='energy')
         force_data = tuple_to_list(self.train_x['force'])
 
-        N_E, N_F = len(self.train_x['energy']), len(force_data)
+        N_E, N_F = len(energy_data), len(force_data)
         for id in range(N_E):
             if id not in e_ids:
-                (X, ele) = self.train_x['energy'][id]
+                (X, ele) = energy_data[id]
                 E = self.train_y['energy'][id]
                 data['energy'].append((X, E, ele))
 
@@ -264,11 +271,11 @@ class GaussianProcess():
         """
         validate the given dataset
         """
-        if test_data is None:
+        if test_data is None: #from train
             test_X_E = {"energy": self.train_x['energy']}
             test_X_F = {"force": self.train_x['force']}
-            E = self.y_train[:len(test_X_E['energy'])].flatten()
-            F = self.y_train[len(test_X_E['energy']):].flatten()
+            E = self.y_train[:len(test_X_E['energy'][-1])].flatten()
+            F = self.y_train[len(test_X_E['energy'][-1]):].flatten()
         else:
             test_X_E = {"energy": [(data[0], data[2]) for data in test_data['energy']]}
             test_X_F = {"force": [(data[0], data[1], data[3]) for data in test_data['force']]}
@@ -359,9 +366,17 @@ class GaussianProcess():
         E: total energy: scalor
         N1 is the number of atoms in the given structure
         """
-        (X, E, ele) = energy_data
-        self.train_x['energy'].append((X, ele))
-        self.train_y['energy'].append(E)
+        (X, ELE, indices, E) = list_to_tuple(energy_data, include_value=True, mode='energy')
+        if len(self.train_x['force']) == 3:
+            (_X, _ELE, _indices) = self.train_x['energy']
+            _X = np.concatenate((_X, X), axis=0)
+            _indices.append(indices)
+            _ELE = np.concatenate((_ELE, ELE), axis=0)
+            self.train_x['force'] = (_X, _ELE, _indices)
+            self.train_y['force'].append(E)
+        else:
+            self.train_x['energy'] = (X, ELE, indices)
+            self.train_y['energy'] = E
         #self.update_y_train()
 
     def add_train_pts_force(self, force_data):
@@ -374,7 +389,7 @@ class GaussianProcess():
         """
 
         # pack the new data
-        (X, dXdR, ELE, indices, F) = list_to_tuple(force_data, include_force=True)
+        (X, dXdR, ELE, indices, F) = list_to_tuple(force_data, include_value=True)
         if self.kernel.device == 'gpu':
             dXdR = cp.array(dXdR)
 
@@ -406,14 +421,14 @@ class GaussianProcess():
             K, K_gradient = kernel.k_total_with_grad(self.train_x)
         else:
             K = kernel.k_total(self.train_x)
+        #print(K[:5,:5])
         # add noise matrix
         #K[np.diag_indices_from(K)] += self.noise
         noise = np.eye(len(K))
-        NE = len(self.train_x['energy'])
+        NE = len(self.train_x['energy'][-1])
         noise[:NE,:NE] *= params[-1]**2
         noise[NE:,NE:] *= (self.f_coef*params[-1])**2
         K += noise
-
         try:
             L = cholesky(K, lower=True)
         except np.linalg.LinAlgError:

@@ -56,7 +56,7 @@ class RBF_mb():
             for i in range(NE):
                 (x1, ele1) = data["energy"][i]
                 mask = get_mask(ele1, ele1)
-                C_ee[i] = K_ee(x1, x1, sigma2, l2, zeta, False, mask) 
+                C_ee[i] = K_ee(x1, x1, sigma2, l2, zeta, False, mask, wrap=True) 
 
         if "force" in data:
             NF = len(data["force"])
@@ -88,7 +88,7 @@ class RBF_mb():
             for key2 in data2.keys():
                 if len(data1[key1])>0 and len(data2[key2])>0:
                     if key1 == 'energy' and key2 == 'energy':
-                        C_ee = self.kee_many(data1[key1], data2[key2], same=same)
+                        C_ee = self.kee_many(data1[key1], data2[key2])
                     elif key1 == 'energy' and key2 == 'force':
                         C_ef = self.kef_many(data1[key1], data2[key2])
                     elif key1 == 'force' and key2 == 'energy':
@@ -114,7 +114,7 @@ class RBF_mb():
             for key2 in data2.keys():
                 if len(data1[key1])>0 and len(data2[key2])>0:
                     if key1 == 'energy' and key2 == 'energy':
-                        C_ee, C_ee_s, C_ee_l = self.kee_many(data1[key1], data2[key2], True, True)
+                        C_ee, C_ee_s, C_ee_l = self.kee_many(data1[key1], data2[key2], True)
                     elif key1 == 'energy' and key2 == 'force':
                         C_ef, C_ef_s, C_ef_l = self.kef_many(data1[key1], data2[key2], True)
                         C_fe, C_fe_s, C_fe_l = C_ef.T, C_ef_s.T, C_ef_l.T
@@ -123,6 +123,8 @@ class RBF_mb():
         C = build_covariance(C_ee, C_ef, C_fe, C_ff, None, None)
         C_s = build_covariance(C_ee_s, C_ef_s, C_fe_s, C_ff_s, None, None)
         C_l = build_covariance(C_ee_l, C_ef_l, C_fe_l, C_ff_l, None, None)
+
+        #import sys; sys.exit()
         return C, np.dstack((C_s, C_l))
 
     def k_total_with_stress(self, data1, data2):
@@ -147,54 +149,56 @@ class RBF_mb():
         return build_covariance(C_ee, C_ef, C_fe, C_ff), build_covariance(None, None, C_se, C_sf)
  
     
-    def kee_many(self, X1, X2, same=False, grad=False):
+    def kee_many(self, X1, X2, grad=False):
         """
         Compute the energy-energy kernel for many structures
         Args:
             X1: list of 2D arrays
             X2: list of 2D arrays
-            same: avoid double counting if true
             grad: output gradient if true
         Returns:
             C: M*N 2D array
             C_grad:
         """
         sigma2, l2, zeta = self.sigma**2, self.l**2, self.zeta
-        m1, m2 = len(X1), len(X2)
-        C = np.zeros([m1, m2])
-        C_s = np.zeros([m1, m2])
-        C_l = np.zeros([m1, m2])
+        x_all, ele_all, x2_indices = X2
 
-        if same:
-            indices = np.triu_indices(m1)
-            (_is, _js) = indices
-        else:
-            indices = np.indices((m1, m2))
-            _is = indices[0].flatten()
-            _js = indices[1].flatten()
+        if isinstance(X1, tuple): #unpack X1, used for training
+            X1 = tuple_to_list(X1, mode='energy')
+            
+        # num of X1, num of X2, num of big X2
+        m1, m2, m2p = len(X1), len(x2_indices), len(x_all)
 
-        for i, j in zip(_is, _js):
-            (x1, ele1) = X1[i]
-            (x2, ele2) = X2[j]
-            mask = get_mask(ele1, ele2)
-            res = K_ee(x1, x2, sigma2, l2, zeta, grad, mask)
-
-            if grad:
-                Kee, dKee_sigma, dKee_l = res
-                C[i, j] = Kee
-                C_s[i, j] = dKee_sigma
-                C_s[j, i] = dKee_sigma
-                C_l[i, j] = dKee_l
-                C_l[j, i] = dKee_l
-            else:
-                C[i, j] = res
-            if same and (i != j):
-                C[j, i] = C[i, j]
+        x2_inds = [(0, x2_indices[0])]
+        for i in range(1, len(x2_indices)):
+            ID = x2_inds[i-1][1]
+            x2_inds.append( (ID, ID+x2_indices[i]) )
 
         if grad:
-            return C, C_s, C_l
+            C = np.zeros([m1, m2p, 3])
         else:
-            return C
+            C = np.zeros([m1, m2p, 1])
+ 
+        for i in range(m1):
+            (x1, ele1) = X1[i]
+            mask = get_mask(ele1, ele_all)
+            C[i] = K_ee(x1, x_all, sigma2, l2, zeta, grad, mask)
+        
+        _C = np.zeros([m1, m2])
+        if grad:
+            _C_s = np.zeros([m1, m2])
+            _C_l = np.zeros([m1, m2])
+
+        for j, ind in enumerate(x2_inds):
+            tmp = C[:, ind[0]:ind[1], :].sum(axis=1)/x2_indices[j]
+            _C[:, j]  = tmp[:, 0]
+            if grad:
+                _C_s[:, j]  = tmp[:, 1]
+                _C_l[:, j]  = tmp[:, 2]
+        if grad:
+            return _C, _C_s, _C_l
+        else:
+            return _C
 
     def kff_many(self, X1, X2, grad=False, stress=False):
         """
@@ -244,7 +248,7 @@ class RBF_mb():
             mask = get_mask(ele1, ele_all)
             if self.device == 'gpu':
                 dx1dr = cp.array(dx1dr)
-            batch = 1000
+            batch = 500
             # split the big array to smaller size
             if m2p > batch:
                 for j in range(int(np.ceil(m2p/batch))):
@@ -295,6 +299,9 @@ class RBF_mb():
         """
         
         sigma2, l2, zeta = self.sigma**2, self.l**2, self.zeta
+
+        if isinstance(X1, tuple):  #pack X2 to big array in tuple
+            X1 = tuple_to_list(X1, mode='energy')
 
         if isinstance(X2, list):  #pack X2 to big array in tuple
             X2 = list_to_tuple(X2, stress)
@@ -354,7 +361,7 @@ class RBF_mb():
 
 # ===================== Standalone functions to compute K_ee, K_ef, K_ff
 
-def K_ee(x1, x2, sigma2, l2, zeta=2, grad=False, mask=None, eps=1e-8):
+def K_ee(x1, x2, sigma2, l2, zeta=2, grad=False, mask=None, eps=1e-8, wrap=False):
     """
     Compute the Kee between two structures
     Args:
@@ -376,16 +383,22 @@ def K_ee(x1, x2, sigma2, l2, zeta=2, grad=False, mask=None, eps=1e-8):
         k[mask] = 0
     dk_dD = (-0.5/l2)*k
 
-    Kee = np.sum(k)
-    mn = len(x1)*len(x2)
+    Kee = k.sum(axis=0)
+    m = len(x1)
 
     if grad:
         l3 = np.sqrt(l2)*l2
         dKee_dsigma = 2*Kee/np.sqrt(sigma2)
-        dKee_dl = np.sum(k*(1-D))/l3
-        return Kee/mn, dKee_dsigma/mn, dKee_dl/mn
+        dKee_dl = (k*(1-D)).sum(axis=0)/l3
+        #ans = np.stack((Kee/m, dKee_dsigma/m, dKee_dl/m), axis=-1)
+        #print(Kee.shape, ans.shape)
+        return np.stack((Kee/m, dKee_dsigma/m, dKee_dl/m), axis=-1)
     else:
-        return Kee/mn
+        n = len(x2)
+        if wrap:
+            return Kee.sum()/(m*n)
+        else:
+            return Kee.reshape([n, 1])/m
 
 def K_ff(x1, x2, dx1dr, dx2dr, sigma2, l2, zeta=2, grad=False, mask=None, eps=1e-8, device='cpu', wrap=False):
     """

@@ -9,26 +9,20 @@ np.set_printoptions(formatter={'float': '{: 5.2f}'.format})
 device = 'gpu'
 m_file = sys.argv[1]
 model = gpr()
-model.load(m_file, N_max=None, device=device)
+model.load(m_file, N_max=None, device=device, opt=False)
 
 t0 = time()
 train_E, train_E1, train_F, train_F1 = model.validate_data()
 l1 = metric_single(train_E, train_E1, "Train Energy") 
 l2 = metric_single(train_F, train_F1, "Train Forces") 
-print("First run: {:6.3f}".format(time()-t0))
+print("1st run: {:6.3f}".format(time()-t0))
 
-model.sparsify()
+model.sparsify(e_tol=1e-4, f_tol=1e-3)
 t0 = time()
 train_E, train_E1, train_F, train_F1 = model.validate_data()
 l1 = metric_single(train_E, train_E1, "Train Energy") 
 l2 = metric_single(train_F, train_F1, "Train Forces") 
-print("First run: {:6.3f}".format(time()-t0))
+print("2nd run: {:6.3f}".format(time()-t0))
 
-
-#model.save("models/test.json", "models/test.db")
-#model.load("models/test.json")
-#train_E, train_E1, train_F, train_F1 = model.validate_data()
-#l1 = metric_single(train_E, train_E1, "Train Energy") 
-#l2 = metric_single(train_F, train_F1, "Train Forces") 
-
-
+model.save("models/sparse.json", "models/sparse.db")
+#model.load("models/sparse.json")

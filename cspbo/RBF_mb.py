@@ -2,7 +2,7 @@ import numpy as np
 from .kernel_base import *
 import cupy as cp
 from .utilities import tuple_to_list, list_to_tuple
-
+from time import time
 class RBF_mb():
     """
     .. math::
@@ -180,6 +180,7 @@ class RBF_mb():
             C = np.zeros([m1, m2p, 1])
  
         for i in range(m1):
+            #if i%1000 == 0: print("Kee", i)
             (x1, ele1) = X1[i]
             mask = get_mask(ele1, ele_all)
             C[i] = K_ee(x1, x_all, sigma2, l2, zeta, grad, mask)
@@ -242,8 +243,9 @@ class RBF_mb():
                 C = cp.zeros([m1, m2p, 9, 3])
             else:
                 C = cp.zeros([m1, m2p, 3, 3])
-        
+        #t0 = time()
         for i in range(m1):
+            #if i%500 == 0: print("Kff", i, time()-t0)
             (x1, dx1dr, ele1) = X1[i]
             mask = get_mask(ele1, ele_all)
             if self.device == 'gpu':
@@ -326,10 +328,11 @@ class RBF_mb():
                 C = cp.zeros([m1, m2p, 3])
             dxdr_all = cp.array(dxdr_all)
 
+        t0 = time()
         for i in range(m1):
+            #if i%1000 == 0: print("Kef", i, time()-t0)
             (x1, ele1) = X1[i]
             mask = get_mask(ele1, ele_all)
-            
             C[i] = K_ef(x1, x_all, dxdr_all, sigma2, l2, zeta, grad, mask, device=self.device)
 
         if self.device == 'gpu':

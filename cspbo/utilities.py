@@ -249,7 +249,6 @@ def get_train_data(db_file, include_stress=False):
             forces.append(np.array(row.data.force))
             if include_stress:
                 stress.append(np.array(row.data.stress))
-
     if include_stress:
         return (strucs, energies, forces, stress)
     else:

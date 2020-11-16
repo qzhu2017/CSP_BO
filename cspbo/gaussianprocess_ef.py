@@ -183,6 +183,7 @@ class GaussianProcess():
         else:
             N_E = len(self.train_x['energy'][-1])
             N_F = len(self.train_x['force'][-1])
+
         for d in data["db"]:
             (atoms, energy, force, energy_in, force_in) = d
             if energy_in:
@@ -200,8 +201,6 @@ class GaussianProcess():
 
         for key in data.keys():
             if key == 'energy':
-                #for eng_data in data[key]:
-                #    self.add_train_pts_energy(eng_data)
                 self.add_train_pts_energy(data[key])
             elif key == 'force':
                 if len(data[key])>0:
@@ -281,7 +280,6 @@ class GaussianProcess():
             test_X_F = {"force": [(data[0], data[1], data[3]) for data in test_data['force']]}
             E = np.array([data[1] for data in test_data['energy']])
             F = np.array([data[2] for data in test_data['force']]).flatten()
-
         if total_E:
             for i in range(len(E)):
                 E[i] *= len(test_X_E['energy'][i])
@@ -367,13 +365,13 @@ class GaussianProcess():
         N1 is the number of atoms in the given structure
         """
         (X, ELE, indices, E) = list_to_tuple(energy_data, include_value=True, mode='energy')
-        if len(self.train_x['force']) == 3:
+        if len(self.train_x['energy']) == 3:
             (_X, _ELE, _indices) = self.train_x['energy']
             _X = np.concatenate((_X, X), axis=0)
-            _indices.append(indices)
+            _indices.extend(indices)
             _ELE = np.concatenate((_ELE, ELE), axis=0)
-            self.train_x['force'] = (_X, _ELE, _indices)
-            self.train_y['force'].append(E)
+            self.train_x['energy'] = (_X, _ELE, _indices)
+            self.train_y['energy'].extend(E)
         else:
             self.train_x['energy'] = (X, ELE, indices)
             self.train_y['energy'] = E
@@ -460,7 +458,7 @@ class GaussianProcess():
 
     def optimize(self, fun, theta0, bounds):
         opt_res = minimize(fun, theta0, method="L-BFGS-B", bounds=bounds, 
-            jac=True, options={'maxiter': 10, 'ftol': 1e-3})
+            jac=True, options={'maxiter': 10, 'ftol': 1e-2})
         #print(opt_res)
         #import sys; sys.exit()
         return opt_res.x, opt_res.fun
@@ -652,7 +650,8 @@ class GaussianProcess():
         else:
             N_energy = 0
             energy_in = False
-
+        #print(E_std, tol_e_var, energy_in)
+        #import sys; sys.exit()
         force_in = []
 
         xs_added = []
@@ -677,6 +676,7 @@ class GaussianProcess():
         N_pts = N_energy + N_forces
         if N_pts > 0:
             pts_to_add["db"].append((atoms, energy, force, energy_in, force_in))
+            print("{:d} energy and {:d} forces will be added".format(N_energy, N_forces))
         errors = (E[0]+energy_off, E1[0]+energy_off, E_std, F+force_off.flatten(), F1+force_off.flatten(), F_std) 
         return pts_to_add, N_pts, errors
 
@@ -688,15 +688,15 @@ class GaussianProcess():
         return self.base_potential.calculate(atoms) 
 
 
-    def sparsify(self, l_tol=1e-10):
+    def sparsify(self, e_tol=1e-10, f_tol=1e-10):
         """
-        sparify the covariance matrix by removing unimportant configurations from the training database
+        sparsify the covariance matrix by removing unimportant configurations from the training database
         """
         K = self.kernel.k_total(self.train_x)
-        N_e = len(self.train_x["energy"])
-        N_f = len(self.train_x["force"])
-        pts_e = CUR(K[:N_e,:N_e], l_tol)
-        pts = CUR(K[N_e:,N_e:], l_tol)
+        N_e = len(self.train_x["energy"][-1])
+        N_f = len(self.train_x["force"][-1])
+        pts_e = CUR(K[:N_e,:N_e], e_tol)
+        pts = CUR(K[N_e:,N_e:], f_tol)
         pts_f = []
         if N_f > 0:
             for i in range(N_f):

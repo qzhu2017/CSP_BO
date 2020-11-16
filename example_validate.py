@@ -16,8 +16,8 @@ N_max, device = 10, 'gpu'
 m_file = sys.argv[1]
 db_file = sys.argv[2]
 model = gpr()
-#model.load(m_file, N_max=2, opt=True, device=device)
-model.load(m_file, N_max=None, opt=True, device=device)
+model.load(m_file, N_max=100, opt=True, device=device)
+#model.load(m_file, N_max=None, opt=True, device=device)
 print(model.kernel.device)
 
 train_E, train_E1, train_F, train_F1 = model.validate_data()
@@ -28,13 +28,13 @@ l2 = metric_single(train_F, train_F1, "Train Forces")
 strucs, values = get_strucs(db_file, N_max=N_max)
 (E0, F0, S0) = values[0]
 stress = False
-if isinstance(S0, np.ndarray):
-    try:
-        if S0[0] is not None:
-            stress = True
-    except:
-        if S0 !=  None:
-            stress = True
+#if isinstance(S0, np.ndarray):
+#    try:
+#        if S0[0] is not None:
+#            stress = True
+#    except:
+#        if S0 !=  None:
+#            stress = True
 
 print(stress)
 # set calculator

@@ -45,8 +45,14 @@ class GaussianProcess():
         s = "------Gaussian Process Regression------\n"
         s += "Kernel: {:s}".format(str(self.kernel))
         if hasattr(self, "train_x"):
-            s += " {:d} energy ({:.3f})".format(len(self.train_x["energy"][-1]), self.noise_e)
-            s += " {:d} forces ({:.3f})\n".format(len(self.train_x["force"][-1]), self.noise_f)
+            N_energy, N_force = 0, 0
+            if len(self.train_x["energy"]) > 0:
+                N_energy = len(self.train_x["energy"][-1])
+            if len(self.train_x["force"]) > 0:
+                N_force = len(self.train_x["force"][-1])
+
+            s += " {:d} energy ({:.3f})".format(N_energy, self.noise_e)
+            s += " {:d} forces ({:.3f})\n".format(N_force, self.noise_f)
         return s
 
     def __repr__(self):
@@ -72,7 +78,10 @@ class GaussianProcess():
                         strs += "{:6.3f} ".format(para)
                     #from scipy.optimize import approx_fprime
                     #print("from ", grad)
+                    #print("scipy", approx_fprime(params, self.log_marginal_likelihood, 1e-3))
+                    #print("scipy", approx_fprime(params, self.log_marginal_likelihood, 1e-4))
                     #print("scipy", approx_fprime(params, self.log_marginal_likelihood, 1e-5))
+                    #print("scipy", approx_fprime(params, self.log_marginal_likelihood, 1e-6))
                     print(strs)
                     #import sys; sys.exit()
                 return (-lml, -grad)
@@ -201,7 +210,8 @@ class GaussianProcess():
 
         for key in data.keys():
             if key == 'energy':
-                self.add_train_pts_energy(data[key])
+                if len(data[key])>0:
+                    self.add_train_pts_energy(data[key])
             elif key == 'force':
                 if len(data[key])>0:
                     self.add_train_pts_force(data[key])
@@ -423,7 +433,10 @@ class GaussianProcess():
         # add noise matrix
         #K[np.diag_indices_from(K)] += self.noise
         noise = np.eye(len(K))
-        NE = len(self.train_x['energy'][-1])
+        if len(self.train_x['energy']) > 0:
+            NE = len(self.train_x['energy'][-1])
+        else:
+            NE = 0
         noise[:NE,:NE] *= params[-1]**2
         noise[NE:,NE:] *= (self.f_coef*params[-1])**2
         K += noise
@@ -652,6 +665,9 @@ class GaussianProcess():
             energy_in = False
         #print(E_std, tol_e_var, energy_in)
         #import sys; sys.exit()
+        #N_energy = 0
+        #energy_in = False
+
         force_in = []
 
         xs_added = []
@@ -676,7 +692,7 @@ class GaussianProcess():
         N_pts = N_energy + N_forces
         if N_pts > 0:
             pts_to_add["db"].append((atoms, energy, force, energy_in, force_in))
-            print("{:d} energy and {:d} forces will be added".format(N_energy, N_forces))
+            #print("{:d} energy and {:d} forces will be added".format(N_energy, N_forces))
         errors = (E[0]+energy_off, E1[0]+energy_off, E_std, F+force_off.flatten(), F1+force_off.flatten(), F_std) 
         return pts_to_add, N_pts, errors
 

@@ -491,14 +491,16 @@ def K_ff(x1, x2, dx1dr, dx2dr, sigma2, l2, zeta=2, grad=False, mask=None, eps=1e
         Kff = (K_ff_0 * dk_dD[:,:,None,None]).sum(axis=0)
 
         d2k_dDdsigma = 2*dk_dD/np.sqrt(sigma2)
-        d2k_dDdl = (D/l3)*dk_dD + (2/l)*dk_dD
+        d2k_dDdl = ((D-1)/l3 + 2/l)*dk_dD
+        #d2k_dDdl = (D/l3 + 2/l)*dk_dD
 
         dKff_dsigma = (K_ff_0 * d2k_dDdsigma[:,:,None,None]).sum(axis=0)
-        dKff_dl = (K_ff_0 * d2k_dDdl[:,:,None,None]).sum(axis=0)
-
-        K_ff_1 = (dD_dx1_dD_dx2[:,:,:,:,None] * dx1dr[:,None,:,None,:]).sum(axis=2)
+        dKff_dl = (-K_ff_0 * d2k_dDdl[:,:,None,None]).sum(axis=0)
+        
+        tmp = -dD_dx1_dD_dx2/l*2
+        K_ff_1 = (tmp[:,:,:,:,None] * dx1dr[:,None,:,None,:]).sum(axis=2)
         K_ff_1 = (K_ff_1[:,:,:,:,None] * dx2dr[None,:,:,None,:]).sum(axis=2)
-        dKff_dl += (K_ff_1 * dk_dD[:,:,None,None]).sum(axis=0)/(l2*np.sqrt(l2))
+        dKff_dl += (K_ff_1 * dk_dD[:,:,None,None]).sum(axis=0) #/l*2
         if device == 'cpu':
             return np.concatenate((Kff, dKff_dsigma, dKff_dl), axis=-1)
         else:
@@ -556,10 +558,11 @@ def K_ef(x1, x2, dx2dr, sigma2, l2, zeta=2, grad=False, mask=None, eps=1e-8, dev
         l = np.sqrt(l2)
         l3 = l2*l
         d2k_dDdsigma = 2*dk_dD/np.sqrt(sigma2)
-        d2k_dDdl = (D/l3)*dk_dD + (2/l)*dk_dD
+        d2k_dDdl = -((D-1)/l3 + 2/l)*dk_dD
 
         dKef_dsigma = (kef1*d2k_dDdsigma[:,:,None]).sum(axis=0) 
         dKef_dl     = (kef1*d2k_dDdl[:,:,None]).sum(axis=0)
+        #print(dKef_dl/m)#; import sys; sys.exit()
         if device == 'gpu':
             return cp.concatenate((Kef/m, dKef_dsigma/m, dKef_dl/m), axis=-1)
         else:

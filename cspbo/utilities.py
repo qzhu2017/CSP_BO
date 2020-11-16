@@ -144,7 +144,7 @@ def convert_train_data(data, des,  N_force=100000):
     return train_data
 
 
-def get_data(db_name, des, N_force=100000, lists=None, select=False, ncpu=1):
+def get_data(db_name, des, N_force=100000, lists=None, select=False, no_energy=False, ncpu=1):
     """
     Nmax: Maximum number of force data
     """
@@ -171,7 +171,10 @@ def get_data(db_name, des, N_force=100000, lists=None, select=False, ncpu=1):
                 f_ids.append(i)
 
         db_data.append((structures[id], Y['energy'][id], Y['forces'][id], True, f_ids))
-    train_data = {"energy": energy_data, "force": force_data, "db": db_data}
+    if no_energy:
+        train_data = {"energy": [], "force": force_data, "db": db_data}
+    else:
+        train_data = {"energy": energy_data, "force": force_data, "db": db_data}
     return train_data
 
 

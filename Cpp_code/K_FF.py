@@ -132,7 +132,6 @@ def kff_many_v2(X1, X2, sigma=1.0, zeta=2.0, eps=1e-8):
 
         if x1_norm > eps:
             x1_norm2 = x1_norm**2       
-            x1_norm3 = x1_norm**3        
 
             for j in range(len(x2)):
                 _x2, _dx2dr, _ele2, _j = x2[j], dx2dr[j], ele2[j], x2_inds[j]
@@ -140,26 +139,25 @@ def kff_many_v2(X1, X2, sigma=1.0, zeta=2.0, eps=1e-8):
 
                 if _ele1 == _ele2 and x2_norm > eps:
                     x2_norm2 = x2_norm**2      
-                    x2_norm3 = x2_norm**3    
 
                     x1x2_norm = x1_norm*x2_norm #+ eps
                     x1x2_dot = _x1@_x2.T
 
                     # d, D, dk_dD
                     d = x1x2_dot/x1x2_norm
-
                     D2 = d**(zeta-2)
                     D1 = d*D2
                     D = d*D1
                     dk_dD = sigma2
 
                     # d2d_dx1dx2
-                    dd_dx1 = _x2/x1x2_norm - x1x2_dot/x1_norm3/x2_norm * _x1 # [d]
-                    dd_dx2 = _x1/x1x2_norm - x1x2_dot/x1_norm/x2_norm3 * _x2 # [d]
-
-                    tmp1 = (np.eye(len(_x1)) - _x2[:,None] * _x2[None, :] /x2_norm2)/x1x2_norm #[d, d]
-                    tmp2 = (_x1[:,None]*_x2[None,:]*x1x2_dot/x2_norm2 - _x1[:,None]*_x1[None,:])/x1_norm3/x2_norm
-                    d2d_dx1dx2 = tmp1 + tmp2
+                    dd_dx1 = (_x2 - x1x2_dot/x1_norm2 * _x1)/x1x2_norm # [d]
+                    dd_dx2 = (_x1 - x1x2_dot/x2_norm2 * _x2)/x1x2_norm # [d]
+                    x1x1 = _x1[:,None] * _x1[None, :]
+                    x2x2 = _x2[:,None] * _x2[None, :]
+                    x1x2 = _x1[:,None] * _x2[None, :]
+                    d2d_dx1dx2 = np.eye(len(_x1)) - x2x2/x2_norm2 + x1x2*x1x2_dot/(x1x2_norm**2) - x1x1/x1_norm2
+                    d2d_dx1dx2 /= x1x2_norm
 
                     # d2D_dx1dx2 and d2k_dx1dx2
                     dd_dx1_dd_dx2 = dd_dx1[:,None] * dd_dx2[None,:] # [d, d]

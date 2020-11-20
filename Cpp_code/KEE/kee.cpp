@@ -78,8 +78,6 @@ double *kee_single(double* x1, double* x2, int* x2_indices, double sigma, double
 
     double* x1_norm = new double[M];
     double* x2_norm = new double[N];
-    double* x1_norm_sq = new double[M];
-    double* x2_norm_sq = new double[N];
     double* x1x2_dot = new double[M*N];
     double* d = new double[M*N];
     double* D = new double[M*N];

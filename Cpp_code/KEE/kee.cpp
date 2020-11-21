@@ -62,16 +62,12 @@ void print_2di(int* arr,int m,int n){
 	}
 }
 
-double *kee_single(double* x1, double* x2, int* x2_indices, double sigma, double l, double zeta, int M, int N, int P, double eps){
+double *kee_single(double* x1, double* x2, int* x2_indices, double sigma, double l, double zeta, int M, int N, int P, int n, double eps){
     // M: length of x1; 
     // N: length of x2; 
     // P: length of descriptors;
     //int n = sizeof(x2_indices)/sizeof(x2_indices[0]);
 
-    int n = 5; // how to get the length of x2_indices?
-    //int n = sizeof(x2_indices)/sizeof(x2_indices[0]);
-    //cout << n << endl;
-    
     double sigma2, l2;
     sigma2 = sigma*sigma;
     l2 = l*l;
@@ -170,7 +166,7 @@ int main() {
     double sigma=28.835, l=1., zeta=2.0, eps=1e-8;
 
     high_resolution_clock::time_point t1 = high_resolution_clock::now();
-    double *kee = kee_single(x1, x2, x2_indices, sigma, l, zeta, M, N, D, eps);
+    double *kee = kee_single(x1, x2, x2_indices, sigma, l, zeta, M, N, D, n, eps);
     high_resolution_clock::time_point t2 = high_resolution_clock::now();
     duration<double> time_span = duration_cast<duration<double>>(t2 - t1);
 

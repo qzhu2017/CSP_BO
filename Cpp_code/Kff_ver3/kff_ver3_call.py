@@ -41,24 +41,28 @@ def kff_many(X1, X2, sigma=1.0, sigma0=1.0, zeta=2.0):
     pdat_x1=ffi.new(cstr)
     for i in range(m2p):
         for j in range(d):
-            ffi.memmove(pdat_x1+i*d+j,struct.pack('d',x_all[i][j]),sized)
+#            ffi.memmove(pdat_x1+i*d+j,struct.pack('d',x_all[i][j]),sized)
+            pdat_x1[i*d+j]=x_all[i][j]   
     totalsize=m2p*d*3
     cstr='double['+str(totalsize)+']'
     pdat_dxdr_all=ffi.new(cstr)           
     for i in range(m2p):
         for j in range(d):
             for k in range(3):
-              ffi.memmove(pdat_dxdr_all+(i*d+j)*3+k,struct.pack('d',dxdr_all[i][j][k]),sized)
+#              ffi.memmove(pdat_dxdr_all+(i*d+j)*3+k,struct.pack('d',dxdr_all[i][j][k]),sized)
+              pdat_dxdr_all[(i*d+j)*3+k]=dxdr_all[i][j][k]
     totalsize=m2p
     cstr='int['+str(totalsize)+']'
     pdat_ele_all=ffi.new(cstr)               
     for i in range(m2p):
-        ffi.memmove(pdat_ele_all+i,struct.pack('i',ele_all[i]),sizei)
+#        ffi.memmove(pdat_ele_all+i,struct.pack('i',ele_all[i]),sizei)
+        pdat_ele_all[i]=ele_all[i]
     totalsize=m2
     cstr='int['+str(totalsize)+']'
     pdat_x2_indices=ffi.new(cstr)                 
     for i in range(m2):
-        ffi.memmove(pdat_x2_indices+i,struct.pack('i',x2_indices[i]),sizei)
+#        ffi.memmove(pdat_x2_indices+i,struct.pack('i',x2_indices[i]),sizei)
+        pdat_x2_indices[i]=x2_indices[i]
 
     totalsize=m2*3*m2*3
     cstr='double['+str(totalsize)+']'    

@@ -57,7 +57,7 @@ void kff_many(int n1, int n2, int d, int x2i, double sigma, double zeta,
     	    	    d1 = dx*d2;
                     
     	    	    for(i=0;i<d;i++){
-    	    	    	for(j=0;j<d;j++){
+    	    	        for(j=0;j<d;j++){
     	    	    	   dval=0;
     	    	           if(i==j) dval=1.0;
     	    	           d2d_dx1dx2=(dval-x1[jj*d+i]*x1[jj*d+j]*_x2_norm2)*_x1x2_norm+
@@ -68,11 +68,12 @@ void kff_many(int n1, int n2, int d, int x2i, double sigma, double zeta,
     	    			                     d1*d2d_dx1dx2)*zeta*dk_dD;
     	    	    	}
     	    	    }
-    
-    	    	    for(k=0;k<3;k++){
-    	    	    	for(l=0;l<3;l++){
-    	    	            for(i=0;i<d;i++){
-    	    	    	        for(j=0;j<d;j++){
+
+                    // switch the sequence of for loop can be helpful   
+    	    	    for(i=0;i<d;i++){
+    	    	    	for(j=0;j<d;j++){
+    	    	            for(k=0;k<3;k++){
+    	    	    	        for(l=0;l<3;l++){
     	    	                    pout[(k+_i*3)*x2i*3+l+_j*3] += dx1dr[(ii*d+i)*3+k] * d2k_dx1dx2[i*d+j] * dx2dr[(jj*d+j)*3+l];
                                 }
                             }

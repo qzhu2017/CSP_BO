@@ -7,7 +7,7 @@ void kff_many(int n1, int n2, int d, int x2i, double sigma, double zeta,
 
     double eps=1e-8;
     double dval;
-    double x1_norm, x2_norm, x2_norm2, _x1x2_norm, x1x2_dot; 
+    double x1_norm, x2_norm, _x2_norm2, _x1x2_norm, x1x2_dot; 
     double _x1x2_norm31, x1x2_dot_norm02, x1x2_dot_norm13, x1x2_dot_norm31;
     double  dx,d2, d1, dk_dD, d2d_dx1dx2;
     int i,j,k,l,ii,jj,_i,_j,_ele1,_ele2;
@@ -39,7 +39,7 @@ void kff_many(int n1, int n2, int d, int x2i, double sigma, double zeta,
     	    	x2_norm=sqrt(dval);
     
     	    	if(_ele1==_ele2 && x2_norm > eps){
-    	    	    x2_norm2=x2_norm*x2_norm;
+    	    	    _x2_norm2 = 1.0/(x2_norm*x2_norm);
                     _x1x2_norm = 1.0/(x1_norm*x2_norm);
                     _x1x2_norm31 = _x1x2_norm/(x1_norm*x1_norm);
    
@@ -49,8 +49,8 @@ void kff_many(int n1, int n2, int d, int x2i, double sigma, double zeta,
     	    		}
     
                     x1x2_dot_norm31 = x1x2_dot*_x1x2_norm31;
-                    x1x2_dot_norm13 = x1x2_dot*_x1x2_norm/x2_norm2;
-                    x1x2_dot_norm02 = x1x2_dot/x2_norm2;
+                    x1x2_dot_norm13 = x1x2_dot*_x1x2_norm*_x2_norm2;
+                    x1x2_dot_norm02 = x1x2_dot*_x2_norm2;
  
                     dx = x1x2_dot*_x1x2_norm;
     	    	    d2 = pow(dx,zeta-2);
@@ -60,12 +60,12 @@ void kff_many(int n1, int n2, int d, int x2i, double sigma, double zeta,
     	    	    	for(j=0;j<d;j++){
     	    	    	   dval=0;
     	    	           if(i==j) dval=1.0;
-    	    	           d2d_dx1dx2=(dval-x1[jj*d+i]*x1[jj*d+j]/x2_norm2)*_x1x2_norm+
+    	    	           d2d_dx1dx2=(dval-x1[jj*d+i]*x1[jj*d+j]*_x2_norm2)*_x1x2_norm+
     	    	        		   (x1[ii*d+i]*x1[jj*d+j]*x1x2_dot_norm02-x1[ii*d+i]*x1[ii*d+j])*_x1x2_norm31;    
 
     	    	           d2k_dx1dx2[i*d+j]=(((x1[jj*d+i]*_x1x2_norm-x1[ii*d+i]*x1x2_dot_norm31)*
     	    	        		               (x1[ii*d+j]*_x1x2_norm-x1[jj*d+j]*x1x2_dot_norm13))*d2*(zeta-1) +
-    	    			                     d1*d2d_dx1dx2 )*zeta*dk_dD;
+    	    			                     d1*d2d_dx1dx2)*zeta*dk_dD;
     	    	    	}
     	    	    }
     

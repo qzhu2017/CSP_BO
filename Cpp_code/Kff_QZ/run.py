@@ -10,8 +10,8 @@ def mykff_many(X1, X2, sigma=1.0, sigma0=1.0, zeta=2.0):
     Compute the energy-force kernel between structures and atoms
     The simplist version
     Args:
-        X1: stacked ([X, dXdR, ele])
-        X2: stacked ([X, dXdR, ele])
+        X1: stacked ([X, dXdR, ele, indices])
+        X2: stacked ([X, dXdR, ele, indices])
     Returns:
         C
     """
@@ -113,6 +113,8 @@ def mykff_many(X1, X2, sigma=1.0, sigma0=1.0, zeta=2.0):
 
 X1 = np.load('../X1_big.npy', allow_pickle=True)
 X2 = np.load('../X2_big.npy', allow_pickle=True)
+#X1 = np.load('../X2.npy', allow_pickle=True)
+#X2 = np.load('../X2.npy', allow_pickle=True)
 t0 = time()
 C = mykff_many(X1, X2, sigma=28.835)
 print(C[:3, :3])

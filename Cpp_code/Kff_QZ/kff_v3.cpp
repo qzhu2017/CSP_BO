@@ -10,6 +10,7 @@ void kff_many(int n1, int n2, int d, int x2i, double sigma, double zeta,
     double x1_norm, x2_norm, _x2_norm2, _x1x2_norm, x1x2_dot; 
     double _x1x2_norm31, x1x2_dot_norm02, x1x2_dot_norm13, x1x2_dot_norm31;
     double  dx,d2, d1, dk_dD, d2d_dx1dx2;
+    double  C1, C2, C3, C4, C5, C6, C7, C8, C9;
     int i,j,k,l,ii,jj,_i,_j,_ele1,_ele2;
     double *d2k_dx1dx2;
 
@@ -58,27 +59,53 @@ void kff_many(int n1, int n2, int d, int x2i, double sigma, double zeta,
                     
     	    	    for(i=0;i<d;i++){
     	    	        for(j=0;j<d;j++){
-    	    	    	   dval=0;
-    	    	           if(i==j) dval=1.0;
-    	    	           d2d_dx1dx2=(dval-x1[jj*d+i]*x1[jj*d+j]*_x2_norm2)*_x1x2_norm+
-    	    	        		   (x1[ii*d+i]*x1[jj*d+j]*x1x2_dot_norm02-x1[ii*d+i]*x1[ii*d+j])*_x1x2_norm31;    
+    	    	            if(i==j){
+                                dval=1.0;
+                            } else {
+    	    	    	        dval=0;
+                            }
 
-    	    	           d2k_dx1dx2[i*d+j]=(((x1[jj*d+i]*_x1x2_norm-x1[ii*d+i]*x1x2_dot_norm31)*
-    	    	        		               (x1[ii*d+j]*_x1x2_norm-x1[jj*d+j]*x1x2_dot_norm13))*d2*(zeta-1) +
-    	    			                     d1*d2d_dx1dx2)*zeta*dk_dD;
+    	    	            d2d_dx1dx2=(dval-x1[jj*d+i]*x1[jj*d+j]*_x2_norm2)*_x1x2_norm+
+    	    	            (x1[ii*d+i]*x1[jj*d+j]*x1x2_dot_norm02-x1[ii*d+i]*x1[ii*d+j])*_x1x2_norm31;    
+
+    	    	            d2k_dx1dx2[i*d+j]=(((x1[jj*d+i]*_x1x2_norm-x1[ii*d+i]*x1x2_dot_norm31)*
+    	    	        	(x1[ii*d+j]*_x1x2_norm-x1[jj*d+j]*x1x2_dot_norm13))*d2*(zeta-1) +
+    	    			    d1*d2d_dx1dx2)*zeta*dk_dD;
     	    	    	}
     	    	    }
 
                     // switch the sequence of for loop can be helpful   
+                    C1 = C2 = C3 = C4 = C5 = C6 = C7 = C8 = C9 = 0;
     	    	    for(i=0;i<d;i++){
     	    	    	for(j=0;j<d;j++){
-    	    	            for(k=0;k<3;k++){
+                            dval = d2k_dx1dx2[i*d+j];
+                            C1 += dx1dr[(ii*d+i)*3 + 0] * dval * dx2dr[(jj*d+j)*3 + 0];
+                            C2 += dx1dr[(ii*d+i)*3 + 1] * dval * dx2dr[(jj*d+j)*3 + 0];
+                            C3 += dx1dr[(ii*d+i)*3 + 2] * dval * dx2dr[(jj*d+j)*3 + 0];
+                            C4 += dx1dr[(ii*d+i)*3 + 0] * dval * dx2dr[(jj*d+j)*3 + 1];
+                            C5 += dx1dr[(ii*d+i)*3 + 1] * dval * dx2dr[(jj*d+j)*3 + 1];
+                            C6 += dx1dr[(ii*d+i)*3 + 2] * dval * dx2dr[(jj*d+j)*3 + 1];
+                            C7 += dx1dr[(ii*d+i)*3 + 0] * dval * dx2dr[(jj*d+j)*3 + 2];
+                            C8 += dx1dr[(ii*d+i)*3 + 1] * dval * dx2dr[(jj*d+j)*3 + 2];
+                            C9 += dx1dr[(ii*d+i)*3 + 2] * dval * dx2dr[(jj*d+j)*3 + 2];
+    	    	            /*for(k=0;k<3;k++){
     	    	    	        for(l=0;l<3;l++){
-    	    	                    pout[(k+_i*3)*x2i*3+l+_j*3] += dx1dr[(ii*d+i)*3+k] * d2k_dx1dx2[i*d+j] * dx2dr[(jj*d+j)*3+l];
+    	    	                    pout[(k+_i*3)*x2i*3+l+_j*3] += dx1dr[(ii*d+i)*3+k] * dval * dx2dr[(jj*d+j)*3+l];
                                 }
-                            }
+                            }*/
     	    	    	}
     	    	    }
+
+    	    	    pout[(0+_i*3)*x2i*3+0+_j*3] += C1;
+    	    	    pout[(1+_i*3)*x2i*3+0+_j*3] += C2;
+    	    	    pout[(2+_i*3)*x2i*3+0+_j*3] += C3;
+    	    	    pout[(0+_i*3)*x2i*3+1+_j*3] += C4;
+    	    	    pout[(1+_i*3)*x2i*3+1+_j*3] += C5;
+    	    	    pout[(2+_i*3)*x2i*3+1+_j*3] += C6;
+    	    	    pout[(0+_i*3)*x2i*3+2+_j*3] += C7;
+    	    	    pout[(1+_i*3)*x2i*3+2+_j*3] += C8;
+    	    	    pout[(2+_i*3)*x2i*3+2+_j*3] += C9;
+
     	    	} //if(_ele1==_ele2 && x2_norm > eps)
     	    }//for(jj=0;jj<n;jj++)
     	    }//if(x1_norm > eps){

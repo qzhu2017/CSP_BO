@@ -87,7 +87,7 @@ def mykff_many(X1, X2, sigma=1.0, sigma0=1.0, zeta=2.0):
     
     t0 = time()
     print("before call")
-    lib.kff_many(m1p, m2p, d, m2, sigma, zeta,
+    lib.kff_many(m1p, m2p, d, m2, zeta,
                  pdat_x1, pdat_dx1dr, pdat_ele1, pdat_x1_inds, 
                  pdat_x2, pdat_dx2dr, pdat_ele2, pdat_x2_inds, 
                  pout) 
@@ -97,6 +97,7 @@ def mykff_many(X1, X2, sigma=1.0, sigma0=1.0, zeta=2.0):
     for i in range(m1*3):
         for j in range(m2*3):
             C[i, j]=pout[i*m2*3+j] 
+    C *= sigma*sigma*zeta
     
     ffi.release(pdat_x1)
     ffi.release(pdat_dx1dr)

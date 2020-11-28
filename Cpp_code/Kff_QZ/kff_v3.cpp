@@ -1,7 +1,7 @@
 #include <cmath>
 
 extern "C"
-void kff_many(int n1, int n2, int d, int x2i, double sigma, double zeta,
+void kff_many(int n1, int n2, int d, int x2i, double zeta,
             double* x1, double* dx1dr, int* ele1, int* x1_inds, 
             double* x2, double* dx2dr, int* ele2, int* x2_inds, double* pout){
 
@@ -9,13 +9,13 @@ void kff_many(int n1, int n2, int d, int x2i, double sigma, double zeta,
     double dval;
     double x1_norm, x2_norm, _x2_norm2, _x1x2_norm, x1x2_dot; 
     double _x1x2_norm31, x1x2_dot_norm02, x1x2_dot_norm13, x1x2_dot_norm31;
-    double  dx,d2, d1, dk_dD, d2d_dx1dx2;
+    double  dx, d2, d1, d2d_dx1dx2;
     double  C1, C2, C3, C4, C5, C6, C7, C8, C9;
-    int i,j,k,l,ii,jj,_i,_j,_ele1,_ele2;
+    int i, j, ii, jj, _i, _j, _ele1, _ele2;
     double *d2k_dx1dx2;
 
     d2k_dx1dx2=new double[d*d];
-    dk_dD = sigma*sigma;
+    //dk_dD = sigma*sigma*zeta;
 
     for(ii=0; ii<n1; ii++){
     	_ele1 = ele1[ii];
@@ -56,7 +56,9 @@ void kff_many(int n1, int n2, int d, int x2i, double sigma, double zeta,
                     dx = x1x2_dot*_x1x2_norm;
     	    	    d2 = pow(dx,zeta-2);
     	    	    d1 = dx*d2;
+    	    	    d2 = d2*(zeta-1);
                     
+                    C1 = C2 = C3 = C4 = C5 = C6 = C7 = C8 = C9 = 0;
     	    	    for(i=0;i<d;i++){
     	    	        for(j=0;j<d;j++){
     	    	            if(i==j){
@@ -65,12 +67,11 @@ void kff_many(int n1, int n2, int d, int x2i, double sigma, double zeta,
     	    	    	        dval=0;
                             }
 
-    	    	            d2d_dx1dx2=(dval-x1[jj*d+i]*x1[jj*d+j]*_x2_norm2)*_x1x2_norm+
+    	    	            d2d_dx1dx2 = (dval-x1[jj*d+i]*x1[jj*d+j]*_x2_norm2)*_x1x2_norm +
     	    	            (x1[ii*d+i]*x1[jj*d+j]*x1x2_dot_norm02-x1[ii*d+i]*x1[ii*d+j])*_x1x2_norm31;    
 
-    	    	            d2k_dx1dx2[i*d+j]=(((x1[jj*d+i]*_x1x2_norm-x1[ii*d+i]*x1x2_dot_norm31)*
-    	    	        	(x1[ii*d+j]*_x1x2_norm-x1[jj*d+j]*x1x2_dot_norm13))*d2*(zeta-1) +
-    	    			    d1*d2d_dx1dx2)*zeta*dk_dD;
+    	    	            d2k_dx1dx2[i*d+j]=((x1[jj*d+i]*_x1x2_norm-x1[ii*d+i]*x1x2_dot_norm31)*
+    	    	        	(x1[ii*d+j]*_x1x2_norm-x1[jj*d+j]*x1x2_dot_norm13))*d2 + d1*d2d_dx1dx2;
     	    	    	}
     	    	    }
 

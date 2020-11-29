@@ -1,4 +1,10 @@
 #include <cmath>
+#ifdef __APPLE__
+#include <Accelerate/Accelerate.h>
+#else
+#include <cblas.h>
+#endif
+
 
 extern "C"
 void kff_many(int n1, int n2, int d, int x2i, double zeta,
@@ -10,12 +16,13 @@ void kff_many(int n1, int n2, int d, int x2i, double zeta,
     double x1_norm, x2_norm, _x2_norm2, _x1x2_norm, x1x2_dot; 
     double _x1x2_norm31, x1x2_dot_norm02, x1x2_dot_norm13, x1x2_dot_norm31;
     double  dx, d2, d1, d2d_dx1dx2;
-    double  C1, C2, C3, C4, C5, C6, C7, C8, C9;
     int i, j, ii, jj, _i, _j, _ele1, _ele2;
-    double *d2k_dx1dx2, *C;
+    double *d2k_dx1dx2, *C1, *C2;
 
+    C1=new double[d*3];
+    C2=new double[3*3];
     d2k_dx1dx2=new double[d*d];
-    C=new double[d*3];
+
     //dk_dD = sigma*sigma*zeta;
 
     for(ii=0; ii<n1; ii++){
@@ -59,7 +66,6 @@ void kff_many(int n1, int n2, int d, int x2i, double zeta,
     	    	    d1 = dx*d2;
     	    	    d2 = d2*(zeta-1);
                     
-                    C1 = C2 = C3 = C4 = C5 = C6 = C7 = C8 = C9 = 0;
     	    	    for(i=0;i<d;i++){
     	    	        for(j=0;j<d;j++){
     	    	            if(i==j){
@@ -76,49 +82,27 @@ void kff_many(int n1, int n2, int d, int x2i, double zeta,
     	    	    	}
     	    	    }
 
-                    for(i=0;i<d;i++){
-                        C[i*3+0] = 0;
-                        C[i*3+1] = 0;
-                        C[i*3+2] = 0;
-                        for(j=0;j<d;j++){
-                            dval = d2k_dx1dx2[j*d+i];
-                            C[i*3+0] += dx1dr[(ii*d+j)*3 + 0] * dval;
-                            C[i*3+1] += dx1dr[(ii*d+j)*3 + 1] * dval;
-                            C[i*3+2] += dx1dr[(ii*d+j)*3 + 2] * dval;
-                        }
-                    }
+                    cblas_dgemm(CblasRowMajor, CblasTrans, CblasNoTrans, 3, d, d, 1.0, &dx1dr[3*d*ii], 3, d2k_dx1dx2, d, 0.0, C1, d);
                     
-                    for(j=0;j<d;j++){
-                            C1 += C[j*3+0]*dx2dr[(jj*d+j)*3 + 0];
-                            C2 += C[j*3+1]*dx2dr[(jj*d+j)*3 + 0];
-                            C3 += C[j*3+2]*dx2dr[(jj*d+j)*3 + 0];
-                            C4 += C[j*3+0]*dx2dr[(jj*d+j)*3 + 1];
-                            C5 += C[j*3+1]*dx2dr[(jj*d+j)*3 + 1];
-                            C6 += C[j*3+2]*dx2dr[(jj*d+j)*3 + 1];
-                            C7 += C[j*3+0]*dx2dr[(jj*d+j)*3 + 2];
-                            C8 += C[j*3+1]*dx2dr[(jj*d+j)*3 + 2];
-                            C9 += C[j*3+2]*dx2dr[(jj*d+j)*3 + 2];
-                    }
+                    cblas_dgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans, 3, 3, d, 1.0, C1, d, &dx2dr[3*d*jj], 3, 0.0, C2, 3);
+                    
+                    pout[(0+_i*3)*x2i*3+0+_j*3] += C2[0];
+                    pout[(1+_i*3)*x2i*3+0+_j*3] += C2[1];
+                    pout[(2+_i*3)*x2i*3+0+_j*3] += C2[2];
+                    pout[(0+_i*3)*x2i*3+1+_j*3] += C2[3];
+                    pout[(1+_i*3)*x2i*3+1+_j*3] += C2[4];
+                    pout[(2+_i*3)*x2i*3+1+_j*3] += C2[5];
+                    pout[(0+_i*3)*x2i*3+2+_j*3] += C2[6];
+                    pout[(1+_i*3)*x2i*3+2+_j*3] += C2[7];
+                    pout[(2+_i*3)*x2i*3+2+_j*3] += C2[8];
 
-                    pout[(0+_i*3)*x2i*3+0+_j*3] += C1;
-                    pout[(1+_i*3)*x2i*3+0+_j*3] += C2;
-                    pout[(2+_i*3)*x2i*3+0+_j*3] += C3;
-                    pout[(0+_i*3)*x2i*3+1+_j*3] += C4;
-                    pout[(1+_i*3)*x2i*3+1+_j*3] += C5;
-                    pout[(2+_i*3)*x2i*3+1+_j*3] += C6;
-                    pout[(0+_i*3)*x2i*3+2+_j*3] += C7;
-                    pout[(1+_i*3)*x2i*3+2+_j*3] += C8;
-                    pout[(2+_i*3)*x2i*3+2+_j*3] += C9;
-
-
-                            
     	    	} //if(_ele1==_ele2 && x2_norm > eps)
     	    }//for(jj=0;jj<n;jj++)
     	    }//if(x1_norm > eps){
     }//for(ii=0;ii<n;ii++)
-
     delete d2k_dx1dx2;
-    delete C;
+    delete C1;
+    delete C2;
     
 };
 

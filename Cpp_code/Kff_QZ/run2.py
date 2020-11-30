@@ -29,58 +29,44 @@ def mykff_many(X1, X2, sigma=1.0, sigma0=1.0, zeta=2.0):
 
     totalsize = m1p*d
     cstr='double['+str(totalsize)+']'
-    pdat_x1=ffi.new(cstr)
-    for i in range(m1p):
-        for j in range(d):
-            pdat_x1[i*d+j] = x1[i,j]
-
+    pdat_x1=ffi.new(cstr, list(x1.ravel()))
+    
     totalsize = m2p*d
     cstr='double['+str(totalsize)+']'
-    pdat_x2=ffi.new(cstr)
+    pdat_x2=ffi.new(cstr)#, list(x2.ravel()))
+    #print(np.array(list(pdat_x2)))
+    #import sys; sys.exit()
+    #print(np.allclose(np.array(list(pdat_x2)), x2.ravel()))
+    #import sys; sys.exit()
+
     for i in range(m2p):
         for j in range(d):
             pdat_x2[i*d+j] = x2[i,j]
 
     totalsize=m1p*d*3
     cstr='double['+str(totalsize)+']'
-    pdat_dx1dr=ffi.new(cstr)           
-    for i in range(m1p):
-        for j in range(d):
-            for k in range(3):
-                pdat_dx1dr[(i*d+j)*3+k] = dx1dr[i,j,k]
-
+    pdat_dx1dr=ffi.new(cstr, list(dx1dr.ravel()))
+    
     totalsize=m2p*d*3
     cstr='double['+str(totalsize)+']'
-    pdat_dx2dr=ffi.new(cstr)           
-    for i in range(m2p):
-        for j in range(d):
-            for k in range(3):
-                pdat_dx2dr[(i*d+j)*3+k] = dx2dr[i,j,k]
-
+    pdat_dx2dr=ffi.new(cstr, list(dx2dr.ravel()))
+    
     totalsize=m1p
     cstr='int['+str(totalsize)+']'
-    pdat_ele1=ffi.new(cstr)               
-    for i in range(m1p):
-        pdat_ele1[i] = ele1[i]
-
+    pdat_ele1=ffi.new(cstr, list(ele1))
+    
     totalsize=m2p
     cstr='int['+str(totalsize)+']'
-    pdat_ele2=ffi.new(cstr)               
-    for i in range(m2p):
-        pdat_ele2[i] = ele2[i]
-
+    pdat_ele2=ffi.new(cstr, list(ele2))
+    
     totalsize = m1p
     cstr='int['+str(totalsize)+']'
-    pdat_x1_inds = ffi.new(cstr)                 
-    for i in range(m1p):
-        pdat_x1_inds[i] = x1_inds[i]
-
+    pdat_x1_inds = ffi.new(cstr, x1_inds)
+    
     totalsize = m2p
     cstr='int['+str(totalsize)+']'
-    pdat_x2_inds = ffi.new(cstr)                 
-    for i in range(m2p):
-        pdat_x2_inds[i] = x2_inds[i]
-
+    pdat_x2_inds = ffi.new(cstr, x2_inds)        
+    
     totalsize = m1*3*m2*3
     cstr='double['+str(totalsize)+']'    
     pout=ffi.new(cstr)
@@ -93,12 +79,10 @@ def mykff_many(X1, X2, sigma=1.0, sigma0=1.0, zeta=2.0):
                  pout) 
 
     print("after call", time()-t0)
-    C = np.zeros([m1*3, m2*3])
-    for i in range(m1*3):
-        for j in range(m2*3):
-            C[i, j]=pout[i*m2*3+j] 
+    C = np.array(list(pout))
+    C = np.reshape(C, [m1*3, m2*3])
     C *= sigma*sigma*zeta
-    
+        
     ffi.release(pdat_x1)
     ffi.release(pdat_dx1dr)
     ffi.release(pdat_ele1)
@@ -114,11 +98,10 @@ def mykff_many(X1, X2, sigma=1.0, sigma0=1.0, zeta=2.0):
 
 X1 = np.load('../X1_big.npy', allow_pickle=True)
 X2 = np.load('../X2_big.npy', allow_pickle=True)
-#X1 = np.load('../X2.npy', allow_pickle=True)
-#X2 = np.load('../X2.npy', allow_pickle=True)
+
 t0 = time()
 C = mykff_many(X1, X2, sigma=28.835)
-np.save("C_loop", C)
-print(C[:3, :3])
+np.save("C_nloop", C)
+#print(C[:3, :3])
 print(time()-t0)
 exit()

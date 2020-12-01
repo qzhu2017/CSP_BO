@@ -129,7 +129,7 @@ void kef_many(int n1, int n2, int d, int x2i, double zeta, double sigma2, double
 
 
 extern "C"
-void kff_many(int n1, int n2, int d, int x2i, double zeta,
+void kff_many(int n1, int n2, int n2_start, int n2_end, int d, int x2i, double zeta,
             double* x1, double* dx1dr, int* ele1, int* x1_inds, 
             double* x2, double* dx2dr, int* ele2, int* x2_inds, double* pout){
 
@@ -158,7 +158,7 @@ void kff_many(int n1, int n2, int d, int x2i, double zeta,
     
     	if(x1_norm > eps){
     
-    	    for(jj=0; jj<n2; jj++){
+    	    for(jj=n2_start; jj<n2_end; jj++){ 
     	    	_ele2 = ele2[jj];
     	    	_j = x2_inds[jj];
     

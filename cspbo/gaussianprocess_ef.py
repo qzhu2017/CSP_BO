@@ -1,5 +1,4 @@
 import numpy as np
-import cupy as cp
 from pyxtal.database.element import Element
 from .utilities import new_pt, convert_train_data, list_to_tuple, tuple_to_list
 from scipy.linalg import cholesky, cho_solve, solve_triangular
@@ -82,7 +81,7 @@ class GaussianProcess():
                     #print("scipy", approx_fprime(params, self.log_marginal_likelihood, 1e-4))
                     #print("scipy", approx_fprime(params, self.log_marginal_likelihood, 1e-5))
                     #print("scipy", approx_fprime(params, self.log_marginal_likelihood, 1e-6))
-                    print(strs)
+                    #print(strs)
                     #import sys; sys.exit()
                 return (-lml, -grad)
             else:
@@ -94,7 +93,7 @@ class GaussianProcess():
             self.kernel.update(params[:-1])
             self.noise_e = params[-1]
             self.noise_f = self.f_coef*params[-1]
-        K = self.kernel.k_total(self.train_x, same=True)
+        K = self.kernel.k_total(self.train_x)
 
         # add noise matrix
         #K[np.diag_indices_from(K)] += self.noise
@@ -290,6 +289,9 @@ class GaussianProcess():
             test_X_F = {"force": [(data[0], data[1], data[3]) for data in test_data['force']]}
             E = np.array([data[1] for data in test_data['energy']])
             F = np.array([data[2] for data in test_data['force']]).flatten()
+            test_X_E = list_to_tuple(test_X_E, mode="energy")
+            test_X_F = list_to_tuple(test_X_F)
+
         if total_E:
             for i in range(len(E)):
                 E[i] *= len(test_X_E['energy'][i])
@@ -398,8 +400,6 @@ class GaussianProcess():
 
         # pack the new data
         (X, dXdR, ELE, indices, F) = list_to_tuple(force_data, include_value=True)
-        if self.kernel.device == 'gpu':
-            dXdR = cp.array(dXdR)
 
         # stack the data to the existing data
         if len(self.train_x['force']) == 4:
@@ -407,10 +407,7 @@ class GaussianProcess():
             _X = np.concatenate((_X, X), axis=0)
             _indices.extend(indices)
             _ELE = np.concatenate((_ELE, ELE), axis=0)
-            if self.kernel.device == 'gpu':
-                _dXdR = cp.concatenate((_dXdR, dXdR), axis=0)
-            else:
-                _dXdR = np.concatenate((_dXdR, dXdR), axis=0)
+            _dXdR = np.concatenate((_dXdR, dXdR), axis=0)
 
             self.train_x['force'] = (_X, _dXdR, _ELE, _indices)
             self.train_y['force'].extend(F)
@@ -535,7 +532,7 @@ class GaussianProcess():
         self.kernel.load_from_dict(dict0["kernel"])
 
         if dict0["descriptor"]["_type"] == "SO3":
-            from pyxtal_ff.descriptors.SO3 import SO3
+            from .descriptors.SO3 import SO3
             self.descriptor = SO3()
             self.descriptor.load_from_dict(dict0["descriptor"])
         else:

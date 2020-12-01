@@ -62,7 +62,7 @@ def kee_C(X1, X2, sigma=1.0, sigma0=1.0, zeta=2.0, grad=False):
         return C
 
 
-def kef_C(X1, X2, sigma=1.0, zeta=2.0, grad=False, transpose=False):
+def kef_C(X1, X2, sigma=1.0, zeta=2.0, grad=False, stress=False, transpose=False):
     """
     Compute the energy-force kernel between structures and atoms
 
@@ -103,18 +103,34 @@ def kef_C(X1, X2, sigma=1.0, zeta=2.0, grad=False, transpose=False):
     pdat_ele2=ffi.new('int['+str(m2p)+']', list(ele2))
     pdat_x1_inds=ffi.new('int['+str(m1p)+']', x1_inds)
     pdat_x2_inds=ffi.new('int['+str(m2p)+']', x2_inds)
-    pdat_dx2dr=ffi.new('double['+str(m2p*d*3)+']', list(dx2dr.ravel()))
-    pout=ffi.new('double['+str(m1*m2*3)+']')
+    if stress:
+        pdat_dx2dr=ffi.new('double['+str(m2p*d*9)+']', list(dx2dr.ravel()))
+        pout=ffi.new('double['+str(m1*m2*9)+']')
+    else:
+        pdat_dx2dr=ffi.new('double['+str(m2p*d*3)+']', list(dx2dr.ravel()))
+        pout=ffi.new('double['+str(m1*m2*3)+']')
 
     lib.kef_many(m1p, m2p, d, m2, zeta,
                  pdat_x1, pdat_ele1, pdat_x1_inds, 
                  pdat_x2, pdat_dx2dr, pdat_ele2, pdat_x2_inds, 
                  pout) 
+
     C = np.zeros([m1, m2*3])
-    for i in range(m1):
-        for j in range(m2*3):
-            C[i, j]=pout[i*m2*3+j]/x1_indices[i]
-    C *= -sigma*sigma
+    Cs = np.zeros([m1, m2*6])
+    if stress:
+        for i in range(m1):
+            for j in range(m2*9):
+                if j<3:
+                    C[i, j]=pout[i*m2*3+j]/x1_indices[i]
+                else:
+                    Cs[i, j-3]=pout[i*m2*3+j]/x1_indices[i]
+        C *= -sigma*sigma
+        Cs *= -sigma*sigma
+    else:
+        for i in range(m1):
+            for j in range(m2*3):
+                C[i, j]=pout[i*m2*3+j]/x1_indices[i]
+        C *= -sigma*sigma
     
     ffi.release(pdat_x1)
     ffi.release(pdat_ele1)
@@ -127,16 +143,18 @@ def kef_C(X1, X2, sigma=1.0, zeta=2.0, grad=False, transpose=False):
 
     if transpose:
         C = C.T
+        Cs = Cs.T
 
     if grad:
-        C_s = 2*C/sigma
-        C_l = np.zeros([m1, m2*3])
-        
-        return C, C_s, C_l
+        C1 = 2*C/sigma
+        C2 = np.zeros([m1, m2*3])
+        return C, C1, C2
+    elif stress:
+        return C, Cs
     else:
         return C
 
-def kff_C(X1, X2, sigma=1.0, zeta=2.0, grad=False):
+def kff_C(X1, X2, sigma=1.0, zeta=2.0, grad=False, stress=False):
     """
     Compute the energy-force kernel between structures and atoms
     Args:
@@ -189,9 +207,13 @@ def kff_C(X1, X2, sigma=1.0, zeta=2.0, grad=False):
     pdat_ele2=ffi.new('int['+str(m2p)+']', list(ele2))
     pdat_x1_inds=ffi.new('int['+str(m1p)+']', x1_inds)
     pdat_x2_inds=ffi.new('int['+str(m2p)+']', x2_inds)
-    pdat_dx1dr=ffi.new('double['+str(m1p*d*3)+']', list(dx1dr.ravel()))
     pdat_dx2dr=ffi.new('double['+str(m2p*d*3)+']', list(dx2dr.ravel()))
-    pout=ffi.new('double['+str(m1*3*m2*3)+']')
+    if stress:
+        pdat_dx1dr=ffi.new('double['+str(m1p*d*9)+']', list(dx1dr.ravel()))
+        pout=ffi.new('double['+str(m1*9*m2*2)+']')
+    else:
+        pdat_dx1dr=ffi.new('double['+str(m1p*d*3)+']', list(dx1dr.ravel()))
+        pout=ffi.new('double['+str(m1*3*m2*3)+']')
     
     lib.kff_many(m1p, m2p, m2p_start, m2p_end, d, m2, zeta,
                  pdat_x1, pdat_dx1dr, pdat_ele1, pdat_x1_inds, 
@@ -199,20 +221,35 @@ def kff_C(X1, X2, sigma=1.0, zeta=2.0, grad=False):
                  pout) 
 
     C = np.zeros([m1*3, m2*3])
-    for i in range(m1*3):
-        for j in range(m2*3):
-            C[i, j]=pout[i*m2*3+j] 
+    if stress:
+        Cs = np.zeros([m1*6, m2*3])
+        #for i in range(m1*9):
+        #    if i%9 < 3:
+        #        for j in range(m2*3):
+        #            C[i, j]=pout[i*m2*3+j] 
+        #    else:
+        #        for j in range(m2*3):
+        #            C[i-, j-3]=pout[i*m2*9+j] 
+        #Cs *= sigma*sigma*zeta
+    else:
+        for i in range(m1*3):
+            for j in range(m2*3):
+                C[i, j]=pout[i*m2*3+j] 
+
     C *= sigma*sigma*zeta
     
+    print("before:", C)
     Cout = np.zeros([m1*3, m2*3]) 
     comm.Barrier()
     comm.Reduce(
+    #comm.Allreduce(
        [C, MPI.DOUBLE],
        [Cout, MPI.DOUBLE],
        op = MPI.SUM,
        root = 0
     )
-
+    print("After:", C)
+    import sys; sys.exit()
     ffi.release(pdat_x1)
     ffi.release(pdat_dx1dr)
     ffi.release(pdat_ele1)
@@ -224,9 +261,11 @@ def kff_C(X1, X2, sigma=1.0, zeta=2.0, grad=False):
     ffi.release(pout)    
 
     if grad:
-        C_s = 2*C/sigma
-        C_l = np.zeros([m1*3, m2*3])
-        return C, C_s, C_l
+        C1 = 2*C/sigma
+        C2 = np.zeros([m1*3, m2*3])
+        return C, C1, C2
+    elif stress:
+        return C, Cs
     else:
         return C
 

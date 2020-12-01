@@ -6,9 +6,9 @@ ffibuilder.cdef("""
 """)
 ffibuilder.set_source("_kff", #lib name
     "",
-    library_dirs=["../../../OpenBLAS"],
     sources=["kff_v3_openblas.cpp"],
-    extra_compile_args=['-DCOL_MAJOR', "-Wall", "-O3","-I../../../OpenBLAS"],
+    include_dirs=["../../../OpenBLAS"],
+    library_dirs=["../../../OpenBLAS"],
     libraries=["openblas"]
 )
 

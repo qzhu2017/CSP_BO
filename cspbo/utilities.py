@@ -1,13 +1,9 @@
 import numpy as np
-import cupy as cp
-from ase.neighborlist import neighbor_list
 from functools import partial
 from multiprocessing import Pool, cpu_count
 from ase.db import connect
-#from .descriptors.rdf import RDF
-#from pymatgen.io.ase import AseAtomsAdaptor
 from pyxtal.database.element import Element
-from pyxtal.crystal import random_crystal
+from pyxtal import pyxtal
 from random import choice
 import os
 import matplotlib as mpl
@@ -27,10 +23,8 @@ def PyXtal(sgs, species, numIons):
     Return:
         the pyxtal structure
     """
-    while True:
-        struc = random_crystal(choice(sgs), species, numIons)
-        if struc.valid:
-            return struc.to_ase()
+    struc = pyxtal()
+    struc.from_random(3, choice(sgs), species, numIons)
  
 
 def new_pt(data, Refs, d_tol=1e-1, eps=1e-8):
@@ -45,13 +39,6 @@ def new_pt(data, Refs, d_tol=1e-1, eps=1e-8):
                 return False
     return True
  
-def Cosine(Rij, Rc):
-    # Rij is the norm 
-    ids = (Rij > Rc)
-    result = 0.5 * (np.cos(np.pi * Rij / Rc) + 1.)
-    result[ids] = 0
-    return result
-
 def rmse(true, predicted):
     """ Calculate root mean square error of energy or force. """
     true, predicted = np.array(true), np.array(predicted)
@@ -178,67 +165,6 @@ def get_data(db_name, des, N_force=100000, lists=None, select=False, no_energy=F
     return train_data
 
 
-
-#def convert_rdf(db_file, N=None):
-#
-#    train_Y, ds = [], []
-#    with connect(db_file) as db:
-#        for row in db.select():
-#            s = db.get_atoms(id=row.id)
-#            if hasattr(row, 'ff_energy'):
-#                eng = row.ff_energy
-#            else:
-#                eng = row.data.energy/len(s)
-#            train_Y.append(eng)
-#            pmg_struc = AseAtomsAdaptor().get_structure(s)
-#            ds.append(RDF(pmg_struc, R_max=10).RDF[1])
-#            if N is not None and len(train_Y) == N:
-#                break
-#    return ds, np.array(train_Y)
-
-#def smear(data, sigma=0.2):
-#    """
-#    Apply Gaussian smearing to spectrum y value.
-#    Args:
-#        sigma: Std dev for Gaussian smear function
-#    """
-#    diff = [data[0, i + 1] - data[0, i] for i in range(np.shape(data)[0] - 1)]
-#    avg_x_per_step = np.sum(diff) / len(diff)
-#    data[1, :] = gaussian_filter1d(data[1, :], sigma / avg_x_per_step)
-#    return data
-#
-#def get_rdf(s, r_min=0.5, r_max=8.0, N_bins=40, sigma=0.2):
-#    # plot atomic RDF
-#    # needs a cutoff
-#    rdf = np.zeros([len(s)+2, N_bins]) 
-#    _is, _js, _ds = neighbor_list('ijd', s, rcut)
-#    dr = (r_max-r_min)/(N_bins-1)
-#    bins = np.arange(r_min, r_max, R_bin)
-#    cutoff = Cosine(neighbors, bins)
-#
-#    for i in range(len(s)):
-#        neighbors = _ds[_is == i]
-#        des = np.histogram(neighbors, bins=bins)
-#        rdf[i, :] = smear(np.vstack(bins, des), sigma)[1, :]
-#    rdf /= s.get_volume()
-#    rdf[-2,:] = bins
-#    rdf[-1,:] = Cosine(bins, r_max)
-#    return rdf
-
-def get_2b(s, rcut=4.0, kernel='all'):
-    
-    _is, _js, _ds = neighbor_list('ijd', s, rcut)
-    if kernel == 'atom':
-        des_2b = np.zeros([len(s), 30, 2])
-        for i in range(len(s)):
-            neighbors = _ds[_is == i]
-            cutoff = Cosine(neighbors, rcut)
-            des_2b[i, :len(neighbors), 0] = neighbors 
-            des_2b[i, :len(neighbors), 1] = cutoff
-        return des_2b
-    else:
-        return (np.vstack((_ds, Cosine(_ds, rcut))), len(s))
-
 def get_train_data(db_file, include_stress=False):
     strucs = []
     energies = []
@@ -321,12 +247,6 @@ def fea(des, struc):
     #return des.calculate(struc)['x']
     return des.calculate(struc)
 
-def normalize(x_train, x_test):
-    from sklearn.preprocessing import StandardScaler  
-    scaler = StandardScaler()
-    scaler.fit(x_train)
-    return scaler.transform(x_train), scaler.transform(x_test)
-
 def write_db_from_dict(data, db_filename='viz.db', permission='w'):
     if permission=='w' and os.path.exists(db_filename):
         os.remove(db_filename)
@@ -358,52 +278,6 @@ def write_db(data, db_filename='viz.db', permission='w'):
                    "diff_energy": abs(y_qm[i]-y_ml[i])}
             db.write(x, key_value_pairs=kvp)
     
-def plot(Xs, Ys, labels, figname='results.png'):
-    import matplotlib as mpl
-    mpl.use("Agg")
-    import matplotlib.pyplot as plt
-    plt.style.use("ggplot")
-    for x, y, label in zip(Xs, Ys, labels):
-        plt.scatter(x, y, alpha=0.8, label=label, s=5)
-    xs = np.linspace(np.min(x)-0.1, np.max(x)+0.1, 100)
-    plt.plot(xs, xs, 'b')
-    plt.plot(xs, xs+0.10, 'g--')
-    plt.plot(xs, xs-0.10, 'g--')
-    plt.xlabel('QM (eV)') 
-    plt.ylabel('ML (eV)')
-    plt.legend()
-    plt.tight_layout() 
-    plt.savefig(figname)
-    plt.close()
-    print("save the figure to ", figname)
-
-def regression(method, data, layers):
-    (x_train0, y_train, x_test0, y_test) = data
-
-    if method == "GPR":
-        from sklearn.gaussian_process import GaussianProcessRegressor
-        from sklearn.gaussian_process.kernels import Matern, RBF, DotProduct, WhiteKernel
-        para = (0.5, 0.5)
-        print("\nGPR with Matern: ", para)
-        kernel = Matern(length_scale=para[0], nu=para[1]) #+ WhiteKernel()
-        gp = GaussianProcessRegressor(kernel=kernel, n_restarts_optimizer=5)
-        gp.fit(x_train0, y_train)
-        y_train_pred = gp.predict(x_train0)
-        y_test_pred = gp.predict(x_test0)
-        labels = metrics(y_train, y_test, y_train_pred, y_test_pred, "GP")
-    else:
-        from sklearn.neural_network import MLPRegressor
-        h = []
-        for item in layers.split(','):
-            h.append(int(item))
-        print("\nNN with hidden layer size", h)
-        mlp = MLPRegressor(hidden_layer_sizes=h, max_iter=20000, solver="lbfgs", alpha=0)
-        mlp.fit(x_train0, y_train)
-        y_train_pred = mlp.predict(x_train0)
-        y_test_pred = mlp.predict(x_test0)
-        labels=  metrics(y_train, y_test, y_train_pred, y_test_pred, "NN")
-    return y_train_pred, y_test_pred, labels
-
 def plot(Xs, Ys, labels, figname='results.png', draw_line=True, type='Energy'):
     x_mins, x_maxs = [], []
     for x, y, label in zip(Xs, Ys, labels):
@@ -484,10 +358,7 @@ def list_to_tuple(data, stress=False, include_value=False, mode='force'):
         else:
             length = 3
 
-        if isinstance(data[0][1], np.ndarray):
-            dXdR = np.zeros([icol, jcol, length])
-        else: #on cuda
-            dXdR = cp.zeros([icol, jcol, length])
+        dXdR = np.zeros([icol, jcol, length])
 
     count = 0
     for fd in data:

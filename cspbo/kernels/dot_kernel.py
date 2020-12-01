@@ -1,6 +1,6 @@
 from cffi import FFI
 import numpy as np
-from .utilities import tuple_to_list, list_to_tuple
+from ..utilities import list_to_tuple
 from ._dot_kernel import lib
 from mpi4py import MPI
 

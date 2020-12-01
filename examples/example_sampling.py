@@ -19,7 +19,7 @@ if len(sys.argv) == 2:
     model = gpr(kernel=kernel, 
                 descriptor=des, 
                 base_potential=lj,
-                noise_e=[5e-3, 5e-3, 3e-2], 
+                noise_e=[0.01, 0.01, 0.03], 
                 f_coef=20,
                )
     db_file = sys.argv[1]
@@ -47,7 +47,7 @@ if N_max is None:
     N_max = len(strucs)
 
 #for id in range(1200, N_max):
-for id in range(N_max):
+for id in range(2000, N_max):
     data = (strucs[id], energies[id], forces[id])
     N_atom = len(strucs[id])
     pts, N_pts, (E, E1, E_std, F, F1, F_std) = model.add_structure(data)
@@ -57,13 +57,13 @@ for id in range(N_max):
     if N_pts > 0:
         model.set_train_pts(pts, mode="a+")
         model.fit(opt=False, show=False)
-    if id % 10 == 0:
-        model.sparsify(e_tol=1e-4, f_tol=1e-3)
+    if id % 20 == 0:
+        model.sparsify(e_tol=1e-5, f_tol=2e-3)
         #model.fit()
         train_E, train_E1, train_F, train_F1 = model.validate_data()
         l1 = metric_single(train_E, train_E1, "Train Energy") 
         l2 = metric_single(train_F, train_F1, "Train Forces") 
         print(model)
-    if (id+1) % 100 == 0:
+    if id % 100 == 0:
         model.save("models/sample.json", "models/sample.db")
 model.save("models/test.json", "models/test.db")

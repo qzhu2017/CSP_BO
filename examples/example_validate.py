@@ -2,7 +2,7 @@ import sys
 import numpy as np
 from time import time
 from cspbo.utilities import rmse, metric_single, get_strucs, plot
-from cspbo.gaussianprocess_ef import GaussianProcess as gpr
+from cspbo.gaussianprocess import GaussianProcess as gpr
 from cspbo.calculator import GPR
 from mpi4py import MPI
 
@@ -18,8 +18,8 @@ N_max, device = 10, 'gpu'
 m_file = sys.argv[1]
 db_file = sys.argv[2]
 model = gpr()
-model.load(m_file, N_max=100, opt=False, device=device)
-#model.load(m_file, N_max=2, opt=True, device=device)
+#model.load(m_file, N_max=100, opt=False, device=device)
+model.load(m_file, N_max=2, opt=True, device=device)
 
 train_E, train_E1, train_F, train_F1 = model.validate_data()
 l1 = metric_single(train_E, train_E1, "Train Energy") 

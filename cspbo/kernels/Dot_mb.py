@@ -1,5 +1,5 @@
 import numpy as np
-from .kernel_base import build_covariance, get_mask
+from .base import build_covariance, get_mask
 from .dot_kernel import kee_C, kff_C, kef_C
 
 class Dot_mb():

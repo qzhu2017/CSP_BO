@@ -493,3 +493,6 @@ void kff_many_stress(int n1, int n2, int n2_start, int n2_end, int d, int x2i, d
     
 };
 
+int main(){
+    return 0;
+}

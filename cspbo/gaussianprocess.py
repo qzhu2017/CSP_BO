@@ -521,10 +521,10 @@ class GaussianProcess():
         #keys = ['kernel', 'descriptor', 'Noise']
 
         if dict0["kernel"]["name"] == "RBF_mb":
-            from .RBF_mb import RBF_mb
+            from .kernels.RBF_mb import RBF_mb
             self.kernel = RBF_mb()
         elif dict0["kernel"]["name"] == "Dot_mb":
-            from .Dot_mb import Dot_mb
+            from .kernels.Dot_mb import Dot_mb
             self.kernel = Dot_mb()
         else:
             msg = "unknow kernel {:s}".format(dict0["kernel"]["name"])

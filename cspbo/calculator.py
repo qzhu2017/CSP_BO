@@ -4,7 +4,6 @@ from ase.calculators.calculator import Calculator, all_changes#, PropertyNotImpl
 from ase.neighborlist import NeighborList
 from ase.constraints import full_3x3_to_voigt_6_stress
 
-
 eV2GPa = 160.21766
 
 class GPR(Calculator):

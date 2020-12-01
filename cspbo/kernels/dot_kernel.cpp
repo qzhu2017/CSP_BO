@@ -435,8 +435,8 @@ void kff_many_stress(int n1, int n2, int n2_start, int n2_end, int d, int x2i, d
                     }
                     
                     C1 = C2 = C3 = C4 = C5 = C6 = C7 = C8 = C9 = 0;
-                    C10 = C11 = C12 = C13 = C14 = C15 = C16 = C17 = C18;
-                    C19 = C20 = C21 = C22 = C23 = C24 = C25 = C26 = C27;
+                    C10 = C11 = C12 = C13 = C14 = C15 = C16 = C17 = C18 = 0;
+                    C19 = C20 = C21 = C22 = C23 = C24 = C25 = C26 = C27 = 0;
                     for(j=0;j<d;j++){
                             C1 +=  C[j*9+0] * dx2dr[(jj*d+j)*3 + 0];
                             C2 +=  C[j*9+1] * dx2dr[(jj*d+j)*3 + 0];

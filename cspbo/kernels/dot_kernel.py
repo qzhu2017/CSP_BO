@@ -80,7 +80,7 @@ def kef_C(X1, X2, sigma=1.0, zeta=2.0, grad=False, stress=False, transpose=False
         X1 = list_to_tuple(X1, mode='energy')
 
     if isinstance(X2, list):
-        X2 = list_to_tuple(X2)
+        X2 = list_to_tuple(X2, stress=stress)
 
 
     (x1, ele1, x1_indices) = X1
@@ -168,8 +168,7 @@ def kff_C(X1, X2, sigma=1.0, zeta=2.0, grad=False, stress=False):
     rank=comm.Get_rank()
 
     if isinstance(X1, list):
-        X1 = list_to_tuple(X1)
-
+        X1 = list_to_tuple(X1, stress=stress)
 
     (x1, dx1dr, ele1, x1_indices) = X1
     (x2, dx2dr, ele2, x2_indices) = X2
@@ -211,18 +210,16 @@ def kff_C(X1, X2, sigma=1.0, zeta=2.0, grad=False, stress=False):
     pdat_dx2dr=ffi.new('double['+str(m2p*d*3)+']', list(dx2dr.ravel()))
     if stress:
         pdat_dx1dr=ffi.new('double['+str(m1p*d*9)+']', list(dx1dr.ravel()))
-        pout=ffi.new('double['+str(m1*9*m2*2)+']')
-    else:
-        pdat_dx1dr=ffi.new('double['+str(m1p*d*3)+']', list(dx1dr.ravel()))
-        pout=ffi.new('double['+str(m1*3*m2*3)+']')
-    
-    if stress:
+        pout=ffi.new('double['+str(m1*9*m2*3)+']')
         lib.kff_many_stress(m1p, m2p, m2p_start, m2p_end, d, m2, zeta,
                      pdat_x1, pdat_dx1dr, pdat_ele1, pdat_x1_inds, 
                      pdat_x2, pdat_dx2dr, pdat_ele2, pdat_x2_inds, 
                      pout) 
         d1 = 9
+
     else:
+        pdat_dx1dr=ffi.new('double['+str(m1p*d*3)+']', list(dx1dr.ravel()))
+        pout=ffi.new('double['+str(m1*3*m2*3)+']')
         lib.kff_many(m1p, m2p, m2p_start, m2p_end, d, m2, zeta,
                      pdat_x1, pdat_dx1dr, pdat_ele1, pdat_x1_inds, 
                      pdat_x2, pdat_dx2dr, pdat_ele2, pdat_x2_inds, 
@@ -232,13 +229,13 @@ def kff_C(X1, X2, sigma=1.0, zeta=2.0, grad=False, stress=False):
     # convert cdata to np.array
 
     out = np.frombuffer(ffi.buffer(pout, m1*d1*m2*3*8), dtype=np.float64)
-    out.shape = (m1*d1, m2*3)
+    out.shape = (m1, d1, m2*3)
  
     #for i in range(m1*3):
     #    for j in range(m2*3):
     #        C[i, j]=pout[i*m2*3+j] 
     
-    Cout = np.zeros([m1*3, m2*3]) 
+    Cout = np.zeros([m1, d1, m2*3]) 
     comm.Barrier()
     comm.Allreduce(
        [out, MPI.DOUBLE],
@@ -257,8 +254,12 @@ def kff_C(X1, X2, sigma=1.0, zeta=2.0, grad=False, stress=False):
     ffi.release(pdat_x2_inds)  
     ffi.release(pout)    
 
-    C = Cout*(sigma*sigma*zeta)
+    Cout *= (sigma*sigma*zeta)
 
+    C = Cout[:, :3, :].reshape([m1*3, m2*3])
+    if stress:
+        Cs = Cout[:, 3:, :].reshape([m1*6, m2*3])
+ 
     if grad:
         C1 = 2*C/sigma
         C2 = np.zeros([m1*3, m2*3])

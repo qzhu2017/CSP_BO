@@ -13,7 +13,6 @@ def build_covariance(c_ee, c_ef, c_fe, c_ff, c_se=None, c_sf=None):
     if False not in exist:
         return np.block([[c_ee, c_ef], [c_fe, c_ff]])
     elif exist == [False, False, True, True]: # F in train, E/F in predict
-        #print(c_fe.shape, c_ff.shape)
         return np.hstack((c_fe, c_ff))
     elif exist == [True, True, False, False]: # E in train, E/F in predict
         return np.hstack((c_ee, c_ef))

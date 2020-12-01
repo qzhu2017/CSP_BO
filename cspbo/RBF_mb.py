@@ -1,6 +1,5 @@
 import numpy as np
 from .kernel_base import *
-import cupy as cp
 from .utilities import tuple_to_list, list_to_tuple
 from time import time
 class RBF_mb():
@@ -229,27 +228,17 @@ class RBF_mb():
             ID = x2_inds[i-1][1]
             x2_inds.append( (ID, ID+x2_indices[i]) )
 
-        if self.device == 'cpu': # Work on the cpu
-            if grad:
-                C = np.zeros([m1, m2p, 3, 9])
-            elif stress:
-                C = np.zeros([m1, m2p, 9, 3])
-            else:
-                C = np.zeros([m1, m2p, 3, 3])
+        if grad:
+            C = np.zeros([m1, m2p, 3, 9])
+        elif stress:
+            C = np.zeros([m1, m2p, 9, 3])
         else:
-            if grad:
-                C = cp.zeros([m1, m2p, 3, 9])
-            elif stress:
-                C = cp.zeros([m1, m2p, 9, 3])
-            else:
-                C = cp.zeros([m1, m2p, 3, 3])
+            C = np.zeros([m1, m2p, 3, 3])
         #t0 = time()
         for i in range(m1):
             #if i%500 == 0: print("Kff", i, time()-t0)
             (x1, dx1dr, ele1) = X1[i]
             mask = get_mask(ele1, ele_all)
-            if self.device == 'gpu':
-                dx1dr = cp.array(dx1dr)
             batch = 500
             # split the big array to smaller size
             if m2p > batch:
@@ -261,8 +250,6 @@ class RBF_mb():
             else:
                 mask = get_mask(ele1, ele_all)
                 C[i] = K_ff(x1, x_all, dx1dr, dxdr_all, sigma2, l2, zeta, grad, mask, device=self.device)
-        if self.device == 'gpu':
-            C = cp.asnumpy(C)
 
         _C = np.zeros([m1*3, m2*3])
         if grad:
@@ -316,27 +303,16 @@ class RBF_mb():
             ID = x2_inds[i-1][1]
             x2_inds.append( (ID, ID+x2_indices[i]) )
        
-        if self.device == 'cpu':
-            if stress or grad:
-                C = np.zeros([m1, m2p, 9])
-            else:
-                C = np.zeros([m1, m2p, 3])
+        if stress or grad:
+            C = np.zeros([m1, m2p, 9])
         else:
-            if stress or grad:
-                C = cp.zeros([m1, m2p, 9])
-            else:
-                C = cp.zeros([m1, m2p, 3])
-            dxdr_all = cp.array(dxdr_all)
-
+            C = np.zeros([m1, m2p, 3])
         t0 = time()
         for i in range(m1):
             #if i%1000 == 0: print("Kef", i, time()-t0)
             (x1, ele1) = X1[i]
             mask = get_mask(ele1, ele_all)
             C[i] = K_ef(x1, x_all, dxdr_all, sigma2, l2, zeta, grad, mask, device=self.device)
-
-        if self.device == 'gpu':
-            C = cp.asnumpy(C)
 
         _C = np.zeros([m1, m2*3])
         if grad:
@@ -417,24 +393,10 @@ def K_ff(x1, x2, dx1dr, dx2dr, sigma2, l2, zeta=2, grad=False, mask=None, eps=1e
     x1x2_dot = x1@x2.T
     x1_x1_norm3 = x1/x1_norm3[:,None]
 
-    if device == 'gpu':
-        #t0 = time()
-        x1 = cp.array(x1)
-        x2 = cp.array(x2)
-        x1_norm = cp.array(x1_norm)
-        x1_norm2 = cp.array(x1_norm2)
-        x1_norm3 = cp.array(x1_norm3)
-        x1_x1_norm3 = cp.array(x1_x1_norm3)
-        x1x2_dot = cp.array(x1x2_dot)
-        x2_norm = cp.linalg.norm(x2, axis=1) + eps
-        x2_norm2 = x2_norm**2
-        tmp30 = cp.ones(x2.shape)/x2_norm[:,None]
-        tmp33 = cp.eye(x2.shape[1])[None,:,:] - x2[:,:,None] * (x2/x2_norm2[:,None])[:,None,:]
-    else: 
-        x2_norm = np.linalg.norm(x2, axis=1) + eps
-        x2_norm2 = x2_norm**2      
-        tmp30 = np.ones(x2.shape)/x2_norm[:,None]
-        tmp33 = np.eye(x2.shape[1])[None,:,:] - x2[:,:,None] * (x2/x2_norm2[:,None])[:,None,:]
+    x2_norm = np.linalg.norm(x2, axis=1) + eps
+    x2_norm2 = x2_norm**2      
+    tmp30 = np.ones(x2.shape)/x2_norm[:,None]
+    tmp33 = np.eye(x2.shape[1])[None,:,:] - x2[:,:,None] * (x2/x2_norm2[:,None])[:,None,:]
 
 
     x2_norm3 = x2_norm**3    
@@ -445,10 +407,7 @@ def K_ff(x1, x2, dx1dr, dx2dr, sigma2, l2, zeta=2, grad=False, mask=None, eps=1e
     D2 = d**(zeta-2)
     D1 = d*D2
     D = d*D1
-    if device == 'gpu':
-        k = sigma2*cp.exp(-(0.5/l2)*(1-D))
-    else:
-        k = sigma2*np.exp(-(0.5/l2)*(1-D))
+    k = sigma2*np.exp(-(0.5/l2)*(1-D))
 
     if mask is not None: 
         k[mask] = 0
@@ -501,14 +460,11 @@ def K_ff(x1, x2, dx1dr, dx2dr, sigma2, l2, zeta=2, grad=False, mask=None, eps=1e
         K_ff_1 = (tmp[:,:,:,:,None] * dx1dr[:,None,:,None,:]).sum(axis=2)
         K_ff_1 = (K_ff_1[:,:,:,:,None] * dx2dr[None,:,:,None,:]).sum(axis=2)
         dKff_dl += (K_ff_1 * dk_dD[:,:,None,None]).sum(axis=0) #/l*2
-        if device == 'cpu':
-            return np.concatenate((Kff, dKff_dsigma, dKff_dl), axis=-1)
-        else:
-            return cp.concatenate((Kff, dKff_dsigma, dKff_dl), axis=-1)
+        return np.concatenate((Kff, dKff_dsigma, dKff_dl), axis=-1)
     else:
         tmp0 = d2k_dx1dx2 * dk_dD[:,:,None,None] #n1, n2, d, d
         _kff1 = (dx1dr[:,None,:,None,:] * tmp0[:,:,:,:,None]).sum(axis=(0,2)) # n1,n2,3
-        kff = (_kff1[:,:,:,None] * dx2dr[:,:,None,:]).sum(axis=1)  # n2, 3, 3
+        kff = (_kff1[:,:,:,None] * dx2dr[:,:,None,:]).sum(axis=1)  # n2, 3, 9
         if wrap:
             kff = kff.sum(axis=0)
         return kff
@@ -533,16 +489,6 @@ def K_ef(x1, x2, dx2dr, sigma2, l2, zeta=2, grad=False, mask=None, eps=1e-8, dev
         k[mask] = 0
     dk_dD = (-0.5/l2)*k
     
-    if device == 'gpu':
-        x1 = cp.array(x1)
-        x2 = cp.array(x2)
-        x1_norm = cp.array(x1_norm)
-        x2_norm = cp.array(x2_norm)
-        x2_norm2 = cp.array(x2_norm2)
-        x1x2_dot = cp.array(x1x2_dot)
-        D1 = cp.array(D1)
-        dk_dD = cp.array(dk_dD)
-
     tmp21 = x1[:, None, :] * x2_norm[None,:,None]
     tmp22 = x1x2_dot[:,:,None] * (x2/x2_norm[:, None])[None,:,:]
     tmp23 = x1_norm[:, None, None] * x2_norm2[None, :, None] 
@@ -553,8 +499,6 @@ def K_ef(x1, x2, dx2dr, sigma2, l2, zeta=2, grad=False, mask=None, eps=1e-8, dev
     kef1 = (-dD_dx2[:,:,:,None]*dx2dr[None,:,:,:]).sum(axis=2) #[m, n, 9]
     Kef = (kef1*dk_dD[:,:,None]).sum(axis=0) #[n, 9]
     if grad:
-        if device == 'gpu':
-            D = cp.array(D)
         l = np.sqrt(l2)
         l3 = l2*l
         d2k_dDdsigma = 2*dk_dD/np.sqrt(sigma2)
@@ -563,10 +507,7 @@ def K_ef(x1, x2, dx2dr, sigma2, l2, zeta=2, grad=False, mask=None, eps=1e-8, dev
         dKef_dsigma = (kef1*d2k_dDdsigma[:,:,None]).sum(axis=0) 
         dKef_dl     = (kef1*d2k_dDdl[:,:,None]).sum(axis=0)
         #print(dKef_dl/m)#; import sys; sys.exit()
-        if device == 'gpu':
-            return cp.concatenate((Kef/m, dKef_dsigma/m, dKef_dl/m), axis=-1)
-        else:
-            return np.concatenate((Kef/m, dKef_dsigma/m, dKef_dl/m), axis=-1)
+        return np.concatenate((Kef/m, dKef_dsigma/m, dKef_dl/m), axis=-1)
     else:
         return Kef/m
 

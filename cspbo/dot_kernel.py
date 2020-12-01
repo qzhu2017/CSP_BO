@@ -236,20 +236,16 @@ def kff_C(X1, X2, sigma=1.0, zeta=2.0, grad=False, stress=False):
             for j in range(m2*3):
                 C[i, j]=pout[i*m2*3+j] 
 
-    C *= sigma*sigma*zeta
     
-    print("before:", C)
     Cout = np.zeros([m1*3, m2*3]) 
     comm.Barrier()
-    comm.Reduce(
-    #comm.Allreduce(
+    comm.Allreduce(
        [C, MPI.DOUBLE],
        [Cout, MPI.DOUBLE],
        op = MPI.SUM,
-       root = 0
-    )
-    print("After:", C)
-    import sys; sys.exit()
+       )
+    #comm.Disconnect()
+    #import sys; sys.exit()
     ffi.release(pdat_x1)
     ffi.release(pdat_dx1dr)
     ffi.release(pdat_ele1)
@@ -260,6 +256,7 @@ def kff_C(X1, X2, sigma=1.0, zeta=2.0, grad=False, stress=False):
     ffi.release(pdat_x2_inds)  
     ffi.release(pout)    
 
+    C = Cout*(sigma*sigma*zeta)
     if grad:
         C1 = 2*C/sigma
         C2 = np.zeros([m1*3, m2*3])

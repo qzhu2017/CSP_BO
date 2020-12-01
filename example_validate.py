@@ -2,22 +2,24 @@ import sys
 import numpy as np
 from time import time
 from cspbo.utilities import rmse, metric_single, get_strucs, plot
-#from cspbo_bak.gaussianprocess_ef import GaussianProcess as gpr
-#from cspbo_bak.calculator import GPR
 from cspbo.gaussianprocess_ef import GaussianProcess as gpr
 from cspbo.calculator import GPR
+from mpi4py import MPI
+
 eV2GPa = 160.21766
 
+comm=MPI.COMM_WORLD 
 
 np.set_printoptions(formatter={'float': '{: 5.2f}'.format})
 
 #N_max, ncpu = 100, 24
+
 N_max, device = 10, 'gpu'
 m_file = sys.argv[1]
 db_file = sys.argv[2]
 model = gpr()
-#model.load(m_file, N_max=100, opt=False, device=device)
-model.load(m_file, N_max=1, opt=True, device=device)
+model.load(m_file, N_max=100, opt=False, device=device)
+#model.load(m_file, N_max=2, opt=True, device=device)
 
 train_E, train_E1, train_F, train_F1 = model.validate_data()
 l1 = metric_single(train_E, train_E1, "Train Energy") 
@@ -35,7 +37,6 @@ stress = False
 #        if S0 !=  None:
 #            stress = True
 
-print(stress)
 # set calculator
 calc = GPR(ff=model, return_std=False, stress=stress)
 
@@ -74,17 +75,19 @@ for struc, val in zip(strucs, values):
     if stress:
         S_mse = rmse(S.flatten(), S0.flatten())
         strs += "S_MSE: {:6.3f}".format(S_mse)
-    print(strs)
+    if comm.rank == 0:
+        print(strs)
 
-total_E = np.array(total_E)
-total_E0 = np.array(total_E0)
-l3 = metric_single(total_E, total_E0, "Test Energy") 
-l4 = metric_single(total_F, total_F0, "Test Forces") 
+if comm.rank == 0:
+    total_E = np.array(total_E)
+    total_E0 = np.array(total_E0)
+    l3 = metric_single(total_E, total_E0, "Test Energy") 
+    l4 = metric_single(total_F, total_F0, "Test Forces") 
 
-print("{:.3f} seconds elapsed".format(time()-t0))
-plot((train_E, total_E), (train_E1, total_E0), (l1, l3), "E.png")
-plot((train_F, total_F), (train_F1, total_F0), (l2, l4), "F.png", type="Force")
+    print("{:.3f} seconds elapsed".format(time()-t0))
+    plot((train_E, total_E), (train_E1, total_E0), (l1, l3), "E.png")
+    plot((train_F, total_F), (train_F1, total_F0), (l2, l4), "F.png", type="Force")
 
-if stress:
-    l5 = metric_single(total_S, total_S0, "Test Stress") 
-    plot([total_S], [total_S0], [l5], "S.png", type="Stress")
+    if stress:
+        l5 = metric_single(total_S, total_S0, "Test Stress") 
+        plot([total_S], [total_S0], [l5], "S.png", type="Stress")

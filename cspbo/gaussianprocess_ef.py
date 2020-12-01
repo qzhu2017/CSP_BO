@@ -601,8 +601,10 @@ class GaussianProcess():
 
                 energy_in = row.data.energy_in
                 force_in = row.data.force_in
-
+                
+                # QZ: todo, add mpi support, this is the most expensive part
                 d = self.descriptor.calculate(atoms)
+
                 ele = [Element(ele).z for ele in d['elements']]
                 ele = np.array(ele)
 

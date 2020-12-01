@@ -38,12 +38,11 @@ def kee_C(X1, X2, sigma=1.0, sigma0=1.0, zeta=2.0, grad=False):
                  pdat_x1, pdat_ele1, pdat_x1_inds, 
                  pdat_x2, pdat_ele2, pdat_x2_inds, 
                  pout) 
-
-    C = np.zeros([m1, m2])
-    for i in range(m1):
-        for j in range(m2):
-            C[i, j]=pout[i*m2+j]/(x1_indices[i]*x2_indices[j])
-    
+    # convert cdata to np.array
+    C = np.frombuffer(ffi.buffer(pout, m1*m2*8), dtype=np.float64)
+    C.shape = (m1, m2)
+    C /= (np.array(x1_indices)[:,None]*np.array(x2_indices)[None,:])
+   
     ffi.release(pdat_x1)
     ffi.release(pdat_ele1)
     ffi.release(pdat_x1_inds)  
@@ -95,10 +94,16 @@ def kef_C(X1, X2, sigma=1.0, zeta=2.0, grad=False):
                  pdat_x1, pdat_ele1, pdat_x1_inds, 
                  pdat_x2, pdat_dx2dr, pdat_ele2, pdat_x2_inds, 
                  pout) 
-    C = np.zeros([m1, m2*3])
-    for i in range(m1):
-        for j in range(m2*3):
-            C[i, j]=pout[i*m2*3+j]/x1_indices[i]
+    #C = np.zeros([m1, m2*3])
+    #for i in range(m1):
+    #    for j in range(m2*3):
+    #        C[i, j]=pout[i*m2*3+j]/x1_indices[i]
+
+    # convert cdata to np.array
+    C = np.frombuffer(ffi.buffer(pout, m1*m2*3*8), dtype=np.float64)
+    C.shape = (m1, m2*3)
+    C /= np.array(x1_indices)[:,None]
+ 
     C *= -sigma*sigma
     
     ffi.release(pdat_x1)
@@ -158,10 +163,14 @@ def kff_C(X1, X2, sigma=1.0, zeta=2.0, grad=False):
                  pout) 
 
     print("after call", time()-t0)
-    C = np.zeros([m1*3, m2*3])
-    for i in range(m1*3):
-        for j in range(m2*3):
-            C[i, j]=pout[i*m2*3+j] 
+    #C = np.zeros([m1*3, m2*3])
+    #for i in range(m1*3):
+    #    for j in range(m2*3):
+    #        C[i, j]=pout[i*m2*3+j] 
+
+    # convert cdata to np.array
+    C = np.frombuffer(ffi.buffer(pout, m1*m2*9*8), dtype=np.float64)
+    C.shape = (m1*3, m2*3)
     C *= sigma*sigma*zeta
     
     ffi.release(pdat_x1)
@@ -205,6 +214,6 @@ C_FF = kff_C(X1_FF, X2_FF, sigma=sigma)
 print("KFF:", C_FF.shape)
 print(C_FF[:6, :6])
 print("Elapsed time: ", time()-t0)
-exit()
+#exit()
 
 

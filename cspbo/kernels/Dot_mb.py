@@ -151,11 +151,11 @@ class Dot_mb():
                 d2 = data2[key2]
                 if len(d1)>0 and len(d2)>0:
                     if key1 == 'energy' and key2 == 'energy':
-                        C_ee = kee_C(d1, d2, sigma, sigma0, zeta, stress=True)
+                        C_ee = kee_C(d1, d2, sigma, sigma0, zeta)
                     elif key1 == 'energy' and key2 == 'force':
                         C_ef = kef_C(d1, d2, sigma, zeta, stress=True)
                     elif key1 == 'force' and key2 == 'energy':
-                        C_fe, C_se = kef_C(d1, d2, sigma, zeta, stress=True, tranpose=True)
+                        C_fe, C_se = kef_C(d1, d2, sigma, zeta, stress=True, transpose=True)
                     elif key1 == 'force' and key2 == 'force':
                         C_ff, C_sf = kff_C(d1, d2, sigma, zeta, stress=True) 
         C = build_covariance(C_ee, C_ef, C_fe, C_ff)

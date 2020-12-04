@@ -122,7 +122,7 @@ def kef_C(X1, X2, sigma=1.0, l=1.0, zeta=2.0, grad=False, stress=False, transpos
     out = np.frombuffer(ffi.buffer(pout, m1*m2*d2*8), dtype=np.float64)
     out.shape = (m1, m2, d2)
     out /= np.array(x1_indices)[:,None,None]
-    out *= -(sigma*sigma)
+    out *= -1
 
     C = out[:, :, :3].reshape([m1, m2*3])
     if stress:

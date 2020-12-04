@@ -105,7 +105,7 @@ void kef_many(int n1, int n2, int d, int x2i, double zeta, double sigma2, double
 
                     C1 = C2 = C3 = 0;
                     for(i=0;i<d;i++){
-                        C1 += dx2dr[(jj*d+i)*3 + 0] * dD_dx2[i] * dK_dD; // Perhaps move this outside the loop?
+                        C1 += dx2dr[(jj*d+i)*3 + 0] * dD_dx2[i] * dK_dD;
                         C2 += dx2dr[(jj*d+i)*3 + 1] * dD_dx2[i] * dK_dD;
                         C3 += dx2dr[(jj*d+i)*3 + 2] * dD_dx2[i] * dK_dD;
                     }

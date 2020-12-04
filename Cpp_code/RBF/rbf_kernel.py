@@ -274,8 +274,8 @@ for i in [16]: #range(1,20):
     C_FF2 = kff_many(X1_FF, X2_FF, sigma=sigma, l=l, zeta=zeta, dd1=i)
     print("from python")
     print(C_FF2[:3,:3])
-    print(i, (C_FF1-C_FF2)[2,2]/C_FF1[2,2])
-
+    #print(i, (C_FF1-C_FF2)[2,2]/C_FF1[2,2])
+    print("from python single")
     C_FF3 =K_ff_single(x1[i-1], x2[i-1], dx1dr[i-1], dx2dr[i-1], sigma*sigma, l*l, zeta=zeta)
     print(C_FF3)
 #print("Elapsed time: ", time()-t0)

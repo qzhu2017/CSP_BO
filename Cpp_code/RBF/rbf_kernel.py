@@ -181,13 +181,13 @@ def kff_C(X1, X2, sigma=1.0, l=1.0, zeta=2.0, grad=False, stress=False):
 
     m1, m2, m1p, m2p, d = len(x1_indices), len(x2_indices), len(x1), len(x2), x1.shape[1]
     
-    pdat_x1=ffi.new('double['+str(m1p*d)+']', list(x1.ravel()))
-    pdat_x2=ffi.new('double['+str(m2p*d)+']', list(x2.ravel()))
-    pdat_ele1=ffi.new('int['+str(m1p)+']', list(ele1))
-    pdat_ele2=ffi.new('int['+str(m2p)+']', list(ele2))
+    pdat_x1=ffi.new('double['+str(m1p*d)+']', x1.ravel().tolist())
+    pdat_x2=ffi.new('double['+str(m2p*d)+']', x2.ravel().tolist())
+    pdat_ele1=ffi.new('int['+str(m1p)+']', ele1.tolist())
+    pdat_ele2=ffi.new('int['+str(m2p)+']', ele2.tolist())
     pdat_x1_inds=ffi.new('int['+str(m1p)+']', x1_inds)
     pdat_x2_inds=ffi.new('int['+str(m2p)+']', x2_inds)
-    pdat_dx2dr=ffi.new('double['+str(m2p*d*3)+']', list(dx2dr.ravel()))
+    pdat_dx2dr=ffi.new('double['+str(m2p*d*3)+']', dx2dr.ravel().tolist())
 
     m2p_start, m2p_end = int(0), int(0); # Need to fix this for MPI
 
@@ -200,7 +200,7 @@ def kff_C(X1, X2, sigma=1.0, l=1.0, zeta=2.0, grad=False, stress=False):
                      pout)
         d1 = 9
     else:
-        pdat_dx1dr=ffi.new('double['+str(m1p*d*3)+']', list(dx1dr.ravel()))
+        pdat_dx1dr=ffi.new('double['+str(m1p*d*3)+']', dx1dr.ravel().tolist())
         pout=ffi.new('double['+str(m1*3*m2*3)+']')
         lib.kff_many(m1p, m2p, m2p_start, m2p_end, d, m2, zeta, sigma2, l2,
                      pdat_x1, pdat_dx1dr, pdat_ele1, pdat_x1_inds,
@@ -210,7 +210,9 @@ def kff_C(X1, X2, sigma=1.0, l=1.0, zeta=2.0, grad=False, stress=False):
 
     out = np.frombuffer(ffi.buffer(pout, m1*d1*m2*3*8), dtype=np.float64)
     out.shape = (m1, d1, m2*3)
+    
     Cout = np.zeros([m1, d1, m2*3])
+    Cout = out
 
     ffi.release(pdat_x1)
     ffi.release(pdat_dx1dr)
@@ -222,7 +224,7 @@ def kff_C(X1, X2, sigma=1.0, l=1.0, zeta=2.0, grad=False, stress=False):
     ffi.release(pdat_x2_inds)  
     ffi.release(pout)
 
-    Cout *= (sigma*sigma*zeta)
+    #Cout *= (sigma*sigma*zeta)
     C = Cout[:, :3, :].reshape([m1*3, m2*3])
     if stress:
         Cs = Cout[:, 3:, :].reshape([m1*6, m2*3])
@@ -239,21 +241,17 @@ X1_EE = np.load('X1_EE.npy', allow_pickle=True)
 X2_EE = np.load('X2_EE.npy', allow_pickle=True)
 X1_FF = np.load('X1_FF.npy', allow_pickle=True)
 X2_FF = np.load('X2_FF.npy', allow_pickle=True)
-sigma = 18.55544058601137
-sigma0 = 1.0
+sigma = 9.55544058601137
 
 t0 = time()
 C_EE = kee_C(X1_EE, X2_EE, sigma=sigma)
-#print("KEE:", C_EE.shape)
-#print(C_EE)
+print(C_EE)
 C_EF = kef_C(X1_EE, X2_FF, sigma=sigma)
-#print("KEF:", C_EF.shape)
-#print(C_EF[:6, :6])
 C_FE = kef_C(X2_EE, X1_FF, sigma=sigma)
-#print("KFE:", C_FE.shape)
-#print(C_FE.T[:6, :6])
 C_FF = kff_C(X1_FF, X2_FF, sigma=sigma)
-print(C_FF)
-#print("KFF:", C_FF.shape)
-#print(C_FF[:6, :6])
 print("Elapsed time: ", time()-t0)
+
+np.save("kernel_EE.npy", C_EE)
+np.save("kernel_EF.npy", C_EF)
+np.save("kernel_FE.npy", C_FE)
+np.save("kernel_FF.npy", C_FF)

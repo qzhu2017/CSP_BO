@@ -245,7 +245,6 @@ sigma = 9.55544058601137
 
 t0 = time()
 C_EE = kee_C(X1_EE, X2_EE, sigma=sigma)
-print(C_EE)
 C_EF = kef_C(X1_EE, X2_FF, sigma=sigma)
 C_FE = kef_C(X2_EE, X1_FF, sigma=sigma)
 C_FF = kff_C(X1_FF, X2_FF, sigma=sigma)

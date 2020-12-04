@@ -6,7 +6,7 @@ void kee_many(int n1, int n2, int d, int x2i, double zeta, double sigma2, double
               double* x1, int* ele1, int* x1_inds, 
               double* x2, int* ele2, int* x2_inds, 
               double* pout){
-    double eps=1e-8;
+    double eps=1e-12;
     double dval;
     double x1_norm, x2_norm, x1x2_dot;
     double dx, D;
@@ -214,12 +214,12 @@ void kff_many(int n1, int n2, int n2_start, int n2_end, int d, int x2i, double z
     double _x1x2_norm31, x1x2_dot_norm02, x1x2_dot_norm13, x1x2_dot_norm31;
     double  dx, d2, d1, d2d_dx1dx2;
     double dddx1, dddx2, dDdx1, dDdx2, d2Ddx1dx2;
-    double D, K, dK_dD;
+    double D, K, dK_dD, _l2;
     double  C1, C2, C3, C4, C5, C6, C7, C8, C9;
     int i, j, ii, jj, _i, _j, _ele1, _ele2;
     double *d2k_dx1dx2, *C;
 
-    
+    _l2 = 1/l2;
     d2k_dx1dx2 = new double[d*d];
     C = new double[d*3];
 
@@ -263,8 +263,8 @@ void kff_many(int n1, int n2, int n2_start, int n2_end, int d, int x2i, double z
     	    		}
                     dx = x1x2_dot * _x1x2_norm;
                     D = pow(dx, zeta);
-                    K = sigma2 * exp(-(1-D)/(2*l2));
-                    dK_dD = K / (2*l2);
+                    K = sigma2 * exp(-0.5*_l2*(1-D));
+                    dK_dD = 0.5*_l2*K;
 
                     x1x2_dot_norm31 = x1x2_dot*_x1x2_norm31;
                     x1x2_dot_norm13 = x1x2_dot*_x1x2_norm*_x2_norm2;
@@ -293,9 +293,9 @@ void kff_many(int n1, int n2, int n2_start, int n2_end, int d, int x2i, double z
     	    	            (x1[ii*d+i]*x2[jj*d+j]*x1x2_dot_norm02-x1[ii*d+i]*x1[ii*d+j])*_x1x2_norm31;
                             
                             d2Ddx1dx2 = zeta * (d1*d2d_dx1dx2 + d2 * dddx1 * dddx2);
+                            d2k_dx1dx2[i*d+j] = dK_dD * (d2Ddx1dx2 - 0.5*_l2 * dDdx1 * dDdx2); 
 
-                            d2k_dx1dx2[i*d+j] = dK_dD * (d2Ddx1dx2 - ((1/(2*l2)) * dDdx1 * dDdx2)); 
-
+                            //std::cout << d2k_dx1dx2[i*d+j] << std::endl;
     	    	            //d2D_dx1dx2[i*d+j]=((x2[jj*d+i]*_x1x2_norm-x1[ii*d+i]*x1x2_dot_norm31)*
     	    	        	//(x1[ii*d+j]*_x1x2_norm-x2[jj*d+j]*x1x2_dot_norm13))*d2 + d1*d2d_dx1dx2;
     	    	    	}
@@ -338,7 +338,7 @@ void kff_many(int n1, int n2, int n2_start, int n2_end, int d, int x2i, double z
                             
     	    	} 
             }
-    	    }
+    	}
     }
 
     delete d2k_dx1dx2;

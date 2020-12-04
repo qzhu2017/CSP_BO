@@ -218,6 +218,7 @@ void kff_many(int n1, int n2, int n2_start, int n2_end, int d, int x2i, double z
     double  C1, C2, C3, C4, C5, C6, C7, C8, C9;
     int i, j, ii, jj, _i, _j, _ele1, _ele2;
     double *d2k_dx1dx2, *C;
+    int k, l;
 
     _l2 = 1/l2;
     d2k_dx1dx2 = new double[d*d];
@@ -235,7 +236,7 @@ void kff_many(int n1, int n2, int n2_start, int n2_end, int d, int x2i, double z
     	}
     	x1_norm=sqrt(dval);
 
-    	if(x1_norm > eps){
+    	//if(x1_norm > eps){
 
     	    for(jj=0; jj<n2; jj++){
     	    	_ele2 = ele2[jj];
@@ -249,7 +250,7 @@ void kff_many(int n1, int n2, int n2_start, int n2_end, int d, int x2i, double z
     	    	}
     	    	x2_norm=sqrt(dval);
 
-    	    	if(_ele1==_ele2 && x2_norm > eps){
+    	    	//if(_ele1==_ele2 && x2_norm > eps){
     	    	    _x2_norm2 = 1.0/(x2_norm*x2_norm);
                     _x1x2_norm = 1.0/(x1_norm*x2_norm);
                     _x1x2_norm31 = _x1x2_norm/(x1_norm*x1_norm);
@@ -270,16 +271,16 @@ void kff_many(int n1, int n2, int n2_start, int n2_end, int d, int x2i, double z
                     x1x2_dot_norm13 = x1x2_dot*_x1x2_norm*_x2_norm2;
                     x1x2_dot_norm02 = x1x2_dot*_x2_norm2;
 
-                    d2 = pow(dx,zeta-2);
+                    d2 = pow(dx,zeta-2.0);
     	    	    d1 = dx*d2;
-    	    	    d2 = d2*(zeta-1);
+    	    	    d2 = d2*(zeta-1.0);
 
     	    	    for(i=0;i<d;i++){
     	    	        for(j=0;j<d;j++){
     	    	            if(i==j){
                                 dval=1.0;
                             } else {
-    	    	    	        dval=0;
+    	    	    	        dval=0.0;
                             }
 
                             //std::cout << "HERE4" << std::endl;
@@ -301,7 +302,7 @@ void kff_many(int n1, int n2, int n2_start, int n2_end, int d, int x2i, double z
     	    	    	}
     	    	    }
                     
-                    C1 = C2 = C3 = C4 = C5 = C6 = C7 = C8 = C9 = 0;
+                    /*C1 = C2 = C3 = C4 = C5 = C6 = C7 = C8 = C9 = 0;
                     for(i=0;i<d;i++){
                         C[i*3+0] = 0;
                         C[i*3+1] = 0;
@@ -334,11 +335,21 @@ void kff_many(int n1, int n2, int n2_start, int n2_end, int d, int x2i, double z
                     pout[((2+_i*3)*x2i+_j)*3+1] += C6;
                     pout[((0+_i*3)*x2i+_j)*3+2] += C7;
                     pout[((1+_i*3)*x2i+_j)*3+2] += C8;
-                    pout[((2+_i*3)*x2i+_j)*3+2] += C9;
+                    pout[((2+_i*3)*x2i+_j)*3+2] += C9;*/
+                    // switch the sequence of for loop can be helpful   
+                    for(i=0;i<d;i++){
+                        for(j=0;j<d;j++){
+                            for(k=0;k<3;k++){
+                                for(l=0;l<3;l++){
+                                    pout[(k+_i*3)*x2i*3+l+_j*3] += dx1dr[(ii*d+i)*3+k] * d2k_dx1dx2[i*d+j] * dx2dr[(jj*d+j)*3+l];
+                                }
+                            }
+                        }
+                    }
                             
-    	    	} 
+    	    	//} 
             }
-    	}
+    	//}
     }
 
     delete d2k_dx1dx2;
@@ -522,7 +533,7 @@ void kff_many_stress(int n1, int n2, int n2_start, int n2_end, int d, int x2i, d
                             
     	    	} 
     	    }
-    	    }
+    	}
     }
     delete d2k_dx1dx2;
     delete C;

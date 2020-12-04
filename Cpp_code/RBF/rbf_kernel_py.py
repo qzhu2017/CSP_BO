@@ -94,12 +94,13 @@ def kff_many(X1, X2, sigma=1.0, l=1.0, zeta=2.0, grad=False, stress=False, dd1=5
     (x_all, dxdr_all, ele_all, x2_indices) = X2
 
     xx1 = dd1 #x1_indices[0]
-    x1, dx1dr, ele1 = x1[:xx1], dx1dr[:xx1], ele1[:xx1] 
-    x1_indices = [xx1] #[x1_indices[0]]
+    #x1, dx1dr, ele1 = x1[:xx1], dx1dr[:xx1], ele1[:xx1] 
+    x1, dx1dr, ele1 = x1[xx1-1:xx1], dx1dr[xx1-1:xx1], ele1[xx1-1:xx1] 
+    x1_indices = [1] #[xx1] #[x1_indices[0]]
 
     xx2 = dd1 #x2_indices[0]
-    x_all, dxdr_all, ele_all = x_all[:xx2], dxdr_all[:xx2], ele_all[:xx2] 
-    x2_indices = [xx2] #[x2_indices[0]]
+    x_all, dxdr_all, ele_all = x_all[xx2-1:xx2], dxdr_all[xx2-1:xx2], ele_all[xx2-1:xx2] 
+    x2_indices = [1] #[xx2] #[x2_indices[0]]
 
     m1, m2, m2p = len(x1_indices), len(x2_indices), len(x_all)
     x2_inds = [(0, x2_indices[0])]
@@ -107,7 +108,8 @@ def kff_many(X1, X2, sigma=1.0, l=1.0, zeta=2.0, grad=False, stress=False, dd1=5
         ID = x2_inds[i-1][1]
         x2_inds.append( (ID, ID+x2_indices[i]) )
 
-    
+    #print("x1 norm", np.linalg.norm(x1, axis=1))   
+    #print("x2 norm", np.linalg.norm(x_all, axis=1))   
     if grad:
         C = np.zeros([m1, m2p, 3, 9])
     elif stress:
@@ -305,20 +307,36 @@ def K_ff(x1, x2, dx1dr, dx2dr, sigma2, l2, zeta=2, grad=False, mask=None, eps=0)
         kff = (_kff1[:,:,:,None] * dx2dr[:,:,None,:]).sum(axis=1)  # n2, 3, 9
         return kff
 
+def K_ff_single(x1, x2, dx1dr, dx2dr, sigma2, l2, zeta=2):
+
+    x1_norm = np.linalg.norm(x1)
+    x1_norm2 = x1_norm**2
+    x2_norm = np.linalg.norm(x2)
+    x2_norm2 = x2_norm**2
     
-#X1_EE = np.load('X1_EE.npy', allow_pickle=True)
-#X2_EE = np.load('X2_EE.npy', allow_pickle=True)
-#X1_FF = np.load('X1_FF.npy', allow_pickle=True)
-#X2_FF = np.load('X2_FF.npy', allow_pickle=True)
-#sigma = 9.55544058601137
-#
-#import sys
-#t0 = time()
-#C_EE = kee_many(X1_EE, X2_EE, sigma=sigma)
-#C_EF = kef_many(X1_EE, X2_FF, sigma=sigma)
-#C_FF = kff_many(X1_FF, X2_FF, sigma=sigma, dd1=int(sys.argv[1]))
-#print(C_FF)
-#print("Elapsed time: ", time()-t0)
-#np.save("kernel_EE.npy", C_EE)
-#np.save("kernel_EF.npy", C_EF)
-#np.save("kernel_FF.npy", C_FF)
+    x1x2_dot = x1@x2.T
+    x1x2_norm = x1_norm*x2_norm
+    
+    d = x1x2_dot/x1x2_norm
+    D2 = d**(zeta-2)
+    D1 = d*D2
+    D = d*D1
+    k = sigma2*np.exp(-(0.5/l2)*(1-D))
+    dk_dD = (-0.5/l2)*k
+    
+    # d2d_dx1dx2
+    dd_dx1 = (x2 - x1x2_dot/x1_norm2 * x1)/x1x2_norm # [d]
+    dd_dx2 = (x1 - x1x2_dot/x2_norm2 * x2)/x1x2_norm # [d]
+    dD_dx1 = zeta * D1 * dd_dx1
+    dD_dx2 = zeta * D1 * dd_dx2
+    x1x1 = x1[:,None] * x1[None, :]
+    x2x2 = x2[:,None] * x2[None, :]
+    x1x2 = x1[:,None] * x2[None, :]
+    d2d_dx1dx2 = np.eye(len(x1)) - x2x2/x2_norm2 + x1x2*x1x2_dot/(x1x2_norm**2) - x1x1/x1_norm2
+    d2d_dx1dx2 /= x1x2_norm
+    
+    # d2D_dx1dx2 and d2k_dx1dx2
+    dd_dx1_dd_dx2 = dd_dx1[:,None] * dd_dx2[None,:] # [d, d]
+    d2D_dx1dx2 = zeta * (dd_dx1_dd_dx2 * D2 * (zeta-1) + D1 * d2d_dx1dx2) # [d, d]
+    d2k_dx1dx2 = -dk_dD * (d2D_dx1dx2 - 0.5/l2*dD_dx1*dD_dx2) # [d, d]
+    return np.einsum("ik,ij,jl->kl", dx1dr, d2k_dx1dx2, dx2dr)

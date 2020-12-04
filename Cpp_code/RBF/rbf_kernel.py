@@ -174,14 +174,19 @@ def kff_C(X1, X2, sigma=1.0, l=1.0, zeta=2.0, grad=False, stress=False, dd1=5):
     (x2, dx2dr, ele2, x2_indices) = X2
 
     xx1 = dd1 #x1_indices[0]
-    x1, dx1dr, ele1 = x1[:xx1], dx1dr[:xx1], ele1[:xx1] 
-    x1_indices = [xx1] #x1_indices[0]]
-
+    x1, dx1dr, ele1 = x1[xx1-1:xx1], dx1dr[xx1-1:xx1], ele1[xx1-1:xx1] 
+    #x1, dx1dr, ele1 = x1[:xx1], dx1dr[:xx1], ele1[:xx1] 
+    x1_indices = [1] #x1_indices[0]]
+    
     xx2 = dd1 #x2_indices[0]
-    x2, dx2dr, ele2 = x2[:xx2], dx2dr[:xx1], ele2[:xx2] 
-    x2_indices = [xx1] #[x2_indices[0]]
-    print(xx1, ele1, ele2)
-
+    #x2, dx2dr, ele2 = x2[:xx2], dx2dr[:xx1], ele2[:xx2] 
+    x2, dx2dr, ele2 = x2[xx2-1:xx2], dx2dr[xx2-1:xx1], ele2[xx2-1:xx2] 
+    x2_indices = [1] #[x2_indices[0]]
+    # print(xx1, ele1, ele2)
+    print("x1", x1)
+    print("dx1dr", dx1dr)
+    print("x2", x2)
+    print("dx2dr", dx2dr)
     x1_inds, x2_inds = [], []
     for i, ind in enumerate(x1_indices):
         x1_inds.extend([i]*ind)
@@ -247,25 +252,32 @@ def kff_C(X1, X2, sigma=1.0, l=1.0, zeta=2.0, grad=False, stress=False, dd1=5):
         return C
 
 import sys
-from rbf_kernel_py import kff_many
+from rbf_kernel_py import kff_many, K_ff_single
 X1_EE = np.load('X1_EE.npy', allow_pickle=True)
 X2_EE = np.load('X2_EE.npy', allow_pickle=True)
 X1_FF = np.load('X1_FF.npy', allow_pickle=True)
 X2_FF = np.load('X2_FF.npy', allow_pickle=True)
 sigma = 9.55544058601137
-
+l = 1.0
+zeta = 2.0
 #t0 = time()
 #C_EE = kee_C(X1_EE, X2_EE, sigma=sigma)
 #C_EF = kef_C(X1_EE, X2_FF, sigma=sigma)
 #C_FE = kef_C(X2_EE, X1_FF, sigma=sigma)
-for i in range(1,10):
-    C_FF = kff_C(X1_FF, X2_FF, sigma=sigma, dd1=i)
-    print("from C")
-    print(C_FF[:3,:3])
-    print("from python")
-    C_FF = kff_many(X1_FF, X2_FF, sigma=sigma, dd1=i)
-    print(C_FF[:3,:3])
+(x1, dx1dr, ele1, x1_indices) = X1_FF
+(x2, dx2dr, ele2, x2_indices) = X2_FF
 
+for i in [16]: #range(1,20):
+    C_FF1 = kff_C(X1_FF, X2_FF, sigma=sigma, l=l, zeta=zeta, dd1=i)
+    print("from C")
+    print(C_FF1[:3,:3])
+    C_FF2 = kff_many(X1_FF, X2_FF, sigma=sigma, l=l, zeta=zeta, dd1=i)
+    print("from python")
+    print(C_FF2[:3,:3])
+    print(i, (C_FF1-C_FF2)[2,2]/C_FF1[2,2])
+
+    C_FF3 =K_ff_single(x1[i-1], x2[i-1], dx1dr[i-1], dx2dr[i-1], sigma*sigma, l*l, zeta=zeta)
+    print(C_FF3)
 #print("Elapsed time: ", time()-t0)
 #np.save("kernel_EE.npy", C_EE)
 #np.save("kernel_EF.npy", C_EF)

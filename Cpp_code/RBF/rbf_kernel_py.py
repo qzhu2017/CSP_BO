@@ -129,7 +129,7 @@ def kff_many(X1, X2, sigma=1.0, l=1.0, zeta=2.0, grad=False, stress=False, dd1=5
                 C[i, start:end, :, :] = K_ff(x1[count:count+indices1], x_all[start:end], dx1dr[count:count+indices1], dxdr_all[start:end], sigma2, l2, zeta, grad, mask)
         else:
             mask = get_mask(ele1[count:count+indices1], ele_all)
-            C[i] = K_ff(x1[count:count+indices1], x_all, dx1dr[count:count+indices1], dxdr_all, sigma2, l2, zeta, grad, mask)
+            C[i], dd = K_ff(x1[count:count+indices1], x_all, dx1dr[count:count+indices1], dxdr_all, sigma2, l2, zeta, grad, mask)
         count += indices1
 
     _C = np.zeros([m1*3, m2*3])
@@ -154,7 +154,7 @@ def kff_many(X1, X2, sigma=1.0, l=1.0, zeta=2.0, grad=False, stress=False, dd1=5
     elif stress:
         return _C, _C1
     else:
-        return _C
+        return _C, dd
 
 
 def K_ee(x1, x2, sigma2, l2, zeta=2, grad=False, mask=None, eps=1e-8, wrap=False):
@@ -282,7 +282,8 @@ def K_ff(x1, x2, dx1dr, dx2dr, sigma2, l2, zeta=2, grad=False, mask=None, eps=0)
     d2D_dx1dx2 = dd_dx1_dd_dx2 * D2[:,:,None,None] * (zeta-1)
     d2D_dx1dx2 += D1[:,:,None,None]*d2d_dx1dx2
     d2D_dx1dx2 *= zeta
-    d2k_dx1dx2 = -d2D_dx1dx2 + dD_dx1_dD_dx2 # m, n, d1, d2
+    #d2k_dx1dx2 = -d2D_dx1dx2 + dD_dx1_dD_dx2 # m, n, d1, d2
+    d2k_dx1dx2 = d2D_dx1dx2 + dD_dx1_dD_dx2 # m, n, d1, d2
 
     if grad:
 
@@ -305,38 +306,99 @@ def K_ff(x1, x2, dx1dr, dx2dr, sigma2, l2, zeta=2, grad=False, mask=None, eps=0)
         tmp0 = d2k_dx1dx2 * dk_dD[:,:,None,None] #n1, n2, d, d
         _kff1 = (dx1dr[:,None,:,None,:] * tmp0[:,:,:,:,None]).sum(axis=(0,2)) # n1,n2,3
         kff = (_kff1[:,:,:,None] * dx2dr[:,:,None,:]).sum(axis=1)  # n2, 3, 9
-        return kff
+        return kff, tmp0[0,0,:,:]
+
+
+#def K_ff(x1, x2, dx1dr, dx2dr, sigma2, l2, zeta=2, grad=False, mask=None, eps=0):
+#    l = np.sqrt(l2)
+#    l3 = l*l2
+#
+#    x1_norm = np.linalg.norm(x1, axis=1)
+#    x1_norm2 = x1_norm**2
+#    x1_norm3 = x1_norm**3
+#    x1x2_dot = x1@x2.T
+#    x1_x1_norm3 = x1/x1_norm3[:,None]
+#
+#    x2_norm = np.linalg.norm(x2, axis=1) 
+#    x2_norm2 = x2_norm**2
+#    tmp30 = np.ones(x2.shape)/x2_norm[:,None]
+#    tmp33 = np.eye(x2.shape[1])[None,:,:] - x2[:,:,None] * (x2/x2_norm2[:,None])[:,None,:]
+#
+#
+#    x2_norm3 = x2_norm**3
+#    x1x2_norm = x1_norm[:,None]*x2_norm[None,:]
+#    x2_x2_norm3 = x2/x2_norm3[:,None]
+#
+#    d = x1x2_dot/x1x2_norm
+#    D2 = d**(zeta-2)
+#    D1 = d*D2
+#    D = d*D1
+#    k = sigma2*np.exp(-(0.5/l2)*(1-D))
+#
+#    dk_dD = -(0.5/l2)*k
+#
+#    tmp31 = x1[:,None,:] * tmp30[None,:,:]
+#
+#    tmp11 = x2[None, :, :] * x1_norm[:, None, None]
+#    tmp12 = x1x2_dot[:,:,None] * (x1/x1_norm[:, None])[:,None,:]
+#    tmp13 = x1_norm2[:, None, None] * x2_norm[None, :, None]
+#    dd_dx1 = (tmp11-tmp12)/tmp13
+#
+#    tmp21 = x1[:, None, :] * x2_norm[None,:,None]
+#    tmp22 = x1x2_dot[:,:,None] * (x2/x2_norm[:, None])[None,:,:]
+#    tmp23 = x1_norm[:, None, None] * x2_norm2[None, :, None]
+#    dd_dx2 = (tmp21-tmp22)/tmp23  # (29, 1435, 24)
+#
+#
+#    tmp31 = tmp31[:,:,None,:] * x1_x1_norm3[:,None,:,None]
+#    tmp32 = x1_x1_norm3[:,None,:,None] * x2_x2_norm3[None,:,None,:] * x1x2_dot[:,:,None,None]
+#    out1 = tmp31-tmp32
+#    out2 = tmp33[None,:,:,:]/x1x2_norm[:,:,None,None]
+#    d2d_dx1dx2 = out2 - out1
+#
+#    dd_dx1_dd_dx2 = dd_dx1[:,:,:,None] * dd_dx2[:,:,None,:]
+#    d2D_dx1dx2 = zeta* (dd_dx1[:,:,:,None] * dd_dx2[:,:,None,:] * D2[:,:,None,None] * (zeta-1) + \
+#                        D1[:,:,None,None]*d2d_dx1dx2)
+#
+#    d2k_dx1dx2 = d2D_dx1dx2 - 0.5/l2 * (zeta*D1[:,:,None]*dd_dx1)[:,:,:,None] * (zeta*D1[:,:,None]*dd_dx2)[:,:,None,:] # m, n, d1, d2
+#
+#    d2k_dx1dx2 *= dk_dD[:,:,None,None] #n1, n2, d, d
+#    kff = np.einsum("mik,mnij,njl->kl", dx1dr, d2k_dx1dx2, dx2dr)
+#    return kff, d2k_dx1dx2[0,0,:,:]
 
 def K_ff_single(x1, x2, dx1dr, dx2dr, sigma2, l2, zeta=2):
 
     x1_norm = np.linalg.norm(x1)
-    x1_norm2 = x1_norm**2
+    _x1_norm2 = 1/x1_norm**2
     x2_norm = np.linalg.norm(x2)
-    x2_norm2 = x2_norm**2
-    
+    _x2_norm2 = 1/x2_norm**2
+    _l2 = 1/l2
     x1x2_dot = x1@x2.T
-    x1x2_norm = x1_norm*x2_norm
+    _x1x2_norm = 1/(x1_norm*x2_norm)
     
-    d = x1x2_dot/x1x2_norm
+    d = x1x2_dot*_x1x2_norm
     D2 = d**(zeta-2)
     D1 = d*D2
     D = d*D1
-    k = sigma2*np.exp(-(0.5/l2)*(1-D))
-    dk_dD = (-0.5/l2)*k
+    k = sigma2*np.exp(-(0.5*_l2)*(1-D))
+    dk_dD = -(0.5*_l2)*k
     
     # d2d_dx1dx2
-    dd_dx1 = (x2 - x1x2_dot/x1_norm2 * x1)/x1x2_norm # [d]
-    dd_dx2 = (x1 - x1x2_dot/x2_norm2 * x2)/x1x2_norm # [d]
-    dD_dx1 = zeta * D1 * dd_dx1
-    dD_dx2 = zeta * D1 * dd_dx2
+    dd_dx1 = (x2 - x1x2_dot*_x1_norm2 * x1)*_x1x2_norm # [d]
+    dd_dx2 = (x1 - x1x2_dot*_x2_norm2 * x2)*_x1x2_norm # [d]
     x1x1 = x1[:,None] * x1[None, :]
     x2x2 = x2[:,None] * x2[None, :]
     x1x2 = x1[:,None] * x2[None, :]
-    d2d_dx1dx2 = np.eye(len(x1)) - x2x2/x2_norm2 + x1x2*x1x2_dot/(x1x2_norm**2) - x1x1/x1_norm2
-    d2d_dx1dx2 /= x1x2_norm
+    d2d_dx1dx2 = np.eye(len(x1)) - x2x2*_x2_norm2 + x1x2*x1x2_dot*(_x1x2_norm**2) - x1x1*_x1_norm2
+    d2d_dx1dx2 *= _x1x2_norm
     
     # d2D_dx1dx2 and d2k_dx1dx2
     dd_dx1_dd_dx2 = dd_dx1[:,None] * dd_dx2[None,:] # [d, d]
-    d2D_dx1dx2 = zeta * (dd_dx1_dd_dx2 * D2 * (zeta-1) + D1 * d2d_dx1dx2) # [d, d]
-    d2k_dx1dx2 = -dk_dD * (d2D_dx1dx2 - 0.5/l2*dD_dx1*dD_dx2) # [d, d]
-    return np.einsum("ik,ij,jl->kl", dx1dr, d2k_dx1dx2, dx2dr)
+    d2D_dx1dx2 = zeta * (D1 * d2d_dx1dx2 + (zeta-1)*D2*dd_dx1_dd_dx2) # [d, d]
+
+    dD_dx1 = zeta * D1 * dd_dx1
+    dD_dx2 = zeta * D1 * dd_dx2
+    d2k_dx1dx2 = dk_dD * (d2D_dx1dx2 - 0.5*_l2*dD_dx1[:,None]*dD_dx2[None,:]) # [d, d]
+    #d2k_dx1dx2 = d2D_dx1dx2 - 0.5/l2 * (zeta*D1*dd_dx1)[:,:,:,None] * (zeta*D1*dd_dx2)[:,:,None,:] # m, n, d1, d2
+
+    return np.einsum("ik,ij,jl->kl", dx1dr, d2k_dx1dx2, dx2dr), d2k_dx1dx2

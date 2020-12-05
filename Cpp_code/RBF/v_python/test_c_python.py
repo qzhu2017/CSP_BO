@@ -15,7 +15,7 @@ print(np.allclose(py_KEF, C_KEF))
 #print(np.allclose(py_KFE, C_KFE))
 print(np.allclose(py_KFF, C_KFF))
 
-shp = py_KFF.shape
-for i in range(shp[0]):
-    for j in range(shp[1]):
-        print(py_KFF[i,j], C_KFF[i,j])
+#shp = py_KFF.shape
+#for i in range(shp[0]):
+#    for j in range(shp[1]):
+#        print(py_KFF[i,j], C_KFF[i,j])

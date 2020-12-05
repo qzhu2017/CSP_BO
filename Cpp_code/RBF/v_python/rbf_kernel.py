@@ -93,21 +93,12 @@ def kff_many(X1, X2, sigma=1.0, l=1.0, zeta=2.0, grad=False, stress=False):
     (x1, dx1dr, ele1, x1_indices) = X1
     (x_all, dxdr_all, ele_all, x2_indices) = X2
 
-    xx1 = 1 #x1_indices[0]
-    x1, dx1dr, ele1 = x1[:xx1], dx1dr[:xx1], ele1[:xx1] 
-    x1_indices = [1] #[x1_indices[0]]
-
-    xx2 = 1 #x2_indices[0]
-    x_all, dxdr_all, ele_all = x_all[:xx2], dxdr_all[:xx2], ele_all[:xx2] 
-    x2_indices = [1] #[x2_indices[0]]
-
     m1, m2, m2p = len(x1_indices), len(x2_indices), len(x_all)
     x2_inds = [(0, x2_indices[0])]
     for i in range(1, len(x2_indices)):
         ID = x2_inds[i-1][1]
         x2_inds.append( (ID, ID+x2_indices[i]) )
 
-    
     if grad:
         C = np.zeros([m1, m2p, 3, 9])
     elif stress:
@@ -116,18 +107,21 @@ def kff_many(X1, X2, sigma=1.0, l=1.0, zeta=2.0, grad=False, stress=False):
         C = np.zeros([m1, m2p, 3, 3])
 
     count = 0
+    print(m1)
     for i in range(m1):
+        print(i)
         indices1 = x1_indices[i]
+        #mask = get_mask(ele1[count:count+indices1], ele_all)
         batch = 1000
         if m2p > batch:
             for j in range(int(np.ceil(m2p/batch))):
                 start = j*batch
                 end = min([(j+1)*batch, m2p])
                 mask = get_mask(ele1[count:count+indices1], ele_all[start:end])
-                C[i, start:end, :, :] = K_ff(x1[count:count+indices1], x_all[start:end], dx1dr[count:count+indices1], dxdr_all[start:end], sigma2, l2, zeta, grad, mask)
+                C[i, start:end, :, :] = K_ff(x1[count:count+indices1], x_all[start:end], dx1dr[count:count+indices1], dxdr_all[start:end], sigma2, l2, zeta, grad, mask, device='cpu')
         else:
             mask = get_mask(ele1[count:count+indices1], ele_all)
-            C[i] = K_ff(x1[count:count+indices1], x_all, dx1dr[count:count+indices1], dxdr_all, sigma2, l2, zeta, grad, mask)
+            C[i] = K_ff(x1[count:count+indices1], x_all, dx1dr[count:count+indices1], dxdr_all, sigma2, l2, zeta, grad, mask, device='cpu')
         count += indices1
 
     _C = np.zeros([m1*3, m2*3])
@@ -182,7 +176,7 @@ def K_ee(x1, x2, sigma2, l2, zeta=2, grad=False, mask=None, eps=1e-8, wrap=False
         else:
             return Kee.reshape([n, 1])/m
 
-def K_ef(x1, x2, dx2dr, sigma2, l2, zeta=2, grad=False, mask=None, eps=1e-8):
+def K_ef(x1, x2, dx2dr, sigma2, l2, zeta=2, grad=False, mask=None, eps=1e-8, device='cpu'):
     """
     Compute the Kef between one structure and many atomic configurations
     """
@@ -223,7 +217,7 @@ def K_ef(x1, x2, dx2dr, sigma2, l2, zeta=2, grad=False, mask=None, eps=1e-8):
     else:
         return Kef/m
 
-def K_ff(x1, x2, dx1dr, dx2dr, sigma2, l2, zeta=2, grad=False, mask=None, eps=0):
+def K_ff(x1, x2, dx1dr, dx2dr, sigma2, l2, zeta=2, grad=False, mask=None, eps=0., device='cpu', wrap=False):
     l = np.sqrt(l2)
     l3 = l*l2
 
@@ -238,12 +232,11 @@ def K_ff(x1, x2, dx1dr, dx2dr, sigma2, l2, zeta=2, grad=False, mask=None, eps=0)
     tmp30 = np.ones(x2.shape)/x2_norm[:,None]
     tmp33 = np.eye(x2.shape[1])[None,:,:] - x2[:,:,None] * (x2/x2_norm2[:,None])[:,None,:]
 
-
     x2_norm3 = x2_norm**3
     x1x2_norm = x1_norm[:,None]*x2_norm[None,:]
     x2_x2_norm3 = x2/x2_norm3[:,None]
 
-    d = x1x2_dot/x1x2_norm
+    d = x1x2_dot/(x1x2_norm)
     D2 = d**(zeta-2)
     D1 = d*D2
     D = d*D1
@@ -252,8 +245,8 @@ def K_ff(x1, x2, dx1dr, dx2dr, sigma2, l2, zeta=2, grad=False, mask=None, eps=0)
     if mask is not None:
         k[mask] = 0
 
-    dk_dD = (-0.5/l2)*k
-    zd2 = -0.5/l2*zeta*zeta*(D1**2)
+    dk_dD = (0.5/l2)*k
+    zd2 = 0.5/l2*zeta*zeta*(D1**2)
 
     tmp31 = x1[:,None,:] * tmp30[None,:,:]
 
@@ -280,7 +273,6 @@ def K_ff(x1, x2, dx1dr, dx2dr, sigma2, l2, zeta=2, grad=False, mask=None, eps=0)
     d2D_dx1dx2 = dd_dx1_dd_dx2 * D2[:,:,None,None] * (zeta-1)
     d2D_dx1dx2 += D1[:,:,None,None]*d2d_dx1dx2
     d2D_dx1dx2 *= zeta
-    #d2k_dx1dx2 = -d2D_dx1dx2 + dD_dx1_dD_dx2 # m, n, d1, d2
     d2k_dx1dx2 = d2D_dx1dx2 + dD_dx1_dD_dx2 # m, n, d1, d2
 
     if grad:
@@ -312,12 +304,13 @@ X2_EE = np.load('../X2_EE.npy', allow_pickle=True)
 X1_FF = np.load('../X1_FF.npy', allow_pickle=True)
 X2_FF = np.load('../X2_FF.npy', allow_pickle=True)
 sigma = 9.55544058601137
+l = 0.5
 
 t0 = time()
-C_EE = kee_many(X1_EE, X2_EE, sigma=sigma)
-C_EF = kef_many(X1_EE, X2_FF, sigma=sigma)
-C_FF = kff_many(X1_FF, X2_FF, sigma=sigma)
-print(C_FF)
+C_EE = kee_many(X1_EE, X2_EE, sigma=sigma, l=l)
+C_EF = kef_many(X1_EE, X2_FF, sigma=sigma, l=l)
+C_FF = kff_many(X1_FF, X2_FF, sigma=sigma, l=l)
+
 print("Elapsed time: ", time()-t0)
 np.save("kernel_EE.npy", C_EE)
 np.save("kernel_EF.npy", C_EF)

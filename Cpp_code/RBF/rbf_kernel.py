@@ -38,17 +38,32 @@ def kee_C(X1, X2, sigma=1.0, l=1.0, zeta=2.0, grad=False):
     pdat_ele2 = ffi.new('int['+str(m2p)+']', ele2.tolist())
     pdat_x1_inds=ffi.new('int['+str(m1p)+']', x1_inds)
     pdat_x2_inds=ffi.new('int['+str(m2p)+']', x2_inds)
-    pout=ffi.new('double['+str(m1*m2)+']')
-
-    lib.kee_many(m1p, m2p, d, m2, zeta, sigma2, l2,
-                 pdat_x1, pdat_ele1, pdat_x1_inds,
-                 pdat_x2, pdat_ele2, pdat_x2_inds,
-                 pout)
-
-    C = np.frombuffer(ffi.buffer(pout, m1*m2*8), dtype=np.float64)
-    C.shape = (m1, m2)
-    C /= (np.array(x1_indices)[:,None] * np.array(x2_indices)[None,:])
-
+    if grad:
+        _l3 = 1 / (l * l2)
+        pout = ffi.new('double['+str(m1*m2)+']')
+        dpout_dl = ffi.new('double['+str(m1*m2)+']')
+        lib.kee_many_with_grad(m1p, m2p, d, m2, zeta, sigma2, l2,
+                               pdat_x1, pdat_ele1, pdat_x1_inds,
+                               pdat_x2, pdat_ele2, pdat_x2_inds,
+                               pout, dpout_dl)
+        C = np.frombuffer(ffi.buffer(pout, m1*m2*8), dtype=np.float64)
+        C.shape = (m1, m2)
+        C /= (np.array(x1_indices)[:,None] * np.array(x2_indices)[None,:])
+        C_l = np.frombuffer(ffi.buffer(dpout_dl, m1*m2*8), dtype=np.float64)
+        C_l.shape = (m1, m2)
+        C_l /= (np.array(x1_indices)[:,None] * np.array(x2_indices)[None,:])
+        C_l *= _l3
+        C_s = (2/sigma)*C
+    else:
+        pout=ffi.new('double['+str(m1*m2)+']')
+        lib.kee_many(m1p, m2p, d, m2, zeta, sigma2, l2,
+                     pdat_x1, pdat_ele1, pdat_x1_inds,
+                     pdat_x2, pdat_ele2, pdat_x2_inds,
+                     pout)
+        C = np.frombuffer(ffi.buffer(pout, m1*m2*8), dtype=np.float64)
+        C.shape = (m1, m2)
+        C /= (np.array(x1_indices)[:,None] * np.array(x2_indices)[None,:])
+        
     ffi.release(pdat_x1)
     ffi.release(pdat_ele1)
     ffi.release(pdat_x1_inds)
@@ -56,10 +71,10 @@ def kee_C(X1, X2, sigma=1.0, l=1.0, zeta=2.0, grad=False):
     ffi.release(pdat_ele2)
     ffi.release(pdat_x2_inds)
     ffi.release(pout)
+    if grad:
+        ffi.release(dpout_dl)
 
     if grad:
-        C_s = 2*C/sigma
-        C_l = np.zeros([m1, m2]) # Need to change this for RBF
         return C, C_s, C_l
     else:
         return C
@@ -109,6 +124,14 @@ def kef_C(X1, X2, sigma=1.0, l=1.0, zeta=2.0, grad=False, stress=False, transpos
                      pdat_x2, pdat_dx2dr, pdat_ele2, pdat_x2_inds,
                      pout)
         d2 = 9
+    elif grad:
+        pdat_dx2dr=ffi.new('double['+str(m2p*d*6)+']', list(dx2dr.ravel()))
+        pout=ffi.new('double['+str(m1*m2*6)+']')
+        lib.kef_many_with_grad(m1p, m2p, d, m2, zeta, sigma2, l,
+                              pdat_x1, pdat_ele1, pdat_x1_inds,
+                              pdat_x2, pdat_dx2dr, pdat_ele2, pdat_x2_inds,
+                              pout)
+        d2 = 6
     else:
         pdat_dx2dr=ffi.new('double['+str(m2p*d*3)+']', list(dx2dr.ravel()))
         pout=ffi.new('double['+str(m1*m2*3)+']')
@@ -122,11 +145,13 @@ def kef_C(X1, X2, sigma=1.0, l=1.0, zeta=2.0, grad=False, stress=False, transpos
     out = np.frombuffer(ffi.buffer(pout, m1*m2*d2*8), dtype=np.float64)
     out.shape = (m1, m2, d2)
     out /= np.array(x1_indices)[:,None,None]
-    out *= -1
 
     C = out[:, :, :3].reshape([m1, m2*3])
     if stress:
         Cs = out[:, :, 3:].reshape([m1, m2*6])
+    elif grad:
+        C_l = out[:, :, 3:].reshape([m1, m2*3])
+        C_s = (2/sigma) * C
     else:
         Cs = np.zeros([m1, m2*6])
 
@@ -142,10 +167,7 @@ def kef_C(X1, X2, sigma=1.0, l=1.0, zeta=2.0, grad=False, stress=False, transpos
     if transpose:
         C = C.T
         Cs = Cs.T
-
     if grad:
-        C_s = 2*C/sigma
-        C_l = np.zeros([m1, m2*3])
         return C, C_s, C_l
     elif stress:
         return C, Cs
@@ -198,7 +220,27 @@ def kff_C(X1, X2, sigma=1.0, l=1.0, zeta=2.0, grad=False, stress=False):
                      pdat_x1, pdat_dx1dr, pdat_ele1, pdat_x1_inds,
                      pdat_x2, pdat_dx2dr, pdat_ele2, pdat_x2_inds,
                      pout)
-        d1 = 9
+        out = np.frombuffer(ffi.buffer(pout, m1*9*m2*3*8), dtype=np.float64)
+        out.shape = (m1, d1, m2*3)
+        C = out[:, :3, :].reshape([m1*3, m2*3])
+        Cs = out[:, 3:, :].reshape([m1*6, m2*3])
+    
+    elif grad:
+        pdat_dx1dr = ffi.new('double['+str(m1p*d*3)+']', dx1dr.ravel().tolist())
+        pout = ffi.new('double['+str(m1*3*m2*3*2)+']')
+        dpout_dl = ffi.new('double['+str(m1*3*m2*3*2)+']')
+        lib.kff_many_with_grad(m1p, m2p, m2p_start, m2p_end, d, m2, zeta, sigma2, l,
+                               pdat_x1, pdat_dx1dr, pdat_ele1, pdat_x1_inds,
+                               pdat_x2, pdat_dx2dr, pdat_ele2, pdat_x2_inds,
+                               pout, dpout_dl)
+        out = np.frombuffer(ffi.buffer(pout, m1*3*m2*3*8), dtype=np.float64)
+        out.shape = (m1, 3, m2*3)
+        C = out[:, :3, :].reshape([m1*3, m2*3])
+        dout_dl = np.frombuffer(ffi.buffer(dpout_dl, m1*3*m2*3*8), dtype=np.float64)
+        dout_dl.shape = (m1, 3, m2*3)
+        C_l = dout_dl[:, :3, :].reshape([m1*3, m2*3])
+        C_s = (2/sigma)*C
+
     else:
         pdat_dx1dr=ffi.new('double['+str(m1p*d*3)+']', dx1dr.ravel().tolist())
         pout=ffi.new('double['+str(m1*3*m2*3)+']')
@@ -206,13 +248,12 @@ def kff_C(X1, X2, sigma=1.0, l=1.0, zeta=2.0, grad=False, stress=False):
                      pdat_x1, pdat_dx1dr, pdat_ele1, pdat_x1_inds,
                      pdat_x2, pdat_dx2dr, pdat_ele2, pdat_x2_inds,
                      pout)
-        d1 = 3
+        out = np.frombuffer(ffi.buffer(pout, m1*3*m2*3*8), dtype=np.float64)
+        out.shape = (m1, 3, m2*3)
+        C = out[:, :3, :].reshape([m1*3, m2*3])
 
-    out = np.frombuffer(ffi.buffer(pout, m1*d1*m2*3*8), dtype=np.float64)
-    out.shape = (m1, d1, m2*3)
-    
-    #Cout = np.zeros([m1, d1, m2*3])
-    Cout = out
+    #out = np.frombuffer(ffi.buffer(pout, m1*d1*m2*3*8), dtype=np.float64)
+    #out.shape = (m1, d1, m2*3)
 
     ffi.release(pdat_x1)
     ffi.release(pdat_dx1dr)
@@ -223,15 +264,17 @@ def kff_C(X1, X2, sigma=1.0, l=1.0, zeta=2.0, grad=False, stress=False):
     ffi.release(pdat_ele2)
     ffi.release(pdat_x2_inds)  
     ffi.release(pout)
-
-    #Cout *= (sigma*sigma*zeta)
-    C = Cout[:, :3, :].reshape([m1*3, m2*3])
-    if stress:
-        Cs = Cout[:, 3:, :].reshape([m1*6, m2*3])
     if grad:
-        C_l = 2*C/sigma
-        C_s = np.zeros([m1*3, m2*3])
-        return C, C_l, C_s
+        ffi.release(dpout_dl)
+
+    #C = out[:, :3, :].reshape([m1*3, m2*3])
+    #if stress:
+        #Cs = out[:, 3:, :].reshape([m1*6, m2*3])
+    #    return C, Cs
+    if grad:
+        #C_s = (2/sigma)*C
+        #C_l = out[:
+        return C, C_s, C_l
     elif stress:
         return C, Cs
     else:
@@ -245,13 +288,33 @@ sigma = 9.55544058601137
 l = 0.5
 
 t0 = time()
-C_EE = kee_C(X1_EE, X2_EE, sigma=sigma, l=l)
-C_EF = kef_C(X1_EE, X2_FF, sigma=sigma, l=l)
-C_FE = kef_C(X2_EE, X1_FF, sigma=sigma, l=l)
-C_FF = kff_C(X1_FF, X2_FF, sigma=sigma, l=l)
+
+# No grad
+#C_EE = kee_C(X1_EE, X2_EE, sigma=sigma, l=l)
+#C_EF = kef_C(X1_EE, X2_FF, sigma=sigma, l=l)
+#C_FE = kef_C(X2_EE, X1_FF, sigma=sigma, l=l)
+#C_FF = kff_C(X1_FF, X2_FF, sigma=sigma, l=l)
+
+# Grad
+C_EE, C_s_EE, C_l_EE = kee_C(X1_EE, X2_EE, sigma=sigma, l=l, grad=True)
+C_EF, C_s_EF, C_l_EF = kef_C(X1_EE, X2_FF, sigma=sigma, l=l, grad=True)
+C_FF, C_s_FF, C_l_FF = kff_C(X1_FF, X2_FF, sigma=sigma, l=l, grad=True)
+
 print("Elapsed time: ", time()-t0)
 
+# No grad
+#np.save("kernel_EE.npy", C_EE)
+#np.save("kernel_EF.npy", C_EF)
+#np.save("kernel_FE.npy", C_FE)
+#np.save("kernel_FF.npy", C_FF)
+
+# Grad
 np.save("kernel_EE.npy", C_EE)
+np.save("kernel_EE_l.npy", C_l_EE)
+np.save("kernel_EE_s.npy", C_s_EE)
 np.save("kernel_EF.npy", C_EF)
-np.save("kernel_FE.npy", C_FE)
+np.save("kernel_EF_l.npy", C_l_EF)
+np.save("kernel_EF_s.npy", C_s_EF)
 np.save("kernel_FF.npy", C_FF)
+np.save("kernel_FF_l.npy", C_l_FF)
+np.save("kernel_FF_s.npy", C_s_FF)

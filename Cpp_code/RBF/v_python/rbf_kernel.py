@@ -307,11 +307,31 @@ sigma = 9.55544058601137
 l = 0.5
 
 t0 = time()
-C_EE = kee_many(X1_EE, X2_EE, sigma=sigma, l=l)
-C_EF = kef_many(X1_EE, X2_FF, sigma=sigma, l=l)
-C_FF = kff_many(X1_FF, X2_FF, sigma=sigma, l=l)
+# No grad
+#C_EE = kee_many(X1_EE, X2_EE, sigma=sigma, l=l)
+#C_EF = kef_many(X1_EE, X2_FF, sigma=sigma, l=l)
+#C_FF = kff_many(X1_FF, X2_FF, sigma=sigma, l=l)
+
+
+# Grad
+C_EE, C_s_EE, C_l_EE = kee_many(X1_EE, X2_EE, sigma=sigma, l=l, grad=True)
+C_EF, C_s_EF, C_l_EF = kef_many(X1_EE, X2_FF, sigma=sigma, l=l, grad=True)
+C_FF, C_s_FF, C_l_FF = kff_many(X1_FF, X2_FF, sigma=sigma, l=l, grad=True)
 
 print("Elapsed time: ", time()-t0)
+
+# No Grad
+#np.save("kernel_EF.npy", C_EE)
+#np.save("kernel_EF.npy", C_EF)
+#np.save("kernel_FF.npy", C_FF)
+
+# Grad
 np.save("kernel_EE.npy", C_EE)
+np.save("kernel_EE_l.npy", C_l_EE)
+np.save("kernel_EE_s.npy", C_s_EE)
 np.save("kernel_EF.npy", C_EF)
+np.save("kernel_EF_l.npy", C_l_EF)
+np.save("kernel_EF_s.npy", C_s_EF)
 np.save("kernel_FF.npy", C_FF)
+np.save("kernel_FF_l.npy", C_l_FF)
+np.save("kernel_FF_s.npy", C_s_FF)

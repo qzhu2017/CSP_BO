@@ -1,21 +1,45 @@
 import numpy as np
 
 py_KEE = np.load("kernel_EE.npy")
+py_KEE_s = np.load("kernel_EE_s.npy")
+py_KEE_l = np.load("kernel_EE_l.npy")
 py_KEF = np.load("kernel_EF.npy")
-#py_KFE = np.load("kernel_FE.npy")
+py_KEF_s = np.load("kernel_EF_s.npy")
+py_KEF_l = np.load("kernel_EF_l.npy")
 py_KFF = np.load("kernel_FF.npy")
+py_KFF_s = np.load("kernel_FF_s.npy")
+py_KFF_l = np.load("kernel_FF_l.npy")
+
+#py_KEE = np.load("kernel_EE.npy")
+#py_KEF = np.load("kernel_EF.npy")
+##py_KFE = np.load("kernel_FE.npy")
+#py_KFF = np.load("kernel_FF.npy")
 
 C_KEE = np.load("../kernel_EE.npy")
+C_KEE_s = np.load("../kernel_EE_s.npy")
+C_KEE_l = np.load("../kernel_EE_l.npy")
 C_KEF = np.load("../kernel_EF.npy")
-#C_KFE = np.load("../kernel_FE.npy")
+C_KEF_s = np.load("../kernel_EF_s.npy")
+C_KEF_l = np.load("../kernel_EF_l.npy")
 C_KFF = np.load("../kernel_FF.npy")
+C_KFF_s = np.load("../kernel_FF_s.npy")
+C_KFF_l = np.load("../kernel_FF_l.npy")
+
+#C_KEE = np.load("../kernel_EE.npy")
+#C_KEF = np.load("../kernel_EF.npy")
+#C_KFF = np.load("../kernel_FF.npy")
 
 print(np.allclose(py_KEE, C_KEE))
+print(np.allclose(py_KEE_s, C_KEE_s))
+print(np.allclose(py_KEE_l, C_KEE_l))
 print(np.allclose(py_KEF, C_KEF))
-#print(np.allclose(py_KFE, C_KFE))
+print(np.allclose(py_KEF_s, C_KEF_s))
+print(np.allclose(py_KEF_l, C_KEF_l))
 print(np.allclose(py_KFF, C_KFF))
+print(np.allclose(py_KFF_s, C_KFF_s))
+print(np.allclose(py_KFF_l, C_KFF_l))
 
-#shp = py_KFF.shape
-#for i in range(shp[0]):
-#    for j in range(shp[1]):
-#        print(py_KFF[i,j], C_KFF[i,j])
+#print(np.allclose(py_KEE, C_KEE))
+#print(np.allclose(py_KEF, C_KEF))
+##print(np.allclose(py_KFE, C_KFE))
+#print(np.allclose(py_KFF, C_KFF))

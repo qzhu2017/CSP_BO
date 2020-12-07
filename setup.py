@@ -45,5 +45,6 @@ setup(
     setup_requires=['cffi>=1.0.0'],
     cffi_modules=[
         "cspbo/kernels/libdot_builder.py:ffibuilder",
+        "cspbo/kernels/librbf_builder.py:ffibuilder"
     ],
 )

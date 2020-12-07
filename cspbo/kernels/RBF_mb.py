@@ -126,7 +126,7 @@ class RBF_mb():
                         C_ee, C_ee_s, C_ee_l = kee_C(d1, d2, sigma, l, zeta, grad=True)
                     elif key1 == 'energy' and key2 == 'force':
                         C_ef, C_ef_s, C_ef_l = kef_C(d1, d2, sigma, l, zeta, grad=True)
-                        C_fe, C_fe_s, C_fe_l = C_ef.T, C_ef1.T, C_ef2.T
+                        C_fe, C_fe_s, C_fe_l = C_ef.T, C_ef_s.T, C_ef_l.T
                     elif key1 == 'force' and key2 == 'force':
                         C_ff, C_ff_s, C_ff_l = kff_C(d1, d2, sigma, l, zeta, grad=True)
         C = build_covariance(C_ee, C_ef, C_fe, C_ff, None, None)

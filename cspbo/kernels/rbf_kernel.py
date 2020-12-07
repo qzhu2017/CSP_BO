@@ -22,6 +22,9 @@ def kee_C(X1, X2, sigma=1.0, l=1.0, zeta=2.0, grad=False):
     """
     sigma2, l2 = sigma*sigma, l*l
 
+    if isinstance(X1, list):
+        X1 = list_to_tuple(X1, mode='energy')
+
     (x1, ele1, x1_indices) = X1
     (x2, ele2, x2_indices) = X2
 
@@ -99,6 +102,12 @@ def kef_C(X1, X2, sigma=1.0, l=1.0, zeta=2.0, grad=False, stress=False, transpos
     """
     sigma2, l2 = sigma*sigma, l*l
 
+    if isinstance(X1, list):
+        X1 = list_to_tuple(X1, mode='energy')
+
+    if isinstance(X2, list):
+        X2 = list_to_tuple(X2, stress=stress)
+
     (x1, ele1, x1_indices) = X1
     (x2, dx2dr, ele2, x2_indices) = X2
 
@@ -120,7 +129,7 @@ def kef_C(X1, X2, sigma=1.0, l=1.0, zeta=2.0, grad=False, stress=False, transpos
     if stress:
         pdat_dx2dr=ffi.new('double['+str(m2p*d*9)+']', list(dx2dr.ravel()))
         pout=ffi.new('double['+str(m1*m2*9)+']')
-        lib.kef_many_stress(m1p, m2p, d, m2, zeta,
+        lib.kef_many_stress(m1p, m2p, d, m2, zeta, sigma2, l2,
                      pdat_x1, pdat_ele1, pdat_x1_inds,
                      pdat_x2, pdat_dx2dr, pdat_ele2, pdat_x2_inds,
                      pout)
@@ -195,6 +204,9 @@ def kff_C(X1, X2, sigma=1.0, l=1.0, zeta=2.0, grad=False, stress=False):
     rank=comm.Get_rank()
 
     sigma2, l2 = sigma*sigma, l*l
+
+    if isinstance(X1, list):
+        X1 = list_to_tuple(X1, stress=stress)
 
     (x1, dx1dr, ele1, x1_indices) = X1
     (x2, dx2dr, ele2, x2_indices) = X2
@@ -296,7 +308,7 @@ def kff_C(X1, X2, sigma=1.0, l=1.0, zeta=2.0, grad=False, stress=False):
         Cout = np.zeros([m1, 3, m2*3])
         comm.Barrier()
         comm.Allreduce(
-            [dout_dl, MPI.DOUBLE],
+            [out, MPI.DOUBLE],
             [Cout, MPI.DOUBLE],
             op = MPI.SUM,
             )

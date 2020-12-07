@@ -654,7 +654,7 @@ void kff_many_stress(int n1, int n2, int n2_start, int n2_end, int d, int x2i, d
     double *d2k_dx1dx2, *C;
 
     d2k_dx1dx2=new double[d*d];
-    C=new double[d*3];
+    C=new double[d*9];
 
     for(ii=0; ii<n1; ii++){
     	_ele1 = ele1[ii];
@@ -810,7 +810,7 @@ void kff_many_stress(int n1, int n2, int n2_start, int n2_end, int d, int x2i, d
                             
     	    	} 
     	    }
-    	    }
+    	}
     }
     delete d2k_dx1dx2;
     delete C;

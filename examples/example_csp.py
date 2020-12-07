@@ -3,11 +3,11 @@ This is a script to use the pretrained model to perform geometry relaxation
 of the random crystals.
 """
 import numpy as np
-from cspbo.gaussianprocess_ef import GaussianProcess as gpr
+from cspbo.gaussianprocess import GaussianProcess as gpr
 from cspbo.calculator import GPR
 from ase.optimize import BFGS, FIRE
-from ase.constraints import ExpCellFilter, UnitCellFilter
-from ase.spacegroup.symmetrize import FixSymmetry, check_symmetry
+from ase.constraints import ExpCellFilter
+from ase.spacegroup.symmetrize import FixSymmetry
 
 from spglib import get_symmetry_dataset
 from pyxtal.interface.gulp import GULP
@@ -21,7 +21,7 @@ species = ["Si"]
 numIons = [4]
 ff = "edip_si.lib" 
 model = gpr()
-model.load("models/Si.json")
+model.load("models/Si_Dot.json")
 model.kernel.ncpu = 4
 calc_gp = GPR(ff=model, stress=True, return_std=True)
 # ================= Get the first step of training database
@@ -32,11 +32,11 @@ for i in range(50):
     train_data = []
     struc = PyXtal(sgs, species, numIons) 
     struc.set_calculator(calc_gp)
-    dyn = FIRE(struc)
+    dyn = FIRE(struc, logfile='results.log')
     dyn.run(fmax=0.05, steps=10)
 
     ecf = ExpCellFilter(struc)
-    dyn = FIRE(ecf)
+    dyn = FIRE(ecf, logfile='results.log')
     dyn.run(fmax=0.005, steps=50)
     E = struc.get_potential_energy()/len(struc)
     E_var = struc._calc.get_var_e()

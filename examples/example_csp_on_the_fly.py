@@ -1,7 +1,7 @@
 import numpy as np
 #from cspbo.RBF_mb import RBF_mb
 from cspbo.Dot_mb import Dot_mb
-from cspbo.gaussianprocess_ef import GaussianProcess as gpr
+from cspbo.gaussianprocess import GaussianProcess as gpr
 from cspbo.calculator import GPR, LJ
 from ase.optimize import FIRE
 from ase.constraints import ExpCellFilter

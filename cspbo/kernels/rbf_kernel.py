@@ -1,7 +1,7 @@
-from ._rbf_kernel import lib
-from ..utilities import list_to_tuple
 from cffi import FFI
 import numpy as np
+from ..utilities import list_to_tuple
+from ._rbf_kernel import lib
 from mpi4py import MPI
 
 ffi = FFI()
@@ -326,8 +326,6 @@ def kff_C(X1, X2, sigma=1.0, l=1.0, zeta=2.0, grad=False, stress=False):
     ffi.release(pout)
     if grad:
         ffi.release(dpout_dl)
-
-    if grad:
         return C, C_s, C_l
     elif stress:
         return C, Cs

@@ -23,9 +23,11 @@ def PyXtal(sgs, species, numIons):
     Return:
         the pyxtal structure
     """
-    struc = pyxtal()
-    struc.from_random(3, choice(sgs), species, numIons)
- 
+    while True:
+        struc = pyxtal()
+        struc.from_random(3, choice(sgs), species, numIons, force_pass=True)
+        if struc.valid:
+            return struc.to_ase()
 
 def new_pt(data, Refs, d_tol=1e-1, eps=1e-8):
     (X, ele) = data
@@ -51,11 +53,14 @@ def mae(true, predicted):
 
 def r2(true, predicted):
     """ Calculate the r square of energy or force. """
-    true, predicted = np.array(true), np.array(predicted)
-    t_bar = sum(true)/len(true)
-    square_error = sum((true-predicted) ** 2)
-    true_variance = sum((true-t_bar) ** 2) + 1e-8
-    return 1 - square_error / true_variance
+    if len(true) == 0:
+        return 1
+    else:
+        true, predicted = np.array(true), np.array(predicted)
+        t_bar = sum(true)/len(true)
+        square_error = sum((true-predicted) ** 2)
+        true_variance = sum((true-t_bar) ** 2) + 1e-8
+        return 1 - square_error / true_variance
 
 def metrics(y_train, y_test, y_train_pred, y_test_pred, header):
     r2_train = 'R2 {:6.4f}'.format(r2(y_train, y_train_pred))
@@ -85,13 +90,11 @@ def metric_single(y_train, y_train_pred, header, show_max=False):
     return str1
 
 def build_desc(method='SO3', rcut=5.0, lmax=4, nmax=4, alpha=2.0):
-    #from pyxtal_ff.descriptors.ACSF import ACSF
-    #from pyxtal_ff.descriptors.EAMD import EAMD
     if method == "SO3":
-        from pyxtal_ff.descriptors.SO3 import SO3
+        from cspbo.descriptors.SO3 import SO3
         des = SO3(nmax=nmax, lmax=lmax, rcut=rcut, alpha=alpha, derivative=True, stress=True)
     elif method == "SO4":
-        from pyxtal_ff.descriptors.SO4 import SO4_Bispectrum
+        from cspbo.descriptors.SO4 import SO4_Bispectrum
         des = SO4_Bispectrum(lmax=lmax, rcut=rcut, derivative=True, stress=True) 
 
     return des

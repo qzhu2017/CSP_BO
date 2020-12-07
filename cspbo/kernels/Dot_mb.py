@@ -63,7 +63,7 @@ class Dot_mb():
             for i in range(NF):
                 (x1, dx1dr, ele1) = data["force"][i]
                 mask = get_mask(ele1, ele1)
-                tmp = K_ff(x1, x1, dx1dr, dx1dr, sigma2, sigma02, zeta, mask)
+                tmp = K_ff(x1, x1, dx1dr[:,:,:3], dx1dr[:,:,:3], sigma2, sigma02, zeta, mask)
                 C_ff[i*3:(i+1)*3] = np.diag(tmp)
 
         if C_ff is None:
@@ -94,19 +94,15 @@ class Dot_mb():
                 if len(d1)>0 and len(d2)>0:
                     if key1 == 'energy' and key2 == 'energy':
                         C_ee = kee_C(d1, d2, sigma, sigma0, zeta)
-                        #print(C_ee)
                     elif key1 == 'energy' and key2 == 'force':
                         C_ef = kef_C(d1, d2, sigma, zeta)
-                        #print(C_ef[:6,:6])
                     elif key1 == 'force' and key2 == 'energy':
                         if not same:
                             C_fe = kef_C(d2, d1, sigma, zeta, transpose=True)
                         else:
                             C_fe = C_ef.T 
-                        #print(C_fe[:6,:6])
                     elif key1 == 'force' and key2 == 'force':
                         C_ff = kff_C(d1, d2, sigma, zeta)
-                        #print(C_ff[:6,:6])
 
         return build_covariance(C_ee, C_ef, C_fe, C_ff)
         

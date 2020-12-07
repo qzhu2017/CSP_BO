@@ -81,7 +81,7 @@ class GaussianProcess():
                     #print("scipy", approx_fprime(params, self.log_marginal_likelihood, 1e-4))
                     #print("scipy", approx_fprime(params, self.log_marginal_likelihood, 1e-5))
                     #print("scipy", approx_fprime(params, self.log_marginal_likelihood, 1e-6))
-                    #print(strs)
+                    print(strs)
                     #import sys; sys.exit()
                 return (-lml, -grad)
             else:
@@ -289,8 +289,8 @@ class GaussianProcess():
             test_X_F = {"force": [(data[0], data[1], data[3]) for data in test_data['force']]}
             E = np.array([data[1] for data in test_data['energy']])
             F = np.array([data[2] for data in test_data['force']]).flatten()
-            test_X_E = list_to_tuple(test_X_E, mode="energy")
-            test_X_F = list_to_tuple(test_X_F)
+            #test_X_E = list_to_tuple(test_X_E["energy"], mode="energy")
+            #test_X_F = list_to_tuple(test_X_F["force"])
 
         if total_E:
             for i in range(len(E)):
@@ -713,7 +713,7 @@ class GaussianProcess():
         pts_e = CUR(K[:N_e,:N_e], e_tol)
         pts = CUR(K[N_e:,N_e:], f_tol)
         pts_f = []
-        if N_f > 0:
+        if N_f > 1:
             for i in range(N_f):
                 if len(pts[pts==i*3])==1 and len(pts[pts==(i*3+1)])==1 and len(pts[pts==(i*3+2)])==1:
                     pts_f.append(i)

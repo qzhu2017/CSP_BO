@@ -55,7 +55,7 @@ class RBF_mb():
             for i in range(NE):
                 (x1, ele1) = data["energy"][i]
                 mask = get_mask(ele1, ele1)
-                C_ee[i] = K_ee(x1, x1, sigma2, l2, zeta, False, mask, wrap=True) 
+                C_ee[i] = K_ee(x1, x1, sigma2, l2, zeta, False, mask) 
 
         if "force" in data:
             NF = len(data["force"])
@@ -63,7 +63,7 @@ class RBF_mb():
             for i in range(NF):
                 (x1, dx1dr, ele1) = data["force"][i]
                 mask = get_mask(ele1, ele1)
-                tmp = K_ff(x1, x1, dx1dr, dx1dr, sigma2, l2, zeta, False, mask, wrap=True)
+                tmp = K_ff(x1, x1, dx1dr, dx1dr, sigma2, l2, zeta, False, mask)
                 C_ff[i*3:(i+1)*3] = np.diag(tmp)
 
         if C_ff is None:
@@ -160,7 +160,7 @@ class RBF_mb():
 
 # ===================== Standalone functions to compute K_ee, K_ef, K_ff
 
-def K_ee(x1, x2, sigma2, l2, zeta=2, grad=False, mask=None, eps=1e-8, wrap=False):
+def K_ee(x1, x2, sigma2, l2, zeta=2, grad=False, mask=None, eps=1e-8):
     """
     Compute the Kee between two structures
     Args:
@@ -184,22 +184,10 @@ def K_ee(x1, x2, sigma2, l2, zeta=2, grad=False, mask=None, eps=1e-8, wrap=False
 
     Kee = k.sum(axis=0)
     m = len(x1)
+    n = len(x2)
+    return Kee.sum()/(m*n)
 
-    if grad:
-        l3 = np.sqrt(l2)*l2
-        dKee_dsigma = 2*Kee/np.sqrt(sigma2)
-        dKee_dl = (k*(1-D)).sum(axis=0)/l3
-        #ans = np.stack((Kee/m, dKee_dsigma/m, dKee_dl/m), axis=-1)
-        #print(Kee.shape, ans.shape)
-        return np.stack((Kee/m, dKee_dsigma/m, dKee_dl/m), axis=-1)
-    else:
-        n = len(x2)
-        if wrap:
-            return Kee.sum()/(m*n)
-        else:
-            return Kee.reshape([n, 1])/m
-
-def K_ff(x1, x2, dx1dr, dx2dr, sigma2, l2, zeta=2, grad=False, mask=None, eps=1e-8, device='cpu', wrap=False):
+def K_ff(x1, x2, dx1dr, dx2dr, sigma2, l2, zeta=2, mask=None, eps=1e-8):
     """
     Compute the Kff between one and many configurations
     x2, dx1dr, dx2dr will be called from the cuda device in the GPU mode
@@ -263,72 +251,9 @@ def K_ff(x1, x2, dx1dr, dx2dr, sigma2, l2, zeta=2, grad=False, mask=None, eps=1e
     d2D_dx1dx2 *= zeta
     d2k_dx1dx2 = -d2D_dx1dx2 + dD_dx1_dD_dx2 # m, n, d1, d2
    
-    if grad:
-
-        K_ff_0 = (d2k_dx1dx2[:,:,:,:,None] * dx1dr[:,None,:,None,:]).sum(axis=2) 
-        K_ff_0 = (K_ff_0[:,:,:,:,None] * dx2dr[None,:,:,None,:]).sum(axis=2) 
-        Kff = (K_ff_0 * dk_dD[:,:,None,None]).sum(axis=0)
-
-        d2k_dDdsigma = 2*dk_dD/np.sqrt(sigma2)
-        d2k_dDdl = ((D-1)/l3 + 2/l)*dk_dD
-        #d2k_dDdl = (D/l3 + 2/l)*dk_dD
-
-        dKff_dsigma = (K_ff_0 * d2k_dDdsigma[:,:,None,None]).sum(axis=0)
-        dKff_dl = (-K_ff_0 * d2k_dDdl[:,:,None,None]).sum(axis=0)
-        
-        tmp = -dD_dx1_dD_dx2/l*2
-        K_ff_1 = (tmp[:,:,:,:,None] * dx1dr[:,None,:,None,:]).sum(axis=2)
-        K_ff_1 = (K_ff_1[:,:,:,:,None] * dx2dr[None,:,:,None,:]).sum(axis=2)
-        dKff_dl += (K_ff_1 * dk_dD[:,:,None,None]).sum(axis=0) #/l*2
-        return np.concatenate((Kff, dKff_dsigma, dKff_dl), axis=-1)
-    else:
-        tmp0 = d2k_dx1dx2 * dk_dD[:,:,None,None] #n1, n2, d, d
-        _kff1 = (dx1dr[:,None,:,None,:] * tmp0[:,:,:,:,None]).sum(axis=(0,2)) # n1,n2,3
-        kff = (_kff1[:,:,:,None] * dx2dr[:,:,None,:]).sum(axis=1)  # n2, 3, 9
-        if wrap:
-            kff = kff.sum(axis=0)
-        return kff
-
-def K_ef(x1, x2, dx2dr, sigma2, l2, zeta=2, grad=False, mask=None, eps=1e-8, device='gpu'):
-    """
-    Compute the Kef between one structure and many atomic configurations
-    """
-    m = len(x1)
-    x1_norm = np.linalg.norm(x1, axis=1) + eps
-    x2_norm = np.linalg.norm(x2, axis=1) + eps
-    x2_norm2 = x2_norm**2
-    x1x2_dot = x1@x2.T
-    d = x1x2_dot/(eps+x1_norm[:,None]*x2_norm[None,:])
-    D2 = d**(zeta-2)
-    D1 = d*D2
-    D = d*D1
-
-
-    k = sigma2*np.exp(-(0.5/l2)*(1-D))
-    if mask is not None:
-        k[mask] = 0
-    dk_dD = (-0.5/l2)*k
-    
-    tmp21 = x1[:, None, :] * x2_norm[None,:,None]
-    tmp22 = x1x2_dot[:,:,None] * (x2/x2_norm[:, None])[None,:,:]
-    tmp23 = x1_norm[:, None, None] * x2_norm2[None, :, None] 
-    dd_dx2 = (tmp21-tmp22)/tmp23
-
-    zd1 = zeta * D1
-    dD_dx2 = -zd1[:,:,None] * dd_dx2
-    kef1 = (-dD_dx2[:,:,:,None]*dx2dr[None,:,:,:]).sum(axis=2) #[m, n, 9]
-    Kef = (kef1*dk_dD[:,:,None]).sum(axis=0) #[n, 9]
-    if grad:
-        l = np.sqrt(l2)
-        l3 = l2*l
-        d2k_dDdsigma = 2*dk_dD/np.sqrt(sigma2)
-        d2k_dDdl = -((D-1)/l3 + 2/l)*dk_dD
-
-        dKef_dsigma = (kef1*d2k_dDdsigma[:,:,None]).sum(axis=0) 
-        dKef_dl     = (kef1*d2k_dDdl[:,:,None]).sum(axis=0)
-        #print(dKef_dl/m)#; import sys; sys.exit()
-        return np.concatenate((Kef/m, dKef_dsigma/m, dKef_dl/m), axis=-1)
-    else:
-        return Kef/m
-
+    tmp0 = d2k_dx1dx2 * dk_dD[:,:,None,None] #n1, n2, d, d
+    _kff1 = (dx1dr[:,None,:,None,:] * tmp0[:,:,:,:,None]).sum(axis=(0,2)) # n1,n2,3
+    kff = (_kff1[:,:,:,None] * dx2dr[:,:,None,:]).sum(axis=1)  # n2, 3, 9
+    kff = kff.sum(axis=0)
+    return kff
 

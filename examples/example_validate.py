@@ -14,12 +14,13 @@ np.set_printoptions(formatter={'float': '{: 5.2f}'.format})
 
 #N_max, ncpu = 100, 24
 
-N_max, device = 10, 'gpu'
+N_max = 5
 m_file = sys.argv[1]
 db_file = sys.argv[2]
 model = gpr()
-#model.load(m_file, N_max=100, opt=False, device=device)
-model.load(m_file, N_max=2, opt=True, device=device)
+model.load(m_file, N_max=None, opt=True)
+#model.load(m_file, N_max=None, opt=False, device=device)
+#model.load(m_file, N_max=2, opt=True, device=device)
 
 train_E, train_E1, train_F, train_F1 = model.validate_data()
 l1 = metric_single(train_E, train_E1, "Train Energy") 
@@ -28,7 +29,8 @@ l2 = metric_single(train_F, train_F1, "Train Forces")
 # get _structures
 strucs, values = get_strucs(db_file, N_max=N_max)
 (E0, F0, S0) = values[0]
-stress = False
+stress = True  #False
+#stress = False  #False
 #if isinstance(S0, np.ndarray):
 #    try:
 #        if S0[0] is not None:

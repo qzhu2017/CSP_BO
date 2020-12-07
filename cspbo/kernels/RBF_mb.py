@@ -1,7 +1,7 @@
 import numpy as np
-from .kernel_base import *
-from .utilities import tuple_to_list, list_to_tuple
-from time import time
+from .base import build_covariance, get_mask
+from .rbf_kernel import kee_C, kff_C, kef_C
+
 class RBF_mb():
     """
     .. math::
@@ -73,31 +73,37 @@ class RBF_mb():
         else:
             return np.hstack((C_ee, C_ff))
 
-    def k_total(self, data1, data2=None, same=False):
+    def k_total(self, data1, data2=None):
         """
         Compute the covairance for train data
         Used for energy/force prediction
         """
+        sigma, l, zeta = self.sigma, self.l, self.zeta
 
         if data2 is None:
             data2 = data1
+            same = True
+        else:
+            same = False
 
         C_ee, C_ef, C_fe, C_ff = None, None, None, None
         for key1 in data1.keys():
+            d1 = data1[key1]
             for key2 in data2.keys():
-                if len(data1[key1])>0 and len(data2[key2])>0:
+                d2 = data2[key2]
+                if len(d1)>0 and len(d2)>0:
                     if key1 == 'energy' and key2 == 'energy':
-                        C_ee = self.kee_many(data1[key1], data2[key2])
+                        C_ee = kee_C(d1, d2, sigma, l, zeta)
                     elif key1 == 'energy' and key2 == 'force':
-                        C_ef = self.kef_many(data1[key1], data2[key2])
+                        C_ef = kef_C(d1, d2, sigma, l, zeta)
                     elif key1 == 'force' and key2 == 'energy':
                         if not same:
-                            C_fe = self.kef_many(data2[key2], data1[key1]).T
+                            C_fe = kef_C(d2, d1, sigma, l, zeta, transpose=True)
                         else:
                             C_fe = C_ef.T 
                     elif key1 == 'force' and key2 == 'force':
-                        C_ff = self.kff_many(data1[key1], data2[key2])
-
+                        C_ff = kff_C(d1, d2, sigma, l, zeta)
+                
         return build_covariance(C_ee, C_ef, C_fe, C_ff)
         
     def k_total_with_grad(self, data1):
@@ -105,25 +111,27 @@ class RBF_mb():
         Compute the covairance for train data
         Used for energy/force training
         """
+        sigma, l, zeta = self.sigma, self.l, self.zeta
+
         data2 = data1   
         C_ee, C_ef, C_fe, C_ff = None, None, None, None
         C_ee_s, C_ef_s, C_fe_s, C_ff_s = None, None, None, None
         C_ee_l, C_ef_l, C_fe_l, C_ff_l = None, None, None, None
         for key1 in data1.keys():
+            d1 = data1[key1]
             for key2 in data2.keys():
-                if len(data1[key1])>0 and len(data2[key2])>0:
+                d2 = data2[key2]
+                if len(d1)>0 and len(d2)>0:
                     if key1 == 'energy' and key2 == 'energy':
-                        C_ee, C_ee_s, C_ee_l = self.kee_many(data1[key1], data2[key2], True)
+                        C_ee, C_ee_s, C_ee_l = kee_C(d1, d2, sigma, l, zeta, grad=True)
                     elif key1 == 'energy' and key2 == 'force':
-                        C_ef, C_ef_s, C_ef_l = self.kef_many(data1[key1], data2[key2], True)
-                        C_fe, C_fe_s, C_fe_l = C_ef.T, C_ef_s.T, C_ef_l.T
+                        C_ef, C_ef_s, C_ef_l = kef_C(d1, d2, sigma, l, zeta, grad=True)
+                        C_fe, C_fe_s, C_fe_l = C_ef.T, C_ef1.T, C_ef2.T
                     elif key1 == 'force' and key2 == 'force':
-                        C_ff, C_ff_s, C_ff_l = self.kff_many(data1[key1], data2[key2], True)
+                        C_ff, C_ff_s, C_ff_l = kff_C(d1, d2, sigma, l, zeta, grad=True)
         C = build_covariance(C_ee, C_ef, C_fe, C_ff, None, None)
         C_s = build_covariance(C_ee_s, C_ef_s, C_fe_s, C_ff_s, None, None)
         C_l = build_covariance(C_ee_l, C_ef_l, C_fe_l, C_ff_l, None, None)
-
-        #import sys; sys.exit()
         return C, np.dstack((C_s, C_l))
 
     def k_total_with_stress(self, data1, data2):
@@ -131,212 +139,24 @@ class RBF_mb():
         Compute the covairance
         Used for energy/force/stress prediction
         """
+        sigma, l, zeta = self.sigma, self.l, self.zeta
         C_ee, C_ef, C_fe, C_ff = None, None, None, None
         for key1 in data1.keys():
+            d1 = data1[key1]
             for key2 in data2.keys():
-                if len(data1[key1])>0 and len(data2[key2])>0:
+                d2 = data2[key2]
+                if len(d1)>0 and len(d2)>0:
                     if key1 == 'energy' and key2 == 'energy':
-                        C_ee = self.kee_many(data1[key1], data2[key2])
+                        C_ee = kee_C(d1, d2, sigma, l, zeta)
                     elif key1 == 'energy' and key2 == 'force':
-                        C_ef = self.kef_many(data1[key1], data2[key2])
+                        C_ef = kef_C(d1, d2, sigma, l, zeta)
                     elif key1 == 'force' and key2 == 'energy':
-                        C_fe, C_se = self.kef_many(data2[key2], data1[key1], stress=True)
-                        C_fe, C_se = C_fe.T, C_se.T
+                        C_fe, C_se = kef_C(d2, d1, sigma, l, zeta, stress=True, transpose=True)
                     elif key1 == 'force' and key2 == 'force':
-                        C_ff, C_sf = self.kff_many(data1[key1], data2[key2], stress=True)
-
-        return build_covariance(C_ee, C_ef, C_fe, C_ff), build_covariance(None, None, C_se, C_sf)
- 
-    
-    def kee_many(self, X1, X2, grad=False):
-        """
-        Compute the energy-energy kernel for many structures
-        Args:
-            X1: list of 2D arrays
-            X2: list of 2D arrays
-            grad: output gradient if true
-        Returns:
-            C: M*N 2D array
-            C_grad:
-        """
-        sigma2, l2, zeta = self.sigma**2, self.l**2, self.zeta
-        x_all, ele_all, x2_indices = X2
-
-        if isinstance(X1, tuple): #unpack X1, used for training
-            X1 = tuple_to_list(X1, mode='energy')
-            
-        # num of X1, num of X2, num of big X2
-        m1, m2, m2p = len(X1), len(x2_indices), len(x_all)
-
-        x2_inds = [(0, x2_indices[0])]
-        for i in range(1, len(x2_indices)):
-            ID = x2_inds[i-1][1]
-            x2_inds.append( (ID, ID+x2_indices[i]) )
-
-        if grad:
-            C = np.zeros([m1, m2p, 3])
-        else:
-            C = np.zeros([m1, m2p, 1])
- 
-        for i in range(m1):
-            #if i%1000 == 0: print("Kee", i)
-            (x1, ele1) = X1[i]
-            mask = get_mask(ele1, ele_all)
-            C[i] = K_ee(x1, x_all, sigma2, l2, zeta, grad, mask)
-        
-        _C = np.zeros([m1, m2])
-        if grad:
-            _C_s = np.zeros([m1, m2])
-            _C_l = np.zeros([m1, m2])
-
-        for j, ind in enumerate(x2_inds):
-            tmp = C[:, ind[0]:ind[1], :].sum(axis=1)/x2_indices[j]
-            _C[:, j]  = tmp[:, 0]
-            if grad:
-                _C_s[:, j]  = tmp[:, 1]
-                _C_l[:, j]  = tmp[:, 2]
-        if grad:
-            return _C, _C_s, _C_l
-        else:
-            return _C
-
-    def kff_many(self, X1, X2, grad=False, stress=False):
-        """
-        Compute the energy-force kernel between structures and atoms
-        dXdR is a stacked array if stress is True
-        Args:
-            X1: list of tuples ([X, dXdR, ele])
-            X2: stacked ([X, dXdR, ele])
-            grad: compute gradient if true
-            stress: compute stress if true
-        Returns:
-            C:
-            C_grad:
-        """
-
-        sigma2, l2, zeta = self.sigma**2, self.l**2, self.zeta
-        x_all, dxdr_all, ele_all, x2_indices = X2
-
-        if isinstance(X1, tuple): #unpack X1, used for training
-            X1 = tuple_to_list(X1)
-
-        # num of X1, num of X2, num of big X2
-        m1, m2, m2p = len(X1), len(x2_indices), len(x_all)
-
-        x2_inds = [(0, x2_indices[0])]
-        for i in range(1, len(x2_indices)):
-            ID = x2_inds[i-1][1]
-            x2_inds.append( (ID, ID+x2_indices[i]) )
-
-        if grad:
-            C = np.zeros([m1, m2p, 3, 9])
-        elif stress:
-            C = np.zeros([m1, m2p, 9, 3])
-        else:
-            C = np.zeros([m1, m2p, 3, 3])
-        #t0 = time()
-        for i in range(m1):
-            #if i%500 == 0: print("Kff", i, time()-t0)
-            (x1, dx1dr, ele1) = X1[i]
-            mask = get_mask(ele1, ele_all)
-            batch = 500
-            # split the big array to smaller size
-            if m2p > batch:
-                for j in range(int(np.ceil(m2p/batch))):
-                    start = j*batch
-                    end = min([(j+1)*batch, m2p])
-                    mask = get_mask(ele1, ele_all[start:end])
-                    C[i, start:end, :, :] = K_ff(x1, x_all[start:end], dx1dr, dxdr_all[start:end], sigma2, l2, zeta, grad, mask, device=self.device)
-            else:
-                mask = get_mask(ele1, ele_all)
-                C[i] = K_ff(x1, x_all, dx1dr, dxdr_all, sigma2, l2, zeta, grad, mask, device=self.device)
-
-        _C = np.zeros([m1*3, m2*3])
-        if grad:
-            _C_s = np.zeros([m1*3, m2*3])
-            _C_l = np.zeros([m1*3, m2*3])
-        elif stress:
-            _C1 = np.zeros([m1*6, m2*3])
-
-        for j, ind in enumerate(x2_inds):
-            tmp = C[:, ind[0]:ind[1], :, :].sum(axis=1)
-            for i in range(m1):
-                _C[i*3:(i+1)*3, j*3:(j+1)*3]  = tmp[i, :3, :3]
-                if stress:
-                    _C1[i*6:(i+1)*6, j*3:(j+1)*3]  = tmp[i, 3:, :3]
-                elif grad:
-                    _C_s[i*3:(i+1)*3, j*3:(j+1)*3]  = tmp[i, :3, 3:6]
-                    _C_l[i*3:(i+1)*3, j*3:(j+1)*3]  = tmp[i, :3, 6:9]
-                    
-        if grad:
-            return _C, _C_s, _C_l                  
-        elif stress:
-            return _C, _C1
-        else:
-            return _C
-
-    def kef_many(self, X1, X2, grad=False, stress=False):  
-        """
-        Compute the energy-force kernel between structures and atoms
-        Args:
-            X1: list of 2D arrays (each N*d)
-            X2: list of tuples ([X, dXdR])
-            grad: output gradient if true
-        Returns:
-            C: M*N 2D array
-            C_grad:
-        """
-        
-        sigma2, l2, zeta = self.sigma**2, self.l**2, self.zeta
-
-        if isinstance(X1, tuple):  #pack X2 to big array in tuple
-            X1 = tuple_to_list(X1, mode='energy')
-
-        if isinstance(X2, list):  #pack X2 to big array in tuple
-            X2 = list_to_tuple(X2, stress)
-
-        x_all, dxdr_all, ele_all, x2_indices = X2
-        m1, m2, m2p = len(X1), len(x2_indices), len(x_all)
-       
-        x2_inds = [(0, x2_indices[0])]
-        for i in range(1, len(x2_indices)):
-            ID = x2_inds[i-1][1]
-            x2_inds.append( (ID, ID+x2_indices[i]) )
-       
-        if stress or grad:
-            C = np.zeros([m1, m2p, 9])
-        else:
-            C = np.zeros([m1, m2p, 3])
-        t0 = time()
-        for i in range(m1):
-            #if i%1000 == 0: print("Kef", i, time()-t0)
-            (x1, ele1) = X1[i]
-            mask = get_mask(ele1, ele_all)
-            C[i] = K_ef(x1, x_all, dxdr_all, sigma2, l2, zeta, grad, mask, device=self.device)
-
-        _C = np.zeros([m1, m2*3])
-        if grad:
-            _C_s = np.zeros([m1, m2*3])
-            _C_l = np.zeros([m1, m2*3])
-        elif stress:
-            _C1 = np.zeros([m1, m2*6])
-
-        for j, ind in enumerate(x2_inds):
-            tmp = C[:, ind[0]:ind[1], :].sum(axis=1) 
-            _C[:, j*3:(j+1)*3] =  tmp[:, :3]
-            if stress:
-                _C1[:, j*6:(j+1)*6] =  tmp[:, 3:]
-            elif grad:
-                _C_s[:, j*3:(j+1)*3] =  tmp[:, 3:6]
-                _C_l[:, j*3:(j+1)*3] =  tmp[:, 6:9]
-
-        if grad:
-            return _C, _C_s, _C_l                  
-        elif stress:
-            return _C, _C1
-        else:
-            return _C
-
+                        C_ff, C_sf = kff_C(d1, d2, sigma, l, zeta, stress=True)
+        C = build_covariance(C_ee, C_ef, C_fe, C_ff)
+        C1 = build_covariance(None, None, C_se, C_sf)
+        return C, C1
 
 # ===================== Standalone functions to compute K_ee, K_ef, K_ff
 

@@ -1,5 +1,5 @@
-from _rbf_kernel import lib
-from time import time
+from ._rbf_kernel import lib
+from ..utilities import list_to_tuple
 from cffi import FFI
 import numpy as np
 from mpi4py import MPI
@@ -231,8 +231,6 @@ def kff_C(X1, X2, sigma=1.0, l=1.0, zeta=2.0, grad=False, stress=False):
     pdat_x1_inds=ffi.new('int['+str(m1p)+']', x1_inds)
     pdat_x2_inds=ffi.new('int['+str(m2p)+']', x2_inds)
     pdat_dx2dr=ffi.new('double['+str(m2p*d*3)+']', dx2dr.ravel().tolist())
-
-    #m2p_start, m2p_end = int(0), int(0); # Need to fix this for MPI
 
     if stress:
         pdat_dx1dr=ffi.new('double['+str(m1p*d*9)+']', list(dx1dr.ravel()))

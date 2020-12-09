@@ -98,7 +98,7 @@ class GaussianProcess():
         # add noise matrix
         #K[np.diag_indices_from(K)] += self.noise
         noise = np.eye(len(K))
-        NE = len(self.train_x['energy'])
+        NE = len(self.train_x['energy'][-1])
         noise[:NE,:NE] *= self.noise_e**2
         noise[NE:,NE:] *= (self.f_coef*self.noise_e)**2
         K += noise
@@ -108,7 +108,6 @@ class GaussianProcess():
             # self.L_ changed, self._K_inv needs to be recomputed
             self._K_inv = None
         except np.linalg.LinAlgError as exc:
-            #print(K)
             exc.args = ("The kernel, %s, is not returning a "
                         "positive definite matrix. Try gradually "
                         "increasing the 'alpha' parameter of your "
@@ -299,7 +298,7 @@ class GaussianProcess():
         E_Pred, E_std, F_Pred, F_std = None, None, None, None
         if return_std:
             if len(test_X_E['energy']) > 0:
-                E_Pred, E_std = self.predict(test_X_E, total_E=total_E, return_std=True)  
+                E_Pred, E_std = self.predict(test_X_E, total_E=total_E, return_std=True)
             if len(test_X_F['force']) > 0:
                 F_Pred, F_std = self.predict(test_X_F, return_std=True)
             return E, E_Pred, E_std, F, F_Pred, F_std

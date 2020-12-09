@@ -55,7 +55,7 @@ class RBF_mb():
             for i in range(NE):
                 (x1, ele1) = data["energy"][i]
                 mask = get_mask(ele1, ele1)
-                C_ee[i] = K_ee(x1, x1, sigma2, l2, zeta, False, mask) 
+                C_ee[i] = K_ee(x1, x1, sigma2, l2, zeta, mask) 
 
         if "force" in data:
             NF = len(data["force"])
@@ -63,7 +63,8 @@ class RBF_mb():
             for i in range(NF):
                 (x1, dx1dr, ele1) = data["force"][i]
                 mask = get_mask(ele1, ele1)
-                tmp = K_ff(x1, x1, dx1dr, dx1dr, sigma2, l2, zeta, False, mask)
+                #tmp = K_ff(x1, x1, dx1dr, dx1dr, sigma2, l2, zeta, mask)
+                tmp = K_ff(x1, x1, dx1dr[:,:,:3], dx1dr[:,:,:3], sigma2, l2, zeta, mask)
                 C_ff[i*3:(i+1)*3] = np.diag(tmp)
 
         if C_ff is None:
@@ -103,7 +104,9 @@ class RBF_mb():
                             C_fe = C_ef.T 
                     elif key1 == 'force' and key2 == 'force':
                         C_ff = kff_C(d1, d2, sigma, l, zeta)
-                
+        # print("C_ee", C_ee)               
+        # print("C_ef", C_ef)               
+        # import sys; sys.exit()
         return build_covariance(C_ee, C_ef, C_fe, C_ff)
         
     def k_total_with_grad(self, data1):

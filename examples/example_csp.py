@@ -21,8 +21,7 @@ species = ["Si"]
 numIons = [4]
 ff = "edip_si.lib" 
 model = gpr()
-model.load("models/Si_Dot.json")
-model.kernel.ncpu = 4
+model.load("models/Si.json")
 calc_gp = GPR(ff=model, stress=True, return_std=True)
 # ================= Get the first step of training database
 data_dict = {"atoms": [], "ML_energy": [], "QM_energy": [], 
@@ -30,11 +29,17 @@ data_dict = {"atoms": [], "ML_energy": [], "QM_energy": [],
 
 for i in range(50):
     train_data = []
+
+    # structure from Pyxtal
     struc = PyXtal(sgs, species, numIons) 
+    struc.set_constraint(FixSymmetry(struc)) 
     struc.set_calculator(calc_gp)
+
+    # opt1: relaxation with the constant cell
     dyn = FIRE(struc, logfile='results.log')
     dyn.run(fmax=0.05, steps=10)
 
+    # opt2: relax both atomic coordinates + lattice vectors
     ecf = ExpCellFilter(struc)
     dyn = FIRE(ecf, logfile='results.log')
     dyn.run(fmax=0.005, steps=50)
@@ -42,6 +47,7 @@ for i in range(50):
     E_var = struc._calc.get_var_e()
     #F = struc.get_forces()
     
+    #
     calc2 = GULP(struc, ff=ff, opt="single")
     calc2.run()
     E1 = calc2.energy/len(struc)

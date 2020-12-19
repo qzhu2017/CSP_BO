@@ -14,7 +14,6 @@ from ase.db import connect
 from spglib import get_symmetry_dataset
 from pyxtal.interface.gulp import GULP
 from pyxtal.database.element import Element
-from interface import process
 import pymatgen.analysis.structure_matcher as sm
 from time import time
 from copy import deepcopy
@@ -22,7 +21,7 @@ from copy import deepcopy
 
 # Parameters
 n_init, n_trail_structures = 10, 10
-n_repeat = 95
+n_repeat = 1
 zeta, fac = 2, 2.0
 sgs = range(16, 231)
 species = ["Si"]

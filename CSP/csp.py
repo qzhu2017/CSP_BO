@@ -86,11 +86,11 @@ def detail(calc, header=None, cputime=None, count=None, origin=None, fitness=Non
             string += ' {:6.3f}'.format(eng-calc.p_energy)
 
     #if fitness is not None and fitness < 0.2 and l1.volume/sum(calc.numIons) > 30 or l1.volume/sum(calc.numIons) < 5:
-    if spg == 'F-43m' and l1.volume/sum(calc.numIons) > 30 or l1.volume/sum(calc.numIons) < 5:
-        print(calc)
-        print("===================", string)
-        calc.to_ase().write('bug.vasp', format='vasp', vasp5=True, direct=True)
-        import sys; sys.exit()
+    #if spg == 'F-43m' and l1.volume/sum(calc.numIons) > 30 or l1.volume/sum(calc.numIons) < 5:
+    #    print(calc)
+    #    print("===================", string)
+    #    calc.to_ase().write('bug.vasp', format='vasp', vasp5=True, direct=True)
+    #    import sys; sys.exit()
 
     return string
 
@@ -327,7 +327,7 @@ class EA():
             if model.group.number >=16:
                 break
         #print(model)
-        #model.to_ase().write('bug.vasp', format='vasp', vasp5=True, direct=True)
+        model.to_ase().write('bug.vasp', format='vasp', vasp5=True, direct=True)
         max_cell = int(self.max_num/sum(model.numIons))
         if max_cell < 1:
             max_cell = 1
@@ -649,8 +649,8 @@ if __name__ == "__main__":
     options = parser.parse_args()
     if options.run:
         elements = {"C": [1,8], "Si": [1,8]}
-        calc = EA(elements, seeds='my.db', N_pop=30, N_gen=2, max_num=20, fracs=[0.1, 0.8, 0.0, 0.1])
-        #EA(elements, seeds='my.db', N_pop=5, N_gen=1, max_num=10, fracs=[0.5, 0.4, 0.0, 0.1], calculator='vasp')
+        #calc = EA(elements, seeds='my.db', N_pop=30, N_gen=2, max_num=20, fracs=[0.1, 0.8, 0.0, 0.1])
+        calc = EA(elements, seeds='my.db', N_pop=5, N_gen=2, max_num=10, fracs=[0.5, 0.4, 0.0, 0.1], calculator='vasp')
         #EA(elements, seeds='my.db', N_pop=20, pressure=10.0, calculator='vasp')
         calc.predict()
     elif options.test:

@@ -84,8 +84,8 @@ class LJ():
         self.load_from_dict(_parameters)
 
     def __str__(self):
-        return "LJ({:.3f} {:.3f} cutoff{:.3f})".format(\
-        self.sigma, self.sigma0)
+        return "LJ(eps: {:.3f}, sigma: {:.3f}, cutoff: {:.3f})".format(\
+        self.epsilon, self.sigma, self.rc)
 
     def load_from_dict(self, dict0):
         self._parameters = dict0

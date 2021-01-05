@@ -79,7 +79,7 @@ def set_vasp(level='opt', kspacing=0.5):
 
 
 #--------- LJ fitting  ------------------
-def LJ_fit(rs, engs, eng_cut=10.0, p1=12, p2=6):
+def LJ_fit(rs, engs, eng_cut=5.0, p1=12, p2=6):
     """
     Fit the Lennard-Jones potential
     """
@@ -189,7 +189,7 @@ for d in data:
         model.set_train_pts(pts, mode="a+")
         model.fit(show=False)
 print(model)
-
+print(model.base_potential)
 ## ----------- Structure generation/optimization based on the surrogate model
 from cspbo.utilities import PyXtal
 from cspbo.calculator import GPR
@@ -197,6 +197,7 @@ from ase.optimize import FIRE
 from ase.constraints import ExpCellFilter
 from ase.spacegroup.symmetrize import FixSymmetry
 from spglib import get_symmetry_dataset
+#from pyxtal import pyxtal
 sgs = range(16, 231)
 numIons = [8]
 gen_max = 50
@@ -226,9 +227,14 @@ for gen in range(gen_max):
         except:
             spg = 'N/A'
         cputime = (time()-t0)/60
-        strs = "{:3d} {:3d} {:6s} {:16s} {:8.3f}[{:8.3f}] {:6.2f}".format(\
-        gen, pop, struc.get_chemical_formula(), spg, E, E_var, cputime)
+        strs = "{:3d} {:3d} {:6s} {:16s} {:8.3f}[{:8.3f}] {:6.2f} {:6.2f}".format(\
+        gen, pop, struc.get_chemical_formula(), spg, E, E_var, 
+        struc.get_volume()/len(struc), cputime)
         print(strs)
+        #print(struc.get_stress())
+        #s = pyxtal()
+        #s.from_seed(struc)
+        #print(s)
 #
 #    # select the structures
 #

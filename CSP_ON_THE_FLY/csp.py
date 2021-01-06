@@ -6,6 +6,7 @@ from time import time
 #--------- Database related ------------------
 
 from ase.db import connect
+from cspbo.utilities import list_to_tuple
 
 def add_dimers(dimers, db_file):
     """
@@ -32,6 +33,34 @@ def add_GP_train(data, db_file):
                   'dft_forces': force,
                   }
             db.write(struc, data=d1)
+
+def collect_data(gpr_model, data, struc, energy, force):
+    """ Collect data for GPR.predict. """
+    _data = (struc, energy, force)
+    # High force value means to ignore force since bo only compares energies
+    pts, N_pts, _ = gpr_model.add_structure(_data, N_max=100000, tol_e_var=-10, tol_f_var=10000)
+    for key in pts.keys():
+        if key == 'energy':
+            (X, ELE, indices, E) = list_to_tuple(pts[key], include_value=True, mode='energy')
+            if len(data["energy"]) == 3:
+                (_X, _ELE, _indices) = data['energy']
+                _X = np.concatenate((_X, X), axis=0)
+                _indices.extend(indices) 
+                _ELE = np.concatenate((_ELE, ELE), axis=0) 
+                data['energy'] = (_X, _ELE, _indices)
+            else:
+                data['energy'] = (X, ELE, indices)
+
+    return data
+    
+
+#-------- Bayesian Optimization --------
+def BO_select(model, data, alpha=2):
+    """ Return the index of the trial structures. """
+    mean, cov = model.predict(data, stress=False, return_cov=True)
+    samples = np.random.multivariate_normal(mean, cov * alpha ** 2, 1)[0,:]
+    ix = np.argmin(samples)
+    return ix
 
 #--------- DFT related ------------------
 
@@ -204,6 +233,8 @@ gen_max = 50
 N_pop = 50
 
 for gen in range(gen_max):
+    data = {'energy': [], 'force': []}
+    structures = []
     for pop in range(N_pop):
         # generate and relax the structure
         t0 = time()
@@ -221,6 +252,7 @@ for gen in range(gen_max):
         dyn.run(fmax=0.05, steps=100)
         E = struc.get_potential_energy()/len(struc)
         E_var = struc._calc.get_var_e()
+        F = struc.get_forces()
 
         try:
             spg = get_symmetry_dataset(struc, symprec=5e-2)['international']
@@ -231,21 +263,32 @@ for gen in range(gen_max):
         gen, pop, struc.get_chemical_formula(), spg, E, E_var, 
         struc.get_volume()/len(struc), cputime)
         print(strs)
-        #print(struc.get_stress())
-        #s = pyxtal()
-        #s.from_seed(struc)
-        #print(s)
-#
-#    # select the structures
-#
-#    # perform single point DFT calculation
-#
-#    # update the GP model
+        
+        struc.set_calculator()
+        structures.append(struc)
 
+        data = collect_data(model, data, struc, E, F)
 
+    # BO select
+    ix = BO_select(model, data)
+    best_struc = structures[ix]
+    best_struc.set_calculator(set_vasp('single', 0.20))
+    print("{:4d}-th structure is picked from the BO selection".format(ix))
 
+    # perform single point DFT
+    best_eng, best_forces = dft_run(best_struc, path=calc_folder)
 
+    # update GPR model
+    pts, N_pts, _ = model.add_structure((best_struc, best_eng, best_forces), tol_e_var=1.2)
+    if N_pts > 0:
+        model.set_train_pts(pts, mode="a+")
+        model.fit()
 
-
+    try:
+        best_spg = get_symmetry_dataset(best_struc, symprec=1e-1)['international']
+    except:
+        best_spg = "N/A"
+    print("{:4d}-th structure: E/atom: {:8.3f} eV/atom sg: {:8s}".format(ix, best_eng/len(best_struc), best_spg))
+    print("\n")
 
 

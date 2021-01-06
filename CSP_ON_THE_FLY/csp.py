@@ -27,7 +27,7 @@ def add_GP_train(data, db_file):
     """
     with connect(db_file) as db:
         for d in data:
-            struc, eng, force = data
+            struc, eng, force = d
             d1 = {'tag': 'GP',
                   'dft_energy': eng,
                   'dft_forces': force,
@@ -176,7 +176,7 @@ if not os.path.exists(train_db):
         eng, forces = dft_run(struc, path=calc_folder)
         struc.set_calculator(set_vasp('single', 0.20))
         eng, forces = dft_run(struc, path=calc_folder)
-        data.append((struc1, eng, forces))
+        data.append((struc, eng, forces))
 
         #expansion
         struc1 = struc.copy()
@@ -217,8 +217,8 @@ for d in data:
     if N_pts > 0:
         model.set_train_pts(pts, mode="a+")
         model.fit(show=False)
-print(model)
-print(model.base_potential)
+#print(model)
+#print(model.base_potential)
 ## ----------- Structure generation/optimization based on the surrogate model
 from cspbo.utilities import PyXtal
 from cspbo.calculator import GPR

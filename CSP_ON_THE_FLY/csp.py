@@ -55,12 +55,16 @@ def collect_data(gpr_model, data, struc, energy, force):
     
 
 #-------- Bayesian Optimization --------
-def BO_select(model, data, alpha=2):
+def BO_select(model, data, alpha=2, n_indices=1):
     """ Return the index of the trial structures. """
     mean, cov = model.predict(data, stress=False, return_cov=True)
     samples = np.random.multivariate_normal(mean, cov * alpha ** 2, 1)[0,:]
-    ix = np.argmin(samples)
-    return ix
+    if n_indices == 1:
+        ix = np.argmin(samples)
+        indices = [ix]
+    else:
+        indices = np.argsort(samples)[:n_indices]
+    return indices
 
 #--------- DFT related ------------------
 
@@ -231,6 +235,8 @@ sgs = range(16, 231)
 numIons = [8]
 gen_max = 50
 N_pop = 50
+alpha = 2
+n_bo_select = 3
 
 for gen in range(gen_max):
     data = {'energy': [], 'force': []}
@@ -270,25 +276,24 @@ for gen in range(gen_max):
         data = collect_data(model, data, struc, E, F)
 
     # BO select
-    ix = BO_select(model, data)
-    best_struc = structures[ix]
-    best_struc.set_calculator(set_vasp('single', 0.20))
-    print("{:4d}-th structure is picked from the BO selection".format(ix))
+    indices = BO_select(model, data, alpha=alpha, n_indices=n_bo_select)
+    for ix in indices:
+        best_struc = structures[ix]
+        best_struc.set_calculator(set_vasp('single', 0.20))
+        print("{:4d}-th structure is picked from the BO selection".format(ix))
 
-    # perform single point DFT
-    best_eng, best_forces = dft_run(best_struc, path=calc_folder)
+        # perform single point DFT
+        best_eng, best_forces = dft_run(best_struc, path=calc_folder)
 
-    # update GPR model
-    pts, N_pts, _ = model.add_structure((best_struc, best_eng, best_forces), tol_e_var=1.2)
-    if N_pts > 0:
-        model.set_train_pts(pts, mode="a+")
-        model.fit()
+        # update GPR model
+        pts, N_pts, _ = model.add_structure((best_struc, best_eng, best_forces), tol_e_var=1.2)
+        if N_pts > 0:
+            model.set_train_pts(pts, mode="a+")
+            model.fit()
 
-    try:
-        best_spg = get_symmetry_dataset(best_struc, symprec=1e-1)['international']
-    except:
-        best_spg = "N/A"
-    print("{:4d}-th structure: E/atom: {:8.3f} eV/atom sg: {:8s}".format(ix, best_eng/len(best_struc), best_spg))
-    print("\n")
-
-
+        try:
+            best_spg = get_symmetry_dataset(best_struc, symprec=1e-1)['international']
+        except:
+            best_spg = "N/A"
+        print("{:4d}-th structure: E/atom: {:8.3f} eV/atom sg: {:8s}".format(ix, best_eng/len(best_struc), best_spg))
+        print("\n")

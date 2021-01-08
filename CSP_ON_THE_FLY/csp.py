@@ -34,6 +34,17 @@ def add_GP_train(data, db_file):
                   }
             db.write(struc, data=d1)
 
+def add_structures(data, db_file):
+    """
+    Backup the structure data from the entire simulation
+    """
+    with connect(db_file) as db:
+        for d in data:
+            struc = d
+            d1 = {'tag': 'all_structures',
+                 }
+            db.write(struc, data=d1)
+
 def collect_data(gpr_model, data, struc, energy, force):
     """ Collect data for GPR.predict. """
     _data = (struc, energy, force)
@@ -55,7 +66,7 @@ def collect_data(gpr_model, data, struc, energy, force):
     
 
 #-------- Bayesian Optimization --------
-def BO_select(model, data, alpha=2, n_indices=1):
+def BO_select(model, data, alpha=0.5, n_indices=1):
     """ Return the index of the trial structures. """
     mean, cov = model.predict(data, stress=False, return_cov=True)
     samples = np.random.multivariate_normal(mean, cov * alpha ** 2, 1)[0,:]
@@ -76,8 +87,13 @@ def dft_run(struc, path, clean=False):
     """
     cwd = os.getcwd()
     os.chdir(path)
-    eng = struc.get_potential_energy()
-    forces = struc.get_forces()
+    try:
+        eng = struc.get_potential_energy()
+        forces = struc.get_forces()
+    except:
+        print("VASP calculation is wrong!")
+        eng = None
+        forces = None
     if clean:
         os.system("rm POSCAR POTCAR INCAR OUTCAR")
     os.chdir(cwd)
@@ -173,7 +189,7 @@ if not os.path.exists(train_db):
     strucs.append(bulk(species[0], 'fcc', a=3.6, cubic=True))
     strucs.append(bulk(species[0], 'bcc', a=3.6, cubic=True))
     strucs.append(bulk(species[0], 'sc', a=3.6, cubic=True))
-    strucs.append(bulk(species[0], 'diamond', a=3.6, cubic=True)) 
+    #strucs.append(bulk(species[0], 'diamond', a=3.6, cubic=True)) 
     for struc in strucs:
         #opt
         struc.set_calculator(set_vasp('opt', 0.3))
@@ -235,12 +251,16 @@ sgs = range(16, 231)
 numIons = [8]
 gen_max = 50
 N_pop = 50
-alpha = 2
-n_bo_select = 3
+alpha = 0.5
+n_bo_select = max([1,int(N_pop/5)])
 
 for gen in range(gen_max):
     data = {'energy': [], 'force': []}
     structures = []
+    Es = []
+    E_vars = []
+
+    # QZ: can we easily parallelize this process by mpi4py?
     for pop in range(N_pop):
         # generate and relax the structure
         t0 = time()
@@ -272,28 +292,46 @@ for gen in range(gen_max):
         
         struc.set_calculator()
         structures.append(struc)
+        Es.append(E)
+        E_vars.append(E_var)
 
         data = collect_data(model, data, struc, E, F)
+        # save the structures to a db
+        # we probably need to re-evaluate the structures after the GP model is converged
+        # add_structures(structures, 'all.db')
 
-    # BO select
+    #------------------ Then kill the parallization --------------------
+
+    #------------------- BO selection ------------------------------
+    # The following loop should have only one python process
+
+    # The idea of BO selection is to let us quickly find low-energy structures with low uncertainties
+    # With this, we will need to add many new points to GP training database
+    # then we hope to see less appearing low energy structures when the generation evloves
+    # An overall pattern is that the overall uncertainties will decrease for the low-energy structures
+    # We don't need to worry about appearing high energy structures with high uncertainties
+    # However, the current scheme seems to select only structures with high uncertainties
+    # Therefore, each generation will still generate many appearing low energy structures
+    # Perhaps, we need to play with alpha, or revise the selection rule
+
     indices = BO_select(model, data, alpha=alpha, n_indices=n_bo_select)
     for ix in indices:
         best_struc = structures[ix]
         best_struc.set_calculator(set_vasp('single', 0.20))
-        print("{:4d}-th structure is picked from the BO selection".format(ix))
+        print("{:4d}-th structure is picked {:8.3f}[{:8.3f}]".format(ix, Es[ix], E_vars[ix]))
 
         # perform single point DFT
         best_eng, best_forces = dft_run(best_struc, path=calc_folder)
 
-        # update GPR model
-        pts, N_pts, _ = model.add_structure((best_struc, best_eng, best_forces), tol_e_var=1.2)
-        if N_pts > 0:
-            model.set_train_pts(pts, mode="a+")
-            model.fit()
-
-        try:
-            best_spg = get_symmetry_dataset(best_struc, symprec=1e-1)['international']
-        except:
-            best_spg = "N/A"
-        print("{:4d}-th structure: E/atom: {:8.3f} eV/atom sg: {:8s}".format(ix, best_eng/len(best_struc), best_spg))
-        print("\n")
+        # sometimes the vasp calculation will fail
+        if best_eng is not None:
+            print("{:4d}-th structure: E/atom: {:8.3f} eV/atom\n".format(ix, best_eng/len(best_struc)))
+            # update GPR model
+            pts, N_pts, _ = model.add_structure((best_struc, best_eng, best_forces), tol_e_var=1.2)
+            if N_pts > 0:
+                model.set_train_pts(pts, mode="a+")
+                model.fit()
+    # some metrics here to quickly show the improvement, e.g?
+    # the average uncertainties for low energy structures?
+    # the list of best structures (i.e., both low E and E_var structure)?
+    # or some metrics from typical BO optimization?

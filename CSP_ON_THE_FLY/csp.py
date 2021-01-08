@@ -7,6 +7,8 @@ from time import time
 
 from ase.db import connect
 from cspbo.utilities import list_to_tuple
+import pymatgen.analysis.structure_matcher as sm 
+from pymatgen.io.ase import AseAtomsAdaptor
 
 def add_dimers(dimers, db_file):
     """
@@ -64,6 +66,29 @@ def collect_data(gpr_model, data, struc, energy, force):
 
     return data
     
+def new_struc(struc, ref_strucs):
+    """
+    check if this is a new structure
+
+    Args:
+        struc: input structure
+        ref_strucs: reference structure
+
+    Return:
+        id: `None` or the id (int) of matched structure
+    """
+    vol1 = struc.get_volume()/len(struc)
+    eng1 = struc.get_potential_energy()/len(struc)
+    pmg_s1 = AseAtomsAdaptor.get_structure(struc)
+
+    for i, ref in enumerate(ref_strucs):
+        vol2 = ref.get_volume()/len(ref)
+        eng2 = ref.get_potential_energy()/len(ref)
+        if abs(vol1-vol2)/vol1<5e-2 and abs(eng1-eng2)<2e-3:
+            pmg_s2 = AseAtomsAdaptor.get_structure(ref)
+            if sm.StructureMatcher().fit(pmg_s1, pmg_s2):
+                return i
+    return None
 
 #-------- Bayesian Optimization --------
 # QZ: Probably, list other acquisition functions
@@ -94,7 +119,7 @@ def dft_run(struc, path, clean=False):
         eng = struc.get_potential_energy()
         forces = struc.get_forces()
     except:
-        print("VASP calculation is wrong!")
+        #print("VASP calculation is wrong!")
         eng = None
         forces = None
     if clean:
@@ -280,28 +305,31 @@ for gen in range(gen_max):
         dyn.run(fmax=0.05, steps=100)
         E = struc.get_potential_energy()/len(struc) #per atom
         E_var = struc._calc.get_var_e()
-        F = struc.get_forces()
 
-        try:
-            spg = get_symmetry_dataset(struc, symprec=5e-2)['international']
-        except:
-            spg = 'N/A'
-        cputime = (time()-t0)/60
-        strs = "{:3d} {:3d} {:6s} {:16s} {:8.3f}[{:8.3f}] {:6.2f} {:6.2f}".format(\
-        gen, pop, struc.get_chemical_formula(), spg, E, E_var, 
-        struc.get_volume()/len(struc), cputime)
-        print(strs)
-        
-        struc.set_calculator()
-        structures.append(struc)
-        Es.append(E)
-        E_vars.append(E_var)
-        
-        # QZ: This should be outside the for loop
-        data = collect_data(model, data, struc, E, F)
-        # save the structures to a db
-        # we probably need to re-evaluate the structures after the GP model is converged
-        # add_structures(structures, 'all.db')
+        if new_struc(struc, structures) is None:        
+            try:
+                spg = get_symmetry_dataset(struc, symprec=5e-2)['international']
+            except:
+                spg = 'N/A'
+            cputime = (time()-t0)/60
+            strs = "{:3d} {:3d} {:6s} {:16s} {:8.3f}[{:8.3f}] {:6.2f} {:6.2f}".format(\
+            gen, pop, struc.get_chemical_formula(), spg, E, E_var, 
+            struc.get_volume()/len(struc), cputime)
+            print(strs)
+            
+            #struc.set_calculator()
+            structures.append(struc)
+            Es.append(E)
+            E_vars.append(E_var)
+            
+            # QZ: This should be outside the for loop
+            F = struc.get_forces()
+            data = collect_data(model, data, struc, E, F)
+            # save the structures to a db
+            # we probably need to re-evaluate the structures after the GP model is converged
+            # add_structures(structures, 'all.db')
+        else:
+            print("skip the duplicate structures")
 
     #------------------- BO selection ------------------------------
     # The following loop should have only one python process
@@ -334,14 +362,15 @@ for gen in range(gen_max):
             pts, N_pts, _ = model.add_structure((best_struc, best_eng, best_forces), tol_e_var=1.2)
             if N_pts > 0:
                 model.set_train_pts(pts, mode="a+")
-                model.fit()
+                model.fit(show=False)
                 total_pts += N_pts
         else:
-            strs += " skipped due to error in vasp calculation"
+            strs += " !!!skipped due to error in vasp calculation"
         print(strs)
 
     # Let's do update once a generation
     model.sparsify()
+    print(model)
 
     # some metrics here to quickly show the improvement, e.g?
     # the average uncertainties for low energy structures?

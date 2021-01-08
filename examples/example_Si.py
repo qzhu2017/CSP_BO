@@ -41,6 +41,13 @@ dyn.run(fmax=0.005, steps=50)
 print(si)
 print(si.get_potential_energy())
 
+ecf = ExpCellFilter(si, scalar_pressure=0.05) #0.05 eV/A^3 = 8.0 GPa
+dyn = FIRE(ecf)
+dyn.run(fmax=0.05, steps=50)
+print(si)
+print(si.get_potential_energy())
+
+
 # --------------------------- Example of MD
 from ase.md.velocitydistribution import MaxwellBoltzmannDistribution
 from ase.md.verlet import VelocityVerlet

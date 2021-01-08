@@ -66,6 +66,9 @@ def collect_data(gpr_model, data, struc, energy, force):
     
 
 #-------- Bayesian Optimization --------
+# QZ: Probably, list other acquisition functions
+# so that we can try to play with it
+
 def BO_select(model, data, alpha=0.5, n_indices=1):
     """ Return the index of the trial structures. """
     mean, cov = model.predict(data, stress=False, return_cov=True)
@@ -240,6 +243,7 @@ for d in data:
 #print(model)
 #print(model.base_potential)
 ## ----------- Structure generation/optimization based on the surrogate model
+
 from cspbo.utilities import PyXtal
 from cspbo.calculator import GPR
 from ase.optimize import FIRE
@@ -250,7 +254,7 @@ from spglib import get_symmetry_dataset
 sgs = range(16, 231)
 numIons = [8]
 gen_max = 50
-N_pop = 50
+N_pop = 10
 alpha = 0.5
 n_bo_select = max([1,int(N_pop/5)])
 
@@ -259,8 +263,6 @@ for gen in range(gen_max):
     structures = []
     Es = []
     E_vars = []
-
-    # QZ: can we easily parallelize this process by mpi4py?
     for pop in range(N_pop):
         # generate and relax the structure
         t0 = time()
@@ -276,7 +278,7 @@ for gen in range(gen_max):
         ecf = ExpCellFilter(struc)
         dyn = FIRE(ecf, logfile='opt.log')
         dyn.run(fmax=0.05, steps=100)
-        E = struc.get_potential_energy()/len(struc)
+        E = struc.get_potential_energy()/len(struc) #per atom
         E_var = struc._calc.get_var_e()
         F = struc.get_forces()
 
@@ -294,13 +296,12 @@ for gen in range(gen_max):
         structures.append(struc)
         Es.append(E)
         E_vars.append(E_var)
-
+        
+        # QZ: This should be outside the for loop
         data = collect_data(model, data, struc, E, F)
         # save the structures to a db
         # we probably need to re-evaluate the structures after the GP model is converged
         # add_structures(structures, 'all.db')
-
-    #------------------ Then kill the parallization --------------------
 
     #------------------- BO selection ------------------------------
     # The following loop should have only one python process
@@ -313,24 +314,35 @@ for gen in range(gen_max):
     # However, the current scheme seems to select only structures with high uncertainties
     # Therefore, each generation will still generate many appearing low energy structures
     # Perhaps, we need to play with alpha, or revise the selection rule
-
+    
     indices = BO_select(model, data, alpha=alpha, n_indices=n_bo_select)
+    total_pts = 0
     for ix in indices:
         best_struc = structures[ix]
         best_struc.set_calculator(set_vasp('single', 0.20))
-        print("{:4d}-th structure is picked {:8.3f}[{:8.3f}]".format(ix, Es[ix], E_vars[ix]))
+        strs = "Struc {:4d} is picked: {:8.3f}[{:8.3f}]".format(ix, Es[ix], E_vars[ix])
 
         # perform single point DFT
+        t0 = time()
         best_eng, best_forces = dft_run(best_struc, path=calc_folder)
-
+        cputime = (time() - t0)/60
         # sometimes the vasp calculation will fail
         if best_eng is not None:
-            print("{:4d}-th structure: E/atom: {:8.3f} eV/atom\n".format(ix, best_eng/len(best_struc)))
+            strs += " -> DFT energy: {:8.3f} eV/atom ".format(best_eng/len(best_struc))
+            strs += "in {:6.2f} minutes".format(cputime)
             # update GPR model
             pts, N_pts, _ = model.add_structure((best_struc, best_eng, best_forces), tol_e_var=1.2)
             if N_pts > 0:
                 model.set_train_pts(pts, mode="a+")
                 model.fit()
+                total_pts += N_pts
+        else:
+            strs += " skipped due to error in vasp calculation"
+        print(strs)
+
+    # Let's do update once a generation
+    model.sparsify()
+
     # some metrics here to quickly show the improvement, e.g?
     # the average uncertainties for low energy structures?
     # the list of best structures (i.e., both low E and E_var structure)?

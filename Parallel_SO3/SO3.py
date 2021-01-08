@@ -974,6 +974,8 @@ if  __name__ == "__main__":
     if options.structure is None:
         from ase.build import bulk
         test = bulk('Si', 'diamond', a=5.459, cubic=True)
+        test = test * 2
+        print(test)
         #cell = test.get_cell()
         #cell[0,1] += 0.5
         #test.set_cell(cell)
@@ -990,8 +992,9 @@ if  __name__ == "__main__":
     import time
     start1 = time.time()
     f = SO3(nmax, lmax, rcut, alpha, derivative=der, stress=stress)
-    x = f.calculate(test, atom_ids=[0, 1])
-    print(x['x'])
+    x = f.calculate(test) #, atom_ids=[0, 1])
+    #print(x['x'])
+    print(len(x['x']))
     start2 = time.time()
     print('time elapsed: {}'.format(start2 - start1))
     '''

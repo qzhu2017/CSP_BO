@@ -119,7 +119,7 @@ class GaussianProcess():
         
         return self
 
-    def predict(self, X, stress=False, total_E=False, return_std=False, return_cov=False):
+    def predict(self, X, stress=False, total_E=False, return_std=False, return_cov=False, base_potential=False):
         if stress:
             K_trans, K_trans1 = self.kernel.k_total_with_stress(X, self.train_x, same=False)
             pred1 = K_trans1.dot(self.alpha_)
@@ -128,7 +128,7 @@ class GaussianProcess():
         
         pred = K_trans.dot(self.alpha_)
         y_mean = pred[:, 0]
-
+        
         Npts = 0
         if 'energy' in X:
             if isinstance(X["energy"], tuple): #big array
@@ -145,7 +145,7 @@ class GaussianProcess():
 
         if total_E:
             if isinstance(X["energy"], tuple): #big array
-                N_atoms = np.array([len(x) for x in X["energy"][-1]]) 
+                N_atoms = np.array([x for x in X["energy"][-1]]) 
             else:
                 N_atoms = np.array([len(x) for x in X["energy"]]) 
             factors[:len(N_atoms)] = N_atoms
@@ -340,6 +340,7 @@ class GaussianProcess():
         y_mean[0] *= len(struc) #total energy
         E = y_mean[0]
         F = y_mean[1:].reshape([len(struc), 3])
+
         if stress:
             S = K_trans1.dot(self.alpha_)[:,0].reshape([len(struc), 6])
         else:
@@ -352,7 +353,6 @@ class GaussianProcess():
             F += force_off
             if stress:
                 S += stress_off
-
         if return_std:
             if self._K_inv is None:
                 L_inv = solve_triangular(self.L_.T, np.eye(self.L_.shape[0]))
@@ -468,8 +468,6 @@ class GaussianProcess():
     def optimize(self, fun, theta0, bounds):
         opt_res = minimize(fun, theta0, method="L-BFGS-B", bounds=bounds, 
             jac=True, options={'maxiter': 10, 'ftol': 1e-2})
-        #print(opt_res)
-        #import sys; sys.exit()
         return opt_res.x, opt_res.fun
 
     def save(self, filename, db_filename):

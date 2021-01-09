@@ -94,10 +94,17 @@ def new_struc(struc, ref_strucs):
 # QZ: Probably, list other acquisition functions
 # so that we can try to play with it
 
-def BO_select(model, data, alpha=0.5, n_indices=1):
+def BO_select(model, data, structures, alpha=0.5, n_indices=1):
     """ Return the index of the trial structures. """
-    mean, cov = model.predict(data, stress=False, return_cov=True)
+    mean, cov = model.predict(data, total_E=True, stress=False, return_cov=True)
+    if model.base_potential is not None:
+        for i, struc in enumerate(structures):
+            energy_off, _, _ = model.compute_base_potential(struc)
+            mean[i] += energy_off
+            mean[i] /= len(struc)
+    
     samples = np.random.multivariate_normal(mean, cov * alpha ** 2, 1)[0,:]
+    
     if n_indices == 1:
         ix = np.argmin(samples)
         indices = [ix]
@@ -279,7 +286,7 @@ from spglib import get_symmetry_dataset
 sgs = range(16, 231)
 numIons = [8]
 gen_max = 50
-N_pop = 10
+N_pop = 5
 alpha = 0.5
 n_bo_select = max([1,int(N_pop/5)])
 
@@ -343,7 +350,7 @@ for gen in range(gen_max):
     # Therefore, each generation will still generate many appearing low energy structures
     # Perhaps, we need to play with alpha, or revise the selection rule
     
-    indices = BO_select(model, data, alpha=alpha, n_indices=n_bo_select)
+    indices = BO_select(model, data, structures, alpha=alpha, n_indices=n_bo_select)
     total_pts = 0
     for ix in indices:
         best_struc = structures[ix]

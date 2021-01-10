@@ -43,7 +43,7 @@ class GPR(Calculator):
         if total:
             return self.results["var_e"]
         else:
-            return self.results["var_e"]/(len(self.results["forces"])**2)
+            return self.results["var_e"]/len(self.results["forces"])
 
     def get_var_f(self):
         return self.results["var_f"]

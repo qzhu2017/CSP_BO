@@ -299,20 +299,29 @@ alpha = 0.5
 n_bo_select = max([1,int(N_pop/5)])
 
 logfile = 'opt.log'
+Current_data = {"struc": [None] * N_pop,
+                "E": 100000*np.ones(N_pop),
+                "E_var": np.zeros(N_pop),
+               }
+calc = GPR(ff=model, stress=True, return_std=True)
 
 for gen in range(gen_max):
     data = {'energy': [], 'force': []}
     structures = []
     Es = []
     E_vars = []
+    ids = []
     for pop in range(N_pop):
-        # generate and relax the structure
         t0 = time()
-        struc = PyXtal(sgs, species, numIons) 
-        calc = GPR(ff=model, stress=True, return_std=True)
-        struc.set_calculator(calc)
+        # generate the initial structure
+        if Current_data["struc"][pop] is None:
+            struc = PyXtal(sgs, species, numIons) 
+        else:
+            struc = Current_data["struc"][pop]
+            # print("Continue relaxation with the updated GP model")  
 
         # fix cell opt
+        struc.set_calculator(calc) # set calculator
         dyn = FIRE(struc, logfile=logfile)
         dyn.run(fmax=0.05, steps=100)
 
@@ -345,23 +354,17 @@ for gen in range(gen_max):
             # save the structures to a db
             # we probably need to re-evaluate the structures after the GP model is converged
             # add_structures(structures, 'all.db')
+            ids.append(pop)
+            Current_data["struc"][pop] = struc
+            Current_data["E"][pop] = E
+            Current_data["E_var"][pop] = E_var
         else:
             print("skip the duplicate structures")
 
     # remove unnecessary logfile
     os.remove(logfile)
-    #------------------- BO selection ------------------------------
-    # The following loop should have only one python process
 
-    # The idea of BO selection is to let us quickly find low-energy structures with low uncertainties
-    # With this, we will need to add many new points to GP training database
-    # then we hope to see less appearing low energy structures when the generation evloves
-    # An overall pattern is that the overall uncertainties will decrease for the low-energy structures
-    # We don't need to worry about appearing high energy structures with high uncertainties
-    # However, the current scheme seems to select only structures with high uncertainties
-    # Therefore, each generation will still generate many appearing low energy structures
-    # Perhaps, we need to play with alpha, or revise the selection rule
-    
+    #------------------- BO selection ------------------------------
     indices = BO_select(model, data, structures, alpha=alpha, n_indices=n_bo_select)
     total_pts = 0
     for ix in indices:
@@ -369,35 +372,54 @@ for gen in range(gen_max):
         best_struc.set_calculator(set_vasp('single', 0.20))
         strs = "Struc {:4d} is picked: {:8.3f}[{:8.3f}]".format(ix, Es[ix], E_vars[ix])
 
-        # perform single point DFT
-        t0 = time()
-        best_eng, best_forces = dft_run(best_struc, path=calc_folder)
-        cputime = (time() - t0)/60
-        # sometimes the vasp calculation will fail
-        if best_eng is not None:
-            strs += " -> DFT energy: {:8.3f} eV/atom ".format(best_eng/len(best_struc))
-            strs += "in {:6.2f} minutes".format(cputime)
-            # update GPR model
-            pts, N_pts, _ = model.add_structure((best_struc, best_eng, best_forces), tol_e_var=1.2)
-            if N_pts > 0:
-                model.set_train_pts(pts, mode="a+")
-                model.fit(show=False)
-                total_pts += N_pts
-        else:
-            strs += " !!!skipped due to error in vasp calculation"
-        print(strs)
+        if E_vars[ix] > 1e-4:
+            # perform single point DFT
+            t0 = time()
+            best_eng, best_forces = dft_run(best_struc, path=calc_folder)
+            cputime = (time() - t0)/60
+            # sometimes the vasp calculation will fail
+            if best_eng is not None:
+                E = best_eng/len(best_struc)
+                strs += " -> DFT energy: {:8.3f} eV/atom ".format(E)
+                strs += "in {:6.2f} minutes".format(cputime)
+                # update GPR model
+                pts, N_pts, _ = model.add_structure((best_struc, best_eng, best_forces), tol_e_var=1.2)
+                if N_pts > 0:
+                    model.set_train_pts(pts, mode="a+")
+                    model.fit(show=False)
+                    total_pts += N_pts
+            else:
+                E = 100000
+                strs += " !!!skipped due to error in vasp calculation"
+            print(strs)
 
-    # Let's do update once a generation
+        # update energy
+        Current_data['E'][ids[ix]] = E
+        Current_data['E_var'][ids[ix]] = 0.02
+
+    # clean up some duplicate train data
     model.sparsify()
     print(model)
 
+    # reset the structures if 
+    # 1, the structure has 0 variance
+    # 2, the structure has very high energies
+    Es = np.array([e for e, s in zip(Current_data['E'], Current_data['struc']) if e<10000])
+    e_median = np.median(Es)
+    for pop in range(N_pop):
+        struc = Current_data['struc'][pop]
+        e = Current_data['E'][pop]
+        e_var = Current_data['E_var'][pop]
+        #print(pop, e, e_var, e_median)
+        if struc is not None:
+            if e > e_median or e_var < 1e-4:
+                Current_data['struc'][pop] = None
+
+    kept_ids = [pop for pop in range(N_pop) if Current_data['struc'][pop] is not None]
+    print("The following structures will be kept for further optimization")
+    print(kept_ids)
     # some metrics here to quickly show the improvement, e.g?
     # the average uncertainties for low energy structures?
     # the list of best structures (i.e., both low E and E_var structure)?
     # or some metrics from typical BO optimization?
 
-    # Resort the energy based on the updated ranking
-    # For the first %20 of structures (with sigma>some value), 
-    # we will continue to relax them in the new generation
-    # otherwise, the structures will be generated from the scratch
-    # This way, we can focus on some true low-energy structures

@@ -102,7 +102,9 @@ def BO_select(model, data, structures, alpha=0.5, n_indices=1):
             energy_off, _, _ = model.compute_base_potential(struc)
             mean[i] += energy_off
             mean[i] /= len(struc)
-    
+            # Covariance / atom**2
+            cov[i,:] /= len(struc)
+            cov[:,i] /= len(struc)
     samples = np.random.multivariate_normal(mean, cov * alpha ** 2, 1)[0,:]
     
     if n_indices == 1:

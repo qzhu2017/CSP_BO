@@ -3,6 +3,11 @@ import numpy as np
 import os
 from time import time
 
+# setup the actual command to run vasp
+# define the walltime and number of cpus
+cmd = "timeout 1m mpirun -np 8 vasp_std > vasp_log"
+os.environ["VASP_COMMAND"] = cmd
+
 #--------- Database related ------------------
 
 from ase.db import connect
@@ -122,6 +127,7 @@ def dft_run(struc, path, clean=False):
     """
     perform dft calculation and get energy and forces
     """
+
     cwd = os.getcwd()
     os.chdir(path)
     try:
@@ -185,7 +191,7 @@ def LJ_fit(rs, engs, eng_cut=5.0, p1=12, p2=6):
 
 #---------------------- Main Program -------------------
 # --------- DFT calculator set up
-calc_folder = 'vasp_tmp'
+calc_folder = 'vasp_tmp_Si'
 if not os.path.exists(calc_folder):
     os.makedirs(calc_folder)
 species = ["Si"]
@@ -288,9 +294,11 @@ from spglib import get_symmetry_dataset
 sgs = range(16, 231)
 numIons = [8]
 gen_max = 50
-N_pop = 5
+N_pop = 50
 alpha = 0.5
 n_bo_select = max([1,int(N_pop/5)])
+
+logfile = 'opt.log'
 
 for gen in range(gen_max):
     data = {'energy': [], 'force': []}
@@ -305,12 +313,12 @@ for gen in range(gen_max):
         struc.set_calculator(calc)
 
         # fix cell opt
-        dyn = FIRE(struc, logfile='opt.log')
+        dyn = FIRE(struc, logfile=logfile)
         dyn.run(fmax=0.05, steps=100)
 
         # variable cell opt
         ecf = ExpCellFilter(struc)
-        dyn = FIRE(ecf, logfile='opt.log')
+        dyn = FIRE(ecf, logfile=logfile)
         dyn.run(fmax=0.05, steps=100)
         E = struc.get_potential_energy()/len(struc) #per atom
         E_var = struc._calc.get_var_e()
@@ -340,6 +348,8 @@ for gen in range(gen_max):
         else:
             print("skip the duplicate structures")
 
+    # remove unnecessary logfile
+    os.remove(logfile)
     #------------------- BO selection ------------------------------
     # The following loop should have only one python process
 
@@ -385,3 +395,9 @@ for gen in range(gen_max):
     # the average uncertainties for low energy structures?
     # the list of best structures (i.e., both low E and E_var structure)?
     # or some metrics from typical BO optimization?
+
+    # Resort the energy based on the updated ranking
+    # For the first %20 of structures (with sigma>some value), 
+    # we will continue to relax them in the new generation
+    # otherwise, the structures will be generated from the scratch
+    # This way, we can focus on some true low-energy structures

@@ -154,11 +154,13 @@ def BO_select(model, data, structures, min_E=None, alpha=0.5, n_indices=1, style
         msg = "The acquisition function style is not equipped."
         raise NotImplementedError(msg)
     
-    if n_indices == 1:
-        ix = np.argmin(samples)
-        indices = [ix]
-    else:
-        indices = np.argsort(samples)[:n_indices]
+    #if n_indices == 1:
+    #    ix = np.argmin(samples)
+    #    indices = [ix]
+    #else:
+    #    indices = np.argsort(samples)[:n_indices]
+
+    indices = np.argsort(samples)
     return indices
 
 #--------- DFT related ------------------
@@ -346,18 +348,17 @@ from spglib import get_symmetry_dataset
 sgs = range(16, 231)
 numIons = [8]
 gen_max = 50
-N_pop = 5
-alpha = 0.5
-n_bo_select = max([1,int(N_pop/5)])
-BO_style = 'EI'
+N_pop = 10
+alpha = 1
+n_bo_select = max([1,N_pop//5])
+BO_style = 'Thompson'
 
 logfile = 'opt.log'
 
 for gen in range(gen_max):
     data = {'energy': [], 'force': []}
     structures = []
-    Es = []
-    E_vars = []
+    Es, E_vars = [], []
     for pop in range(N_pop):
         # generate and relax the structure
         t0 = time()
@@ -417,30 +418,42 @@ for gen in range(gen_max):
     
     indices = BO_select(model, data, structures, min_E=min_E, alpha=alpha, n_indices=n_bo_select, style=BO_style)
     total_pts = 0
-    for ix in indices:
-        best_struc = structures[ix]
-        best_struc.set_calculator(set_vasp('single', 0.20))
-        strs = "Struc {:4d} is picked: {:8.3f}[{:8.3f}]".format(ix, Es[ix], E_vars[ix])
+    bo_count, fail_count = 0, 0
+    while bo_count < n_bo_select:
+        if bo_count+fail_count == len(indices):
+            print("Breaking the while loop.")
+            break
+        ix = indices[bo_count+fail_count]
+        
+        if E_vars[ix] > 1e-6:
+            best_struc = structures[ix]
+            best_struc.set_calculator(set_vasp('single', 0.20))
+            strs = "Struc {:4d} is picked: {:8.3f}[{:8.3f}]".format(ix, Es[ix], E_vars[ix])
 
-        # perform single point DFT
-        t0 = time()
-        best_eng, best_forces = dft_run(best_struc, path=calc_folder)
-        cputime = (time() - t0)/60
-        # sometimes the vasp calculation will fail
-        if best_eng is not None:
-            if best_eng/len(best_struc) < min_E:
-                min_E = best_eng/len(best_struc)
-            strs += " -> DFT energy: {:8.3f} eV/atom ".format(best_eng/len(best_struc))
-            strs += "in {:6.2f} minutes".format(cputime)
-            # update GPR model
-            pts, N_pts, _ = model.add_structure((best_struc, best_eng, best_forces), tol_e_var=1.2)
-            if N_pts > 0:
-                model.set_train_pts(pts, mode="a+")
-                model.fit(show=False)
-                total_pts += N_pts
+            # perform single point DFT
+            t0 = time()
+            best_eng, best_forces = dft_run(best_struc, path=calc_folder)
+            cputime = (time() - t0)/60
+            # sometimes the vasp calculation will fail
+            if best_eng is not None:
+                if best_eng/len(best_struc) < min_E:
+                    min_E = best_eng/len(best_struc)
+                strs += " -> DFT energy: {:8.3f} eV/atom ".format(best_eng/len(best_struc))
+                strs += "in {:6.2f} minutes".format(cputime)
+                # update GPR model
+                pts, N_pts, _ = model.add_structure((best_struc, best_eng, best_forces), tol_e_var=1.2)
+                if N_pts > 0:
+                    model.set_train_pts(pts, mode="a+")
+                    model.fit(show=False)
+                    total_pts += N_pts
+                bo_count += 1
+            else:
+                strs += " !!!skipped due to error in vasp calculation"
+                fail_count += 1
+            print(strs)
         else:
-            strs += " !!!skipped due to error in vasp calculation"
-        print(strs)
+            print("Structure is skipped due to small variance.")
+            fail_count += 1
 
     # Let's do update once a generation
     print("The minimum energy: {:8.3f} eV/atom ".format(min_E)) 

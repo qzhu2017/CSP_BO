@@ -2,6 +2,7 @@ from ase import Atoms
 import numpy as np
 import os
 from time import time
+from scipy.stats import norm
 
 # setup the actual command to run vasp
 # define the walltime and number of cpus
@@ -99,18 +100,59 @@ def new_struc(struc, ref_strucs):
 # QZ: Probably, list other acquisition functions
 # so that we can try to play with it
 
-def BO_select(model, data, structures, alpha=0.5, n_indices=1):
+def BO_select(model, data, structures, min_E=None, alpha=0.5, n_indices=1, style='Thompson'):
     """ Return the index of the trial structures. """
-    mean, cov = model.predict(data, total_E=True, stress=False, return_cov=True)
-    if model.base_potential is not None:
-        for i, struc in enumerate(structures):
-            energy_off, _, _ = model.compute_base_potential(struc)
-            mean[i] += energy_off
-            mean[i] /= len(struc)
-            # Covariance / atom**2
-            cov[i,:] /= len(struc)
-            cov[:,i] /= len(struc)
-    samples = np.random.multivariate_normal(mean, cov * alpha ** 2, 1)[0,:]
+    if style == 'Thompson':
+        mean, cov = model.predict(data, total_E=True, stress=False, return_cov=True)
+        if model.base_potential is not None:
+            for i, struc in enumerate(structures):
+                energy_off, _, _ = model.compute_base_potential(struc)
+                mean[i] += energy_off
+                mean[i] /= len(struc)
+                # Covariance / atom**2
+                cov[i,:] /= len(struc)
+                cov[:,i] /= len(struc)
+        samples = np.random.multivariate_normal(mean, cov * alpha ** 2, 1)[0,:]
+    
+    elif style == 'EI': # Expected Improvement
+        if min_E is None:
+            msg = "PI style needs to know the minimum energy"
+            return ValueError(msg)
+        
+        mean, cov = model.predict(data, total_E=True, stress=False, return_cov=True)
+        if model.base_potential is not None:
+            for i, struc in enumerate(structures):
+                energy_off, _, _ = model.compute_base_potential(struc)
+                mean[i] += energy_off
+                mean[i] /= len(struc)
+                # Covariance / atom**2
+                cov[i,:] /= len(struc)
+                cov[:,i] /= len(struc)
+        std_per_atom = np.sqrt(np.diag(cov))
+        tmp1 = mean - min_E
+        tmp2 = tmp1 / std_per_atom
+        samples = tmp1 * norm.cdf(tmp2) + std_per_atom * norm.pdf(tmp2)
+
+    elif style == 'PI': # Probability of Improvement
+        if min_E is None:
+            msg = "PI style needs to know the minimum energy"
+            return ValueError(msg)
+        
+        mean, cov = model.predict(data, total_E=True, stress=False, return_cov=True)
+        if model.base_potential is not None:
+            for i, struc in enumerate(structures):
+                energy_off, _, _ = model.compute_base_potential(struc)
+                mean[i] += energy_off
+                mean[i] /= len(struc)
+                # Covariance / atom**2
+                cov[i,:] /= len(struc)
+                cov[:,i] /= len(struc)
+        std_per_atom = np.sqrt(np.diag(cov))
+        samples = norm.cdf((mean-min_E)/(std_per_atom+1E-9))
+
+    else:
+        msg = "The acquisition function style is not equipped."
+        raise NotImplementedError(msg)
     
     if n_indices == 1:
         ix = np.argmin(samples)
@@ -227,6 +269,7 @@ lj = LJ(parameters={"rc": 5.0, "epsilon": para[0], "sigma": para[1]})
 from ase.build import bulk
 train_db = 'init_train.db'
 data = []
+min_E = 0
 if not os.path.exists(train_db):
     strucs = []
     strucs.append(bulk(species[0], 'fcc', a=3.6, cubic=True))
@@ -240,6 +283,8 @@ if not os.path.exists(train_db):
         struc.set_calculator(set_vasp('single', 0.20))
         eng, forces = dft_run(struc, path=calc_folder)
         data.append((struc, eng, forces))
+        if eng/len(struc) < min_E:
+            min_E = eng/len(struc)
 
         #expansion
         struc1 = struc.copy()
@@ -248,6 +293,8 @@ if not os.path.exists(train_db):
         struc1.set_calculator(set_vasp('single', 0.20))
         eng, forces = dft_run(struc1, path=calc_folder)
         data.append((struc1, eng, forces))
+        if eng/len(struc) < min_E:
+            min_E = eng/len(struc)
 
         #shrink
         struc2 = struc.copy()
@@ -256,12 +303,17 @@ if not os.path.exists(train_db):
         struc2.set_calculator(set_vasp('single', 0.20))
         eng, forces = dft_run(struc2, path=calc_folder)
         data.append((struc2, eng, forces))
+        if eng/len(struc) < min_E:
+            min_E = eng/len(struc)
+
     add_GP_train(data, train_db)
 else:
     with connect(train_db) as db:
         for row in db.select():
             struc = db.get_atoms(row.id)
             data.append((struc, row.data['dft_energy'], row.data['dft_forces'].copy()))
+            if row.data['dft_energy']/len(struc) < min_E:
+                min_E = row.data['dft_energy']/len(struc)
 
 ##----------- Fit the GP model
 from cspbo.kernels.RBF_mb import RBF_mb
@@ -294,9 +346,10 @@ from spglib import get_symmetry_dataset
 sgs = range(16, 231)
 numIons = [8]
 gen_max = 50
-N_pop = 50
+N_pop = 5
 alpha = 0.5
 n_bo_select = max([1,int(N_pop/5)])
+BO_style = 'EI'
 
 logfile = 'opt.log'
 
@@ -362,7 +415,7 @@ for gen in range(gen_max):
     # Therefore, each generation will still generate many appearing low energy structures
     # Perhaps, we need to play with alpha, or revise the selection rule
     
-    indices = BO_select(model, data, structures, alpha=alpha, n_indices=n_bo_select)
+    indices = BO_select(model, data, structures, min_E=min_E, alpha=alpha, n_indices=n_bo_select, style=BO_style)
     total_pts = 0
     for ix in indices:
         best_struc = structures[ix]
@@ -375,6 +428,8 @@ for gen in range(gen_max):
         cputime = (time() - t0)/60
         # sometimes the vasp calculation will fail
         if best_eng is not None:
+            if best_eng/len(best_struc) < min_E:
+                min_E = best_eng/len(best_struc)
             strs += " -> DFT energy: {:8.3f} eV/atom ".format(best_eng/len(best_struc))
             strs += "in {:6.2f} minutes".format(cputime)
             # update GPR model
@@ -388,6 +443,7 @@ for gen in range(gen_max):
         print(strs)
 
     # Let's do update once a generation
+    print("The minimum energy: {:8.3f} eV/atom ".format(min_E)) 
     model.sparsify()
     print(model)
 

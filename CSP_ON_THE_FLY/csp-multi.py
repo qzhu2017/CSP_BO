@@ -237,6 +237,7 @@ def set_vasp(level='opt', kspacing=0.5):
                 'encut': 520,
                 'ediff': 1e-4,
                 'nsw': 0,
+                'symprec': 1e-8,
                 }
     else:
         para = {'prec': 'accurate',

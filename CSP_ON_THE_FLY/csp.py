@@ -53,22 +53,24 @@ def add_structures(data, db_file):
                  }
             db.write(struc, data=d1)
 
-def collect_data(gpr_model, data, struc, energy, force):
+def collect_data(gpr_model, data, structures, energies, forces):
     """ Collect data for GPR.predict. """
-    _data = (struc, energy, force)
-    # High force value means to ignore force since bo only compares energies
-    pts, N_pts, _ = gpr_model.add_structure(_data, N_max=100000, tol_e_var=-10, tol_f_var=10000)
-    for key in pts.keys():
-        if key == 'energy':
-            (X, ELE, indices, E) = list_to_tuple(pts[key], include_value=True, mode='energy')
-            if len(data["energy"]) == 3:
-                (_X, _ELE, _indices) = data['energy']
-                _X = np.concatenate((_X, X), axis=0)
-                _indices.extend(indices) 
-                _ELE = np.concatenate((_ELE, ELE), axis=0) 
-                data['energy'] = (_X, _ELE, _indices)
-            else:
-                data['energy'] = (X, ELE, indices)
+    for i, struc in enumerate(structures):
+        energy, force = energies[i], forces[i]
+        _data = (struc, energy, force)
+        # High force value means to ignore force since bo only compares energies
+        pts, N_pts, _ = gpr_model.add_structure(_data, N_max=100000, tol_e_var=-10, tol_f_var=10000)
+        for key in pts.keys():
+            if key == 'energy':
+                (X, ELE, indices, E) = list_to_tuple(pts[key], include_value=True, mode='energy')
+                if len(data["energy"]) == 3:
+                    (_X, _ELE, _indices) = data['energy']
+                    _X = np.concatenate((_X, X), axis=0)
+                    _indices.extend(indices) 
+                    _ELE = np.concatenate((_ELE, ELE), axis=0) 
+                    data['energy'] = (_X, _ELE, _indices)
+                else:
+                    data['energy'] = (X, ELE, indices)
 
     return data
     
@@ -154,12 +156,6 @@ def BO_select(model, data, structures, min_E=None, alpha=0.5, n_indices=1, style
         msg = "The acquisition function style is not equipped."
         raise NotImplementedError(msg)
     
-    #if n_indices == 1:
-    #    ix = np.argmin(samples)
-    #    indices = [ix]
-    #else:
-    #    indices = np.argsort(samples)[:n_indices]
-
     indices = np.argsort(samples)
     return indices
 
@@ -358,7 +354,8 @@ logfile = 'opt.log'
 for gen in range(gen_max):
     data = {'energy': [], 'force': []}
     structures = []
-    Es, E_vars = [], []
+    Es, E_vars, Fs= [], [], []
+    
     for pop in range(N_pop):
         # generate and relax the structure
         t0 = time()
@@ -395,13 +392,15 @@ for gen in range(gen_max):
             
             # QZ: This should be outside the for loop
             F = struc.get_forces()
-            data = collect_data(model, data, struc, E, F)
+            Fs.append(F)
+            #data = collect_data(model, data, struc, E, F)
             # save the structures to a db
             # we probably need to re-evaluate the structures after the GP model is converged
             # add_structures(structures, 'all.db')
         else:
             print("skip the duplicate structures")
 
+    data = collect_data(model, data, structures, Es, Fs)
     # remove unnecessary logfile
     os.remove(logfile)
     #------------------- BO selection ------------------------------

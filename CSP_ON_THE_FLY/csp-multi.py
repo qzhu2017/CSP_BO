@@ -3,16 +3,31 @@ import numpy as np
 import os
 from time import time
 from scipy.stats import norm
+from spglib import get_symmetry_dataset
 
 # setup the actual command to run vasp
 # define the walltime and number of cpus
 ncpu = 16
-cmd = "timeout 1m mpirun -np " + str(ncpu) + " vasp_std > vasp_log"
-os.environ["VASP_COMMAND"] = cmd
+cmd = "mpirun -np " + str(ncpu) + " vasp_std"
+logfile = 'opt.log2'  #ase dyn log file
+sym_tol = 1e-3
 
 # parallel processing
 from multiprocessing import current_process, Pool
 from functools import partial
+
+def symmetrize(struc, sym_tol=1e-3):
+    """
+    symmetrize the ase atoms struc
+    """
+    s = (struc.get_cell(), struc.get_scaled_positions(), struc.get_atomic_numbers())
+    dataset = get_symmetry_dataset(s, sym_tol)
+    cell = dataset['std_lattice']
+    pos = dataset['std_positions']
+    numbers = dataset['std_types']
+
+    return Atoms(numbers, scaled_positions=pos, cell=cell, pbc=[1,1,1])
+ 
 def opt_struc(struc, calc, sgs, species, numIons):
     """
     Prepare and perform the structural relaxation for each individual
@@ -38,12 +53,16 @@ def opt_struc(struc, calc, sgs, species, numIons):
     dyn = FIRE(ecf, logfile=logfile)
     dyn.run(fmax=0.05, steps=50)
 
-    # symmetrize the structure
-    # todo symmetrize the structure
-    #ecf = ExpCellFilter(struc)
-    #dyn = FIRE(ecf, logfile=logfile)
-    #dyn.run(fmax=0.05, steps=50)
-   
+    # symmetrize the structure and relax again
+    struc = symmetrize(struc)
+    struc.set_calculator(calc) # set calculator
+    ecf = ExpCellFilter(struc)
+    dyn = FIRE(ecf, logfile=logfile)
+    dyn.run(fmax=0.05, steps=50)
+
+    # symmetrize the final struc, useful for later dft calculation
+    struc = symmetrize(struc)
+    struc.set_calculator(calc) # set calculator
     cpu_time = (time() - t0)/60
     return (struc, cpu_time)
 
@@ -94,7 +113,7 @@ def collect_data(gpr_model, data, structures):
     """ Collect data for GPR.predict. """
     for i, struc in enumerate(structures):
         #energy, force = energies[i], forces[i]
-        energy, force = struc.get_potential_energy()/len(struc), struc.get_forces()
+        energy, force = struc.get_potential_energy(), struc.get_forces()
         _data = (struc, energy, force)
         # High force value means to ignore force since bo only compares energies
         pts, N_pts, _ = gpr_model.add_structure(_data, N_max=100000, tol_e_var=-10, tol_f_var=10000)
@@ -201,11 +220,11 @@ def BO_select(model, data, structures, min_E=None, alpha=0.5, style='Thompson'):
 
 from ase.calculators.vasp import Vasp
 
-def dft_run(struc, path, clean=False):
+def dft_run(struc, path, max_time=2, clean=True):
     """
     perform dft calculation and get energy and forces
     """
-
+    os.environ["VASP_COMMAND"] = "timeout " + str(max_time) + "m " + cmd
     cwd = os.getcwd()
     os.chdir(path)
     #try:
@@ -213,9 +232,10 @@ def dft_run(struc, path, clean=False):
     forces = struc.get_forces()
     #except:
     #    #print("VASP calculation is wrong!")
+    #    #os.system(os.environ["VASP_COMMAND"])
     #    eng = None
     #    forces = None
-    #    import sys; sys.exit()
+    #    #import sys; sys.exit()
     if clean:
         os.system("rm POSCAR POTCAR INCAR OUTCAR")
     os.chdir(cwd)
@@ -237,7 +257,8 @@ def set_vasp(level='opt', kspacing=0.5):
                 'encut': 520,
                 'ediff': 1e-4,
                 'nsw': 0,
-                'symprec': 1e-8,
+                #'symprec': 1e-8,
+                #'isym': 0,
                 }
     else:
         para = {'prec': 'accurate',
@@ -374,17 +395,15 @@ from cspbo.calculator import GPR
 from ase.optimize import FIRE
 from ase.constraints import ExpCellFilter
 from ase.spacegroup.symmetrize import FixSymmetry
-from spglib import get_symmetry_dataset
 #from pyxtal import pyxtal
 sgs = range(16, 231)
 numIons = [8]
 gen_max = 100
-N_pop = 50
+N_pop = 32
 alpha = 1
-n_bo_select = max([1,N_pop//3])
+n_bo_select = max([1,N_pop//8])
 BO_style = 'Thompson'
 
-logfile = 'opt.log2'
 Current_data = {"struc": [None] * N_pop,
                 "E": 100000*np.ones(N_pop),
                 "E_var": np.zeros(N_pop),
@@ -401,7 +420,7 @@ for gen in range(gen_max):
         res = []
         for struc in Current_data['struc']:
             res.append(opt_struc(struc, calc, sgs, species, numIons))
-    print("Total time for GRR optimization {:6.3f} minutes in gen {:d}".format((time()-t0)/60, gen))
+    print("Total time for GRR calls {:6.3f} minutes in gen {:d}".format((time()-t0)/60, gen))
 
     # unpack the results
     data = {'energy': [], 'force': []}
@@ -412,23 +431,25 @@ for gen in range(gen_max):
         (struc, cputime) = d
         E = struc.get_potential_energy()/len(struc) #per atom
         E_var = struc._calc.get_var_e()
-
+        vol = struc.get_volume()/len(struc)
         try:
-            spg = get_symmetry_dataset(struc, symprec=5e-2)['international']
+            spg = get_symmetry_dataset(struc, symprec=sym_tol)['international']
         except:
             spg = 'N/A'
-        strs = "{:3d} {:3d} {:6s} {:16s} {:8.3f}[{:8.3f}] {:6.2f} {:6.2f}".format(\
-        gen, pop, struc.get_chemical_formula(), spg, E, E_var, 
-        struc.get_volume()/len(struc), cputime)
+        strs = "{:3d} {:3d} {:6s} {:16s} {:8.3f}[{:8.4f}] {:6.2f} {:6.2f}".format(\
+        gen, pop, struc.get_chemical_formula(), spg, E, E_var, vol, cputime)
 
-        if new_struc(struc, structures) is None:        
-            structures.append(struc)
-            ids.append(pop)
-            Current_data["struc"][pop] = struc
-            Current_data["E"][pop] = E
-            Current_data["E_var"][pop] = E_var
-        else:
-            strs += " duplicate"
+        if vol > 60:
+            strs += " discarded (large volume)"
+        else: 
+            if new_struc(struc, structures) is None:        
+                structures.append(struc)
+                ids.append(pop)
+                Current_data["struc"][pop] = struc
+                Current_data["E"][pop] = E
+                Current_data["E_var"][pop] = E_var
+            else:
+                strs += " duplicate"
 
         print(strs)
 
@@ -443,16 +464,16 @@ for gen in range(gen_max):
         best_struc = structures[ix]
         E = best_struc.get_potential_energy()/len(best_struc)
         E_var = best_struc._calc.get_var_e()
-
+        N_pts = None
         if E_var > 1e-4:
             try:
-                spg = get_symmetry_dataset(best_struc, symprec=1e-2)['international']
+                spg = get_symmetry_dataset(best_struc, symprec=sym_tol)['international']
             except:
                 spg = 'N/A'
  
             best_struc = structures[ix]
             best_struc.set_calculator(set_vasp('single', 0.20))
-            strs = "Struc {:4d}[{:16s}]: {:8.3f}[{:8.3f}]".format(ids[ix], spg, E, E_var)
+            strs = "Struc {:4d}[{:16s}]: {:8.3f}[{:8.4f}]".format(ids[ix], spg, E, E_var)
 
             # perform single point DFT
             t0 = time()
@@ -470,43 +491,55 @@ for gen in range(gen_max):
                     model.set_train_pts(pts, mode="a+")
                     model.fit(show=False)
                     total_pts += N_pts
-                if E < min_E:
-                    best_struc.set_calculator(set_vasp('opt', 0.3))
-                    eng, forces = dft_run(best_struc, path=calc_folder)
-                    best_struc.set_calculator(set_vasp('single', 0.20))
-                    eng, forces = dft_run(best_struc, path=calc_folder)
-                    pts, N_pts, _ = model.add_structure((best_struc, eng, forces), tol_e_var=1.2)
-                    model.set_train_pts(pts, mode="a+")
-                    total_pts += N_pts
-                    min_E = eng/len(best_struc)
             else:
                 E = 100000
                 strs += " !!!skipped due to error in vasp calculation"
             print(strs)
 
+            if N_pts is not None and E < min_E + 0.4:
+                strs = "New ground state with lower DFT energy: "
+                t0 = time()
+                best_struc.set_calculator(set_vasp('opt', 0.3))
+                eng, forces = dft_run(best_struc, path=calc_folder, max_time=5)
+                best_struc.set_calculator(set_vasp('single', 0.20))
+                eng, forces = dft_run(best_struc, path=calc_folder)
+                E = eng/len(best_struc)
+
+                pts, N_pts, _ = model.add_structure((best_struc, eng, forces), tol_e_var=1.2)
+                if N_pts > 0:
+                    model.set_train_pts(pts, mode="a+")
+                    model.fit(show=False)
+                    total_pts += N_pts
+
+                cputime = (time() - t0)/60
+                strs += "{:8.3f} eV/atom in {:6.2f} minutes".format(E, cputime)
+                print(strs)
+                if E < min_E:
+                    min_E = E
+                Current_data['struc'][ids[ix]] = best_struc
+                Current_data['E_var'][ids[ix]] = 1e-5
+
         # update energy
         Current_data['E'][ids[ix]] = E
-        Current_data['E_var'][ids[ix]] = 0.02
 
-    print("Total time for DFT optimization {:6.3f} minutes in gen {:d}".format(total_time, gen))
+    print("Total time for DFT calls {:6.3f} minutes in gen {:d}".format(total_time, gen))
 
     model.sparsify()
     print(model)
 
-    # reset the structures if 
-    # 1, the structure has 0 variance
-    # 2, the structure has very high energies
-    Es = np.array([e for e, s in zip(Current_data['E'], Current_data['struc']) if e<10000])
-    e_median = np.median(Es)
+    # reset the structures if the structure has 0 variance
+    # Es = np.array([e for e, s in zip(Current_data['E'], Current_data['struc']) if e<10000])
+    # e_median = np.median(Es)
     for pop in range(N_pop):
         struc = Current_data['struc'][pop]
         e = Current_data['E'][pop]
         e_var = Current_data['E_var'][pop]
         if struc is not None:
-            if e > e_median or e_var < 1e-4:
+            #if e > e_median or e_var < 1e-4:
+            if e_var < 1e-4:
                 Current_data['struc'][pop] = None
 
-    kept_ids = [pop for pop in range(N_pop) if Current_data['struc'][pop] is not None]
-    print("The following structures will be kept for further optimization")
-    print(kept_ids)
+    # kept_ids = [pop for pop in range(N_pop) if Current_data['struc'][pop] is not None]
+    #print("The following structures will be kept for further optimization")
+    #print(kept_ids)
     print("The minimum energy in DFT is {:6.3f} eV/atom in gen {:d}".format(min_E, gen))

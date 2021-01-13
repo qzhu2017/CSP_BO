@@ -509,7 +509,7 @@ class GaussianProcess():
                 "db_filename": db_filename,
                 }
         if self.base_potential is not None:
-            dict0["base_potential"] = self.base_potential.save_dict(),
+            dict0["base_potential"] = self.base_potential.save_dict()
         return dict0
 
 
@@ -588,7 +588,7 @@ class GaussianProcess():
                 count += 1
                 atoms = db.get_atoms(id=row.id)
                 energy = row.data.energy
-                force = row.data.force
+                force = row.data.force.copy()
 
                 # substract the energy/force offsets due to the base_potential
                 if self.base_potential is not None:

@@ -371,7 +371,7 @@ else:
     
             #expansion
             struc1 = struc.copy()
-            struc1.set_cell(1.2*struc.cell)
+            struc1.set_cell(1.063*struc.cell)
             struc1.set_scaled_positions(struc.get_scaled_positions())
             struc1.set_calculator(set_vasp('single', 0.20))
             eng, forces = dft_run(struc1, path=calc_folder)
@@ -379,7 +379,7 @@ else:
     
             #shrink
             struc2 = struc.copy()
-            struc2.set_cell(0.8*struc.cell)
+            struc2.set_cell(0.928*struc.cell)
             struc2.set_scaled_positions(struc.get_scaled_positions())
             struc2.set_calculator(set_vasp('single', 0.20))
             eng, forces = dft_run(struc2, path=calc_folder)

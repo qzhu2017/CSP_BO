@@ -44,26 +44,30 @@ def opt_struc(struc, calc, sgs, species, numIons):
         struc = PyXtal(sgs, species, numIons) 
         struc.relax = "normal"
 
+    steps = [0, 0]
     if struc.relax == "normal":
         steps = [100, 25]
+    elif struc.relax == "medium":
+        # single point by DFT
+        steps = [10, 5]
     elif struc.relax == "Light":
-        # Don't try too hard if it is already relaxed by DFT
+        # already relaxed by DFT
         steps = [3, 1]
-    else:
-        steps = [0, 0]
 
     # fix cell opt
     struc.set_calculator(calc) # set calculator
-    struc.set_constraint(FixSymmetry(struc))
-    dyn = FIRE(struc, logfile=logfile)
-    dyn.run(fmax=0.05, steps=steps[0])
-    #print("Fix cell", time()-t0)
+    if steps[0]>0:
+        struc.set_constraint(FixSymmetry(struc))
+        dyn = FIRE(struc, logfile=logfile)
+        dyn.run(fmax=0.05, steps=steps[0])
+        #print("Fix cell", time()-t0)
 
     # variable cell opt
-    ecf = ExpCellFilter(struc)
-    dyn = FIRE(ecf, logfile=logfile)
-    dyn.run(fmax=0.05, steps=steps[1])
-    #print("var cell", time()-t0)
+    if steps[1]>0:
+        ecf = ExpCellFilter(struc)
+        dyn = FIRE(ecf, logfile=logfile)
+        dyn.run(fmax=0.05, steps=steps[1])
+        #print("var cell", time()-t0)
 
     ## symmetrize the structure and relax again
     #struc = symmetrize(struc)
@@ -404,8 +408,8 @@ else:
     model = gpr(kernel=kernel, 
                 descriptor=des, 
                 base_potential=lj,
-                noise_e=[5e-3, 2e-3, 2e-1], 
-                f_coef=10)
+                noise_e=[1e-2, 5e-3, 1e-1], 
+                f_coef=20)
     for d in data:
         pts, N_pts, error = model.add_structure(d)
         if N_pts > 0:
@@ -435,7 +439,9 @@ Current_data = {"struc": [None] * N_pop,
                 "E": 100000*np.ones(N_pop),
                 "E_var": np.zeros(N_pop),
                 "E_DFT": [None] *N_pop,
-                "relax": [True] *N_pop,
+                "spg": ['P1'] *N_pop,
+                "relax": ["normal"] *N_pop,
+                "survival": [0] *N_pop,
                }
 calc = GPR(ff=model, stress=True, return_std=True)
 
@@ -465,8 +471,9 @@ for gen in range(gen_max):
             spg = get_symmetry_dataset(struc, symprec=sym_tol)['international']
         except:
             spg = 'N/A'
-        strs = "{:3d} {:3d} {:6s} {:16s} {:8.3f}[{:8.4f}] {:6.2f} {:6.2f}".format(\
-        gen, pop, struc.get_chemical_formula(), spg, E, E_var, vol, cputime)
+        formula = struc.get_chemical_formula()
+        strs = "{:3d} {:3d}[{:2d}] {:6s} {:16s} {:8.3f}[{:8.4f}] {:6.2f} {:6.2f}".format(\
+        gen, pop, Current_data["survival"][pop], formula, spg, E, E_var, vol, cputime)
 
         if Current_data['E_DFT'][pop] is not None:
             strs += "{:8.3f}".format(Current_data['E_DFT'][pop])
@@ -475,6 +482,7 @@ for gen in range(gen_max):
             strs += " discarded (large volume)"
             Current_data["struc"][pop] = None
             Current_data['relax'][pop] = "normal"
+            Current_data['survival'][pop] = 0
         else: 
             if new_struc(struc, structures) is None:        
                 structures.append(struc)
@@ -482,11 +490,16 @@ for gen in range(gen_max):
                 Current_data["struc"][pop] = struc
                 Current_data["E"][pop] = E
                 Current_data["E_var"][pop] = E_var
+                Current_data['survival'][pop] += 1
             else:
                 strs += " duplicate"
                 Current_data["struc"][pop] = None
                 Current_data['E_DFT'][pop] = None
                 Current_data['relax'][pop] = "normal"
+                Current_data['survival'][pop] = 0
+
+        Current_data['spg'][pop] = spg
+
         if E < min_E:
             strs += ' +++++'
 
@@ -504,12 +517,8 @@ for gen in range(gen_max):
         E = best_struc.get_potential_energy()/len(best_struc)
         E_var = best_struc._calc.get_var_e()
         N_pts = None
-        if E_var > 1e-4:
-            try:
-                spg = get_symmetry_dataset(best_struc, symprec=sym_tol)['international']
-            except:
-                spg = 'N/A'
- 
+        if E_var > 1e-3:
+            spg = Current_data['spg'][ids[ix]]
             best_struc = structures[ix]
             best_struc.set_calculator(set_vasp('single', 0.20))
             strs = "Struc {:4d}[{:16s}]: {:8.3f}[{:8.4f}]".format(ids[ix], spg, E, E_var)
@@ -531,6 +540,7 @@ for gen in range(gen_max):
                     model.fit(show=False)
                     total_pts += N_pts
                 Current_data['E_DFT'][ids[ix]] = E
+                Current_data['relax'][ids[ix]] = "medium"
             else:
                 E = 100000
                 strs += " !!!skipped due to error in vasp calculation"
@@ -556,6 +566,7 @@ for gen in range(gen_max):
                     total_pts += N_pts
                 else:
                     Current_data['relax'][ids[ix]] = "freeze"
+                    strs += 'freeze, no update'
                 print(strs)
 
                 if E < min_E:
@@ -568,7 +579,7 @@ for gen in range(gen_max):
 
     print("Total time for DFT calls {:6.3f} minutes in gen {:d}".format(total_time, gen))
     if total_pts > 0:
-        model.sparsify(e_tol=1e-8, f_tol=1e-8)
+        model.sparsify(e_tol=1e-5, f_tol=1e-3)
         model.save("models/test.json", "models/test.db")
         print(model)
     else:
@@ -581,17 +592,34 @@ for gen in range(gen_max):
         struc = Current_data['struc'][pop]
         e_var = Current_data['E_var'][pop]
         eng = Current_data['E'][pop]
-        #print(struc, pop, e_var)
+        spg = Current_data['spg'][pop]
         if struc is not None:
-            if e_var < 1e-3:
-                print("Deposit this structure {:2d} {:8.3f}[{:8.3f}]".format(pop, eng, e_var))
+            reset = False
+            deposit = False
+            strs = "structure {:2d}[{:12s}] {:8.3f}[{:8.3f}]".format(pop, spg, eng, e_var)
+            if e_var < model.noise_e:
+                print(strs, " Deposited")
+                reset = True
+                deposit = True
+            # gave up some unlikely high energy structures?
+            elif e_var < 30*model.noise_e and eng > min_E + 1.5:
+                print(strs, " Discarded due to high energy")
+                reset=True
+            elif eng > min_E + 0.5 and Current_data['survival'][pop] > 20:
+                print(strs, " Discarded due to long survival")
+                reset=True
+            else:
+                Current_data['struc'][pop].relax = Current_data['relax'][pop]
+
+            if reset:
                 Current_data['struc'][pop] = None
                 Current_data['E_DFT'][pop] = None
                 Current_data['relax'][pop] = "normal"
+                Current_data['survival'][pop] = 0
+
+            if deposit:
                 struc.set_calculator()
                 struc.set_constraint()
                 add_structures((struc, eng), 'all.db')
-            else:
-                Current_data['struc'][pop].relax = Current_data['relax'][pop]
 
     print("The minimum energy in DFT is {:6.3f} eV/atom in gen {:d}".format(min_E, gen))

@@ -573,6 +573,7 @@ class GaussianProcess():
                         "energy_in": energy_in,
                         "force_in": force_in,
                        }
+                struc.set_constraint()
                 db.write(struc, data=data)
 
     def extract_db(self, db_filename, N_max=None):

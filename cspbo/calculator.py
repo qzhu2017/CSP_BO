@@ -41,9 +41,9 @@ class GPR(Calculator):
 
     def get_var_e(self, total=False):
         if total:
-            return self.results["var_e"]
+            return self.results["var_e"]*len(self.results["forces"]) # eV
         else:
-            return self.results["var_e"]/len(self.results["forces"])
+            return self.results["var_e"] # eV/atom
 
     def get_var_f(self):
         return self.results["var_f"]

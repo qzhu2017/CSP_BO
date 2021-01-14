@@ -362,7 +362,7 @@ class GaussianProcess():
             y_var_negative = y_var < 0
             y_var[y_var_negative] = 0.0
             y_var = np.sqrt(y_var) 
-            E_std = y_var[0]*len(struc)  # total e_var
+            E_std = y_var[0]  # eV/atom
             F_std = y_var[1:].reshape([len(struc), 3])
             return E, F, S, E_std, F_std
         else:

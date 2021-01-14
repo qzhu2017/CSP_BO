@@ -119,11 +119,12 @@ def add_structures(data, db_file):
     Backup the structure data from the entire simulation
     """
     with connect(db_file) as db:
-        struc, eng, spg, e_var = data
+        struc, eng, spg, e_var, gen = data
         kvp = {'tag': 'good_structures',
                'dft_energy': eng,
                'spg': spg,
                'e_var': e_var,
+               'gen': gen,
              }
         db.write(struc, key_value_pairs=kvp)
 
@@ -203,8 +204,8 @@ def BO_select(model, data, structures, min_E=None, alpha=0.5, style='Thompson'):
                 mean[i] += energy_off
                 mean[i] /= len(struc)
                 # Covariance / atom**2
-                cov[i,:] /= len(struc)
-                cov[:,i] /= len(struc)
+                #cov[i,:] /= len(struc)
+                #cov[:,i] /= len(struc)
         std_per_atom = np.sqrt(np.diag(cov))
         tmp1 = mean - min_E
         tmp2 = tmp1 / std_per_atom
@@ -222,8 +223,8 @@ def BO_select(model, data, structures, min_E=None, alpha=0.5, style='Thompson'):
                 mean[i] += energy_off
                 mean[i] /= len(struc)
                 # Covariance / atom**2
-                cov[i,:] /= len(struc)
-                cov[:,i] /= len(struc)
+                #cov[i,:] /= len(struc)
+                #cov[:,i] /= len(struc)
         std_per_atom = np.sqrt(np.diag(cov))
         samples = norm.cdf((mean-min_E)/(std_per_atom+1E-9))
 
@@ -599,7 +600,7 @@ for gen in range(gen_max):
             deposit = False
             formula = struc.get_chemical_formula()
             strs = "Struc {:2d}[{:8s} {:12s}] {:8.3f}[{:8.3f}]".format(pop, formula, spg, eng, e_var)
-            if e_var < model.noise_e:
+            if e_var < 1.2*model.noise_e:
                 print(strs, " Deposited")
                 reset = True
                 deposit = True
@@ -622,6 +623,6 @@ for gen in range(gen_max):
             if deposit:
                 struc.set_calculator()
                 struc.set_constraint()
-                add_structures((struc, eng, spg, e_var), 'all.db')
+                add_structures((struc, eng, spg, e_var, gen), 'all.db')
 
     print("The minimum energy in DFT is {:6.3f} eV/atom in gen {:d}".format(min_E, gen))

@@ -591,11 +591,12 @@ class GaussianProcess():
                 energy = row.data.energy
                 force = row.data.force.copy()
 
+                # QZ: already considered
                 # substract the energy/force offsets due to the base_potential
-                if self.base_potential is not None:
-                    energy_off, force_off, _ = self.compute_base_potential(atoms)
-                    energy -= energy_off
-                    force -= force_off
+                # if self.base_potential is not None:
+                #     energy_off, force_off, _ = self.compute_base_potential(atoms)
+                #     energy -= energy_off
+                #     force -= force_off
 
                 energy_in = row.data.energy_in
                 force_in = row.data.force_in

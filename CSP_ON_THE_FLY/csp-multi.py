@@ -4,6 +4,7 @@ import os
 from time import time
 from scipy.stats import norm
 from spglib import get_symmetry_dataset
+from random import choice
 
 # setup the actual command to run vasp
 # define the walltime and number of cpus
@@ -41,6 +42,7 @@ def opt_struc(struc, calc, sgs, species, numIons):
     """
     t0 = time()
     if struc is None:
+        numIons = [choice(range(numIons[0], numIons[1]+1))]
         struc = PyXtal(sgs, species, numIons) 
         struc.relax = "normal"
 
@@ -69,19 +71,12 @@ def opt_struc(struc, calc, sgs, species, numIons):
         dyn.run(fmax=0.05, steps=steps[1])
         #print("var cell", time()-t0)
 
-    ## symmetrize the structure and relax again
-    #struc = symmetrize(struc)
-    #struc.set_calculator(calc) # set calculator
-    #ecf = ExpCellFilter(struc)
-    #dyn = FIRE(ecf, logfile=logfile)
-    #dyn.run(fmax=0.05, steps=25)
-    ##print("var cell2", time()-t0)
-
-    ## symmetrize the final struc, useful for later dft calculation
+    ## symmetrize the final struc, 
+    # useful for later dft calculation
+    # also save some space for force points in GPR
     struc = symmetrize(struc)
     struc.set_calculator(calc) # set calculator
     cpu_time = (time() - t0)/60
-    #print("pure symmetrize", time()-t0)
     return (struc, cpu_time)
 
 #--------- Database related ------------------
@@ -121,9 +116,10 @@ def add_structures(data, db_file):
     Backup the structure data from the entire simulation
     """
     with connect(db_file) as db:
-        struc, eng = data
-        kvp = {'tag': 'all_structures',
+        struc, eng, spg = data
+        kvp = {'tag': 'good_structures',
                'dft_energy': eng,
+               'spg': spg,
              }
         db.write(struc, key_value_pairs=kvp)
 
@@ -324,7 +320,10 @@ if os.path.exists("models/test.json"):
     with connect('models/test.db') as db:
         for row in db.select():
             atoms = db.get_atoms(id=row.id)
-            energy = row.energy
+            energy = row.data.energy
+            if model.base_potential is not None:  
+                energy_off, _, _ = model.compute_base_potential(atoms)
+                energy += energy_off
             Es.append(energy/len(atoms))
     min_E = min(Es)
 else:
@@ -430,7 +429,7 @@ from ase.constraints import ExpCellFilter
 from ase.spacegroup.symmetrize import FixSymmetry
 #from pyxtal import pyxtal
 sgs = range(16, 231)
-numIons = [12]
+numIons = [4, 12]
 gen_max = 100
 N_pop = 32
 alpha = 1
@@ -510,8 +509,10 @@ for gen in range(gen_max):
     os.remove(logfile) # remove unnecessary logfile
 
     #------------------- BO selection ------------------------------
+    t0 = time()
     data = collect_data(model, data, structures)
     indices = BO_select(model, data, structures, min_E, alpha=alpha, style=BO_style)
+    print("Total time for BO selection: {:6.3f} miniutes".format((time()-t0)/60))
     total_pts = 0
     total_time = 0
     for ix in indices[:n_bo_select]:
@@ -522,8 +523,10 @@ for gen in range(gen_max):
         if E_var > 1e-3:
             spg = Current_data['spg'][ids[ix]]
             best_struc = structures[ix]
+            best_struc.set_constraint()
             best_struc.set_calculator(set_vasp('single', 0.20))
-            strs = "Struc {:4d}[{:16s}]: {:8.3f}[{:8.4f}]".format(ids[ix], spg, E, E_var)
+            formula = best_struc.get_chemical_formula()
+            strs = "Struc {:4d}[{:8s} {:12s}]: {:8.3f}[{:8.4f}]".format(ids[ix], formula, spg, E, E_var)
 
             # perform single point DFT
             t0 = time()
@@ -536,7 +539,7 @@ for gen in range(gen_max):
                 strs += " -> DFT energy: {:8.3f} eV/atom ".format(E)
                 strs += "in {:6.2f} minutes".format(cputime)
                 # update GPR model
-                pts, N_pts, _ = model.add_structure((best_struc, best_eng, best_forces), tol_e_var=1.2)
+                pts, N_pts, _ = model.add_structure((best_struc.copy(), best_eng, best_forces), tol_e_var=1.2)
                 if N_pts > 0:
                     model.set_train_pts(pts, mode="a+")
                     model.fit(show=False)
@@ -558,8 +561,7 @@ for gen in range(gen_max):
                 E = eng/len(best_struc)
                 Current_data['E_DFT'][ids[ix]] = E
                 Current_data['relax'][ids[ix]] = "light"
-                best_struc.set_constraint()
-                pts, N_pts, _ = model.add_structure((best_struc, eng, forces), tol_e_var=1.2)
+                pts, N_pts, _ = model.add_structure((best_struc.copy(), eng, forces), tol_e_var=1.2)
                 cputime = (time() - t0)/60
                 strs += "{:8.3f} eV/atom in {:6.2f} minutes".format(E, cputime)
                 if N_pts > 0:
@@ -598,7 +600,8 @@ for gen in range(gen_max):
         if struc is not None:
             reset = False
             deposit = False
-            strs = "structure {:2d}[{:12s}] {:8.3f}[{:8.3f}]".format(pop, spg, eng, e_var)
+            formula = struc.get_chemical_formula()
+            strs = "Struc {:2d}[{:8s} {:12s}] {:8.3f}[{:8.3f}]".format(pop, formula, spg, eng, e_var)
             if e_var < model.noise_e:
                 print(strs, " Deposited")
                 reset = True
@@ -622,6 +625,6 @@ for gen in range(gen_max):
             if deposit:
                 struc.set_calculator()
                 struc.set_constraint()
-                add_structures((struc, eng), 'all.db')
+                add_structures((struc, eng, spg), 'all.db')
 
     print("The minimum energy in DFT is {:6.3f} eV/atom in gen {:d}".format(min_E, gen))

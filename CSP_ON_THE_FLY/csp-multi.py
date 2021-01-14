@@ -78,8 +78,8 @@ def opt_struc(struc, calc, sgs, species, numIons):
     ##print("var cell2", time()-t0)
 
     ## symmetrize the final struc, useful for later dft calculation
-    #struc = symmetrize(struc)
-    #struc.set_calculator(calc) # set calculator
+    struc = symmetrize(struc)
+    struc.set_calculator(calc) # set calculator
     cpu_time = (time() - t0)/60
     #print("pure symmetrize", time()-t0)
     return (struc, cpu_time)
@@ -122,10 +122,10 @@ def add_structures(data, db_file):
     """
     with connect(db_file) as db:
         struc, eng = data
-        d1 = {'tag': 'all_structures',
-              'dft_energy': eng,
+        kvp = {'tag': 'all_structures',
+               'dft_energy': eng,
              }
-        db.write(struc, data=d1)
+        db.write(struc, key_value_pairs=kvp)
 
 def collect_data(gpr_model, data, structures):
     """ Collect data for GPR.predict. """
@@ -375,16 +375,18 @@ else:
     
             #expansion
             struc1 = struc.copy()
+            pos = struc1.get_scaled_positions().copy()
             struc1.set_cell(1.063*struc.cell)
-            struc1.set_scaled_positions(struc.get_scaled_positions())
+            struc1.set_scaled_positions(pos)
             struc1.set_calculator(set_vasp('single', 0.20))
             eng, forces = dft_run(struc1, path=calc_folder)
             data.append((struc1, eng, forces))
     
             #shrink
             struc2 = struc.copy()
+            pos = struc2.get_scaled_positions().copy()
             struc2.set_cell(0.928*struc.cell)
-            struc2.set_scaled_positions(struc.get_scaled_positions())
+            struc2.set_scaled_positions(pos)
             struc2.set_calculator(set_vasp('single', 0.20))
             eng, forces = dft_run(struc2, path=calc_folder)
             data.append((struc2, eng, forces))
@@ -546,7 +548,7 @@ for gen in range(gen_max):
                 strs += " !!!skipped due to error in vasp calculation"
             print(strs)
 
-            if N_pts is not None and E < min_E + 0.5:
+            if N_pts is not None and E < min_E + 0.6:
                 strs = "Switch to DFT relaxation, energy: "
                 t0 = time()
                 best_struc.set_calculator(set_vasp('opt', 0.3))

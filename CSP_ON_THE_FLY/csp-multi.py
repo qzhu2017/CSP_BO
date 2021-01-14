@@ -109,17 +109,21 @@ def add_GP_train(data, db_file):
                   'dft_energy': eng,
                   'dft_forces': force,
                   }
-            db.write(struc, data=d1)
+            kvp = {'dft_energy': eng/len(force),
+                   'dft_fmax': np.max(np.abs(force.flatten())),
+                  }
+            db.write(struc, data=d1, key_value_pairs=kvp)
 
 def add_structures(data, db_file):
     """
     Backup the structure data from the entire simulation
     """
     with connect(db_file) as db:
-        struc, eng, spg = data
+        struc, eng, spg, e_var = data
         kvp = {'tag': 'good_structures',
                'dft_energy': eng,
                'spg': spg,
+               'e_var': e_var,
              }
         db.write(struc, key_value_pairs=kvp)
 
@@ -363,32 +367,23 @@ else:
         strucs.append(bulk(species[0], 'fcc', a=3.6, cubic=True))
         strucs.append(bulk(species[0], 'bcc', a=3.6, cubic=True))
         strucs.append(bulk(species[0], 'sc', a=3.6, cubic=True))
-        #strucs.append(bulk(species[0], 'diamond', a=3.6, cubic=True)) 
+        strucs.append(bulk(species[0], 'diamond', a=3.6, cubic=True)) 
         for struc in strucs:
             #opt
             struc.set_calculator(set_vasp('opt', 0.3))
             eng, forces = dft_run(struc, path=calc_folder, max_time=4)
             struc.set_calculator(set_vasp('single', 0.20))
             eng, forces = dft_run(struc, path=calc_folder)
-            data.append((struc, eng, forces))
-    
-            #expansion
-            struc1 = struc.copy()
-            pos = struc1.get_scaled_positions().copy()
-            struc1.set_cell(1.063*struc.cell)
-            struc1.set_scaled_positions(pos)
-            struc1.set_calculator(set_vasp('single', 0.20))
-            eng, forces = dft_run(struc1, path=calc_folder)
-            data.append((struc1, eng, forces))
-    
-            #shrink
-            struc2 = struc.copy()
-            pos = struc2.get_scaled_positions().copy()
-            struc2.set_cell(0.928*struc.cell)
-            struc2.set_scaled_positions(pos)
-            struc2.set_calculator(set_vasp('single', 0.20))
-            eng, forces = dft_run(struc2, path=calc_folder)
-            data.append((struc2, eng, forces))
+            data.append((struc.copy(), eng, forces))
+            #deformation to learn the energy basin
+            for fac in [0.85, 0.90, 0.95, 1.05, 1.1, 1.15]:   
+                struc1 = struc.copy()
+                pos = struc1.get_scaled_positions().copy()
+                struc1.set_cell(fac*struc.cell)
+                struc1.set_scaled_positions(pos)
+                struc1.set_calculator(set_vasp('single', 0.20))
+                eng, forces = dft_run(struc1, path=calc_folder)
+                data.append((struc1.copy(), eng, forces))
     
         add_GP_train(data, train_db)
     else:
@@ -409,7 +404,7 @@ else:
     model = gpr(kernel=kernel, 
                 descriptor=des, 
                 base_potential=lj,
-                noise_e=[1e-2, 5e-3, 1e-1], 
+                noise_e=[1e-2, 5e-3, 5e-2], 
                 f_coef=20)
     for d in data:
         pts, N_pts, error = model.add_structure(d)
@@ -418,7 +413,9 @@ else:
             model.fit(show=False)
 
 print("\nThe minimum energy in DFT is {:6.3f} eV/atom".format(min_E))
-#print(model)
+print(model)
+#model.save('1.json', '1.db')
+#import sys; sys.exit()
 #print(model.base_potential)
 ## ----------- Structure generation/optimization based on the surrogate model
 
@@ -570,7 +567,7 @@ for gen in range(gen_max):
                     total_pts += N_pts
                 else:
                     Current_data['relax'][ids[ix]] = "freeze"
-                    strs += 'freeze, no update'
+                    strs += ' freeze, no update'
                 print(strs)
 
                 if E < min_E:
@@ -607,7 +604,7 @@ for gen in range(gen_max):
                 reset = True
                 deposit = True
             # gave up some unlikely high energy structures?
-            elif e_var < 30*model.noise_e and eng > min_E + 1.5:
+            elif e_var < 20*model.noise_e and eng > min_E + 1.5:
                 print(strs, " Discarded due to high energy")
                 reset=True
             elif eng > min_E + 0.5 and Current_data['survival'][pop] > 20:
@@ -625,6 +622,6 @@ for gen in range(gen_max):
             if deposit:
                 struc.set_calculator()
                 struc.set_constraint()
-                add_structures((struc, eng, spg), 'all.db')
+                add_structures((struc, eng, spg, e_var), 'all.db')
 
     print("The minimum energy in DFT is {:6.3f} eV/atom in gen {:d}".format(min_E, gen))

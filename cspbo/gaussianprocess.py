@@ -361,8 +361,8 @@ class GaussianProcess():
             y_var -= np.einsum("ij,ij->i", np.dot(K_trans, self._K_inv), K_trans)
             y_var_negative = y_var < 0
             y_var[y_var_negative] = 0.0
-            y_var = np.sqrt(y_var)
-            E_std = y_var[0]
+            y_var = np.sqrt(y_var) 
+            E_std = y_var[0]*len(struc)  # total e_var
             F_std = y_var[1:].reshape([len(struc), 3])
             return E, F, S, E_std, F_std
         else:
@@ -568,13 +568,23 @@ class GaussianProcess():
         with connect(db_filename) as db:
             for _data in self.train_db:
                 (struc, energy, force, energy_in, force_in, _, _) = _data
+                actual_energy = deepcopy(energy)
+                actual_forces = force.copy()
+                if self.base_potential is not None:
+                    energy_off, force_off, _ = self.compute_base_potential(struc)
+                    actual_energy += energy_off
+                    actual_forces += force_off
+
                 data = {"energy": energy,
                         "force": force,
                         "energy_in": energy_in,
                         "force_in": force_in,
                        }
+                kvp = {"dft_energy": actual_energy/len(force),
+                       "dft_fmax": np.max(np.abs(actual_forces.flatten())),
+                      }
                 struc.set_constraint()
-                db.write(struc, data=data)
+                db.write(struc, data=data, key_value_pairs=kvp)
 
     def extract_db(self, db_filename, N_max=None):
         """

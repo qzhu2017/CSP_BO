@@ -178,18 +178,15 @@ def new_struc(struc, ref_strucs):
 # QZ: Probably, list other acquisition functions
 # so that we can try to play with it
 
-def BO_select(model, data, structures, min_E=None, alpha=0.5, style='Thompson'):
+def BO_select(model, data, structures, min_E=None, alpha=0.5, zeta=0.01, style='Thompson'):
     """ Return the index of the trial structures. """
     if style == 'Thompson':
-        mean, cov = model.predict(data, total_E=True, stress=False, return_cov=True)
+        mean, cov = model.predict(data, total_E=True, stress=False, return_cov=True) # cov is in eV^2/atom^2
         if model.base_potential is not None:
             for i, struc in enumerate(structures):
                 energy_off, _, _ = model.compute_base_potential(struc)
                 mean[i] += energy_off
                 mean[i] /= len(struc)
-                # Covariance / atom**2
-                cov[i,:] /= len(struc)
-                cov[:,i] /= len(struc)
         samples = np.random.multivariate_normal(mean, cov * alpha ** 2, 1)[0,:]
     
     elif style == 'EI': # Expected Improvement
@@ -197,36 +194,48 @@ def BO_select(model, data, structures, min_E=None, alpha=0.5, style='Thompson'):
             msg = "PI style needs to know the minimum energy"
             return ValueError(msg)
         
-        mean, cov = model.predict(data, total_E=True, stress=False, return_cov=True)
+        mean, cov = model.predict(data, total_E=True, stress=False, return_cov=True) # cov is in eV^2/atom^2
         if model.base_potential is not None:
             for i, struc in enumerate(structures):
                 energy_off, _, _ = model.compute_base_potential(struc)
                 mean[i] += energy_off
                 mean[i] /= len(struc)
-                # Covariance / atom**2
-                #cov[i,:] /= len(struc)
-                #cov[:,i] /= len(struc)
-        std_per_atom = np.sqrt(np.diag(cov))
-        tmp1 = mean - min_E
-        tmp2 = tmp1 / std_per_atom
-        samples = tmp1 * norm.cdf(tmp2) + std_per_atom * norm.pdf(tmp2)
+        std = np.sqrt(np.diag(cov)) # std is in eV/atom
+        tmp1 = mean - min_E + zeta
+        tmp2 = tmp1 / std
+        samples = tmp1 * norm.cdf(tmp2) + std * norm.pdf(tmp2)
 
     elif style == 'PI': # Probability of Improvement
         if min_E is None:
             msg = "PI style needs to know the minimum energy"
             return ValueError(msg)
+
+        if zeta < 0:
+            msg = "Please insert positive number for zeta."
+            return ValueError(msg)
         
-        mean, cov = model.predict(data, total_E=True, stress=False, return_cov=True)
+        mean, cov = model.predict(data, total_E=True, stress=False, return_cov=True) # cov is in eV^2/atom^2
         if model.base_potential is not None:
             for i, struc in enumerate(structures):
                 energy_off, _, _ = model.compute_base_potential(struc)
                 mean[i] += energy_off
                 mean[i] /= len(struc)
-                # Covariance / atom**2
-                #cov[i,:] /= len(struc)
-                #cov[:,i] /= len(struc)
-        std_per_atom = np.sqrt(np.diag(cov))
-        samples = norm.cdf((mean-min_E)/(std_per_atom+1E-9))
+        std = np.sqrt(np.diag(cov))
+        samples = norm.cdf((mean-min_E)/(std+1E-9))
+    
+    elif style== 'LCB':
+        if zeta < 0:
+            msg = "Please insert positive number for zeta."
+            return ValueError(msg)
+
+        mean, cov = model.predict(data, total_E=True, stress=False, return_cov=True) 
+        if model.base_potential is not None:
+            for i, struc in enumerate(structures):
+                energy_off, _, _ = model.compute_base_potential(struc)
+                mean[i] += energy_off
+                mean[i] /= len(struc)
+        std = np.sqrt(np.diag(cov))
+        samples = mean - zeta * std
 
     else:
         msg = "The acquisition function style is not equipped."
@@ -432,7 +441,7 @@ gen_max = 100
 N_pop = 32
 alpha = 1
 n_bo_select = max([1,N_pop//8])
-BO_style = 'EI' #'Thompson'
+BO_style = 'LCB' #'Thompson'
 
 Current_data = {"struc": [None] * N_pop,
                 "E": 100000*np.ones(N_pop),

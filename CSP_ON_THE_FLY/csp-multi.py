@@ -182,11 +182,16 @@ def BO_select(model, data, structures, min_E=None, alpha=0.5, zeta=0.01, style='
     """ Return the index of the trial structures. """
     if style == 'Thompson':
         mean, cov = model.predict(data, total_E=True, stress=False, return_cov=True) # cov is in eV^2/atom^2
-        if model.base_potential is not None:
-            for i, struc in enumerate(structures):
-                energy_off, _, _ = model.compute_base_potential(struc)
-                mean[i] += energy_off
-                mean[i] /= len(struc)
+    else:
+        mean, std = model.predict(data, total_E=True, stress=False, return_std=True) # std is in eV/atom
+
+    if model.base_potential is not None:
+        for i, struc in enumerate(structures):
+            energy_off, _, _ = model.compute_base_potential(struc)
+            mean[i] += energy_off
+            mean[i] /= len(struc)
+
+    if style == 'Thompson':
         samples = np.random.multivariate_normal(mean, cov * alpha ** 2, 1)[0,:]
     
     elif style == 'EI': # Expected Improvement
@@ -194,13 +199,6 @@ def BO_select(model, data, structures, min_E=None, alpha=0.5, zeta=0.01, style='
             msg = "PI style needs to know the minimum energy"
             return ValueError(msg)
         
-        mean, cov = model.predict(data, total_E=True, stress=False, return_cov=True) # cov is in eV^2/atom^2
-        if model.base_potential is not None:
-            for i, struc in enumerate(structures):
-                energy_off, _, _ = model.compute_base_potential(struc)
-                mean[i] += energy_off
-                mean[i] /= len(struc)
-        std = np.sqrt(np.diag(cov)) # std is in eV/atom
         tmp1 = mean - min_E + zeta
         tmp2 = tmp1 / std
         samples = tmp1 * norm.cdf(tmp2) + std * norm.pdf(tmp2)
@@ -214,27 +212,13 @@ def BO_select(model, data, structures, min_E=None, alpha=0.5, zeta=0.01, style='
             msg = "Please insert positive number for zeta."
             return ValueError(msg)
         
-        mean, cov = model.predict(data, total_E=True, stress=False, return_cov=True) # cov is in eV^2/atom^2
-        if model.base_potential is not None:
-            for i, struc in enumerate(structures):
-                energy_off, _, _ = model.compute_base_potential(struc)
-                mean[i] += energy_off
-                mean[i] /= len(struc)
-        std = np.sqrt(np.diag(cov))
         samples = norm.cdf((mean-min_E)/(std+1E-9))
     
     elif style== 'LCB':
         if zeta < 0:
             msg = "Please insert positive number for zeta."
             return ValueError(msg)
-
-        mean, cov = model.predict(data, total_E=True, stress=False, return_cov=True) 
-        if model.base_potential is not None:
-            for i, struc in enumerate(structures):
-                energy_off, _, _ = model.compute_base_potential(struc)
-                mean[i] += energy_off
-                mean[i] /= len(struc)
-        std = np.sqrt(np.diag(cov))
+        
         samples = mean - zeta * std
 
     else:
@@ -439,9 +423,9 @@ sgs = range(16, 231)
 numIons = [4, 12]
 gen_max = 100
 N_pop = 32
-alpha = 1
+alpha, zeta = 2, 0.1
 n_bo_select = max([1,N_pop//8])
-BO_style = 'LCB' #'Thompson'
+BO_style = 'Thompson' #'Thompson'
 
 Current_data = {"struc": [None] * N_pop,
                 "E": 100000*np.ones(N_pop),
@@ -518,7 +502,7 @@ for gen in range(gen_max):
     #------------------- BO selection ------------------------------
     t0 = time()
     data = collect_data(model, data, structures)
-    indices = BO_select(model, data, structures, min_E, alpha=alpha, style=BO_style)
+    indices = BO_select(model, data, structures, min_E, alpha=alpha, zeta=zeta, style=BO_style)
     print("Total time for BO selection: {:6.3f} miniutes".format((time()-t0)/60))
     total_pts = 0
     total_time = 0

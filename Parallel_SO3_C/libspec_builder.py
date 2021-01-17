@@ -8,7 +8,6 @@ ffibuilder.cdef("""
 ffibuilder.set_source("_spectrum", #lib name
     "", 
     sources=["spectrum.cpp"],
-    include_dirs=["../../../lib/CLAPACK-3.2.1/INCLUDE"],
     library_dirs=["./"],
     libraries=["lapack_LINUX","blas_LINUX","libf2c"],
     extra_compile_args=["-lstdc++"]   

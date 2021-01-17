@@ -119,7 +119,7 @@ class GaussianProcess():
         
         return self
 
-    def predict(self, X, stress=False, total_E=False, return_std=False, return_cov=False):
+    def predict(self, X, stress=False, total_E=False, return_std=False, return_cov=False, base_potential=False):
         if stress:
             K_trans, K_trans1 = self.kernel.k_total_with_stress(X, self.train_x, same=False)
             pred1 = K_trans1.dot(self.alpha_)
@@ -128,7 +128,7 @@ class GaussianProcess():
         
         pred = K_trans.dot(self.alpha_)
         y_mean = pred[:, 0]
-
+        
         Npts = 0
         if 'energy' in X:
             if isinstance(X["energy"], tuple): #big array
@@ -145,7 +145,7 @@ class GaussianProcess():
 
         if total_E:
             if isinstance(X["energy"], tuple): #big array
-                N_atoms = np.array([len(x) for x in X["energy"][-1]]) 
+                N_atoms = np.array([x for x in X["energy"][-1]]) 
             else:
                 N_atoms = np.array([len(x) for x in X["energy"]]) 
             factors[:len(N_atoms)] = N_atoms
@@ -340,6 +340,7 @@ class GaussianProcess():
         y_mean[0] *= len(struc) #total energy
         E = y_mean[0]
         F = y_mean[1:].reshape([len(struc), 3])
+
         if stress:
             S = K_trans1.dot(self.alpha_)[:,0].reshape([len(struc), 6])
         else:
@@ -352,7 +353,6 @@ class GaussianProcess():
             F += force_off
             if stress:
                 S += stress_off
-
         if return_std:
             if self._K_inv is None:
                 L_inv = solve_triangular(self.L_.T, np.eye(self.L_.shape[0]))
@@ -361,8 +361,8 @@ class GaussianProcess():
             y_var -= np.einsum("ij,ij->i", np.dot(K_trans, self._K_inv), K_trans)
             y_var_negative = y_var < 0
             y_var[y_var_negative] = 0.0
-            y_var = np.sqrt(y_var)
-            E_std = y_var[0]
+            y_var = np.sqrt(y_var) 
+            E_std = y_var[0]  # eV/atom
             F_std = y_var[1:].reshape([len(struc), 3])
             return E, F, S, E_std, F_std
         else:
@@ -468,8 +468,6 @@ class GaussianProcess():
     def optimize(self, fun, theta0, bounds):
         opt_res = minimize(fun, theta0, method="L-BFGS-B", bounds=bounds, 
             jac=True, options={'maxiter': 10, 'ftol': 1e-2})
-        #print(opt_res)
-        #import sys; sys.exit()
         return opt_res.x, opt_res.fun
 
     def save(self, filename, db_filename):
@@ -511,7 +509,7 @@ class GaussianProcess():
                 "db_filename": db_filename,
                 }
         if self.base_potential is not None:
-            dict0["base_potential"] = self.base_potential.save_dict(),
+            dict0["base_potential"] = self.base_potential.save_dict()
         return dict0
 
 
@@ -570,12 +568,23 @@ class GaussianProcess():
         with connect(db_filename) as db:
             for _data in self.train_db:
                 (struc, energy, force, energy_in, force_in, _, _) = _data
+                actual_energy = deepcopy(energy)
+                actual_forces = force.copy()
+                if self.base_potential is not None:
+                    energy_off, force_off, _ = self.compute_base_potential(struc)
+                    actual_energy += energy_off
+                    actual_forces += force_off
+
                 data = {"energy": energy,
                         "force": force,
                         "energy_in": energy_in,
                         "force_in": force_in,
                        }
-                db.write(struc, data=data)
+                kvp = {"dft_energy": actual_energy/len(force),
+                       "dft_fmax": np.max(np.abs(actual_forces.flatten())),
+                      }
+                struc.set_constraint()
+                db.write(struc, data=data, key_value_pairs=kvp)
 
     def extract_db(self, db_filename, N_max=None):
         """
@@ -590,13 +599,14 @@ class GaussianProcess():
                 count += 1
                 atoms = db.get_atoms(id=row.id)
                 energy = row.data.energy
-                force = row.data.force
+                force = row.data.force.copy()
 
+                # QZ: already considered
                 # substract the energy/force offsets due to the base_potential
-                if self.base_potential is not None:
-                    energy_off, force_off, _ = self.compute_base_potential(atoms)
-                    energy -= energy_off
-                    force -= force_off
+                # if self.base_potential is not None:
+                #     energy_off, force_off, _ = self.compute_base_potential(atoms)
+                #     energy -= energy_off
+                #     force -= force_off
 
                 energy_in = row.data.energy_in
                 force_in = row.data.force_in

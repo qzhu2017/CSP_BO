@@ -2,6 +2,12 @@ from ase import Atoms
 import numpy as np
 import os
 from time import time
+from scipy.stats import norm
+
+# setup the actual command to run vasp
+# define the walltime and number of cpus
+cmd = "timeout 1m mpirun -np 8 vasp_std > vasp_log"
+os.environ["VASP_COMMAND"] = cmd
 
 #--------- Database related ------------------
 
@@ -47,22 +53,25 @@ def add_structures(data, db_file):
                  }
             db.write(struc, data=d1)
 
-def collect_data(gpr_model, data, struc, energy, force):
+def collect_data(gpr_model, data, structures):
     """ Collect data for GPR.predict. """
-    _data = (struc, energy, force)
-    # High force value means to ignore force since bo only compares energies
-    pts, N_pts, _ = gpr_model.add_structure(_data, N_max=100000, tol_e_var=-10, tol_f_var=10000)
-    for key in pts.keys():
-        if key == 'energy':
-            (X, ELE, indices, E) = list_to_tuple(pts[key], include_value=True, mode='energy')
-            if len(data["energy"]) == 3:
-                (_X, _ELE, _indices) = data['energy']
-                _X = np.concatenate((_X, X), axis=0)
-                _indices.extend(indices) 
-                _ELE = np.concatenate((_ELE, ELE), axis=0) 
-                data['energy'] = (_X, _ELE, _indices)
-            else:
-                data['energy'] = (X, ELE, indices)
+    for i, struc in enumerate(structures):
+        #energy, force = energies[i], forces[i]
+        energy, force = struc.get_potential_energy(), struc.get_forces()
+        _data = (struc, energy, force)
+        # High force value means to ignore force since bo only compares energies
+        pts, N_pts, _ = gpr_model.add_structure(_data, N_max=100000, tol_e_var=-10, tol_f_var=10000)
+        for key in pts.keys():
+            if key == 'energy':
+                (X, ELE, indices, E) = list_to_tuple(pts[key], include_value=True, mode='energy')
+                if len(data["energy"]) == 3:
+                    (_X, _ELE, _indices) = data['energy']
+                    _X = np.concatenate((_X, X), axis=0)
+                    _indices.extend(indices) 
+                    _ELE = np.concatenate((_ELE, ELE), axis=0) 
+                    data['energy'] = (_X, _ELE, _indices)
+                else:
+                    data['energy'] = (X, ELE, indices)
 
     return data
     
@@ -94,15 +103,61 @@ def new_struc(struc, ref_strucs):
 # QZ: Probably, list other acquisition functions
 # so that we can try to play with it
 
-def BO_select(model, data, alpha=0.5, n_indices=1):
+def BO_select(model, data, structures, min_E=None, alpha=0.5, style='Thompson'):
     """ Return the index of the trial structures. """
-    mean, cov = model.predict(data, stress=False, return_cov=True)
-    samples = np.random.multivariate_normal(mean, cov * alpha ** 2, 1)[0,:]
-    if n_indices == 1:
-        ix = np.argmin(samples)
-        indices = [ix]
+    if style == 'Thompson':
+        mean, cov = model.predict(data, total_E=True, stress=False, return_cov=True)
+        if model.base_potential is not None:
+            for i, struc in enumerate(structures):
+                energy_off, _, _ = model.compute_base_potential(struc)
+                mean[i] += energy_off
+                mean[i] /= len(struc)
+                # Covariance / atom**2
+                cov[i,:] /= len(struc)
+                cov[:,i] /= len(struc)
+        samples = np.random.multivariate_normal(mean, cov * alpha ** 2, 1)[0,:]
+    
+    elif style == 'EI': # Expected Improvement
+        if min_E is None:
+            msg = "PI style needs to know the minimum energy"
+            return ValueError(msg)
+        
+        mean, cov = model.predict(data, total_E=True, stress=False, return_cov=True)
+        if model.base_potential is not None:
+            for i, struc in enumerate(structures):
+                energy_off, _, _ = model.compute_base_potential(struc)
+                mean[i] += energy_off
+                mean[i] /= len(struc)
+                # Covariance / atom**2
+                cov[i,:] /= len(struc)
+                cov[:,i] /= len(struc)
+        std_per_atom = np.sqrt(np.diag(cov))
+        tmp1 = mean - min_E
+        tmp2 = tmp1 / std_per_atom
+        samples = tmp1 * norm.cdf(tmp2) + std_per_atom * norm.pdf(tmp2)
+
+    elif style == 'PI': # Probability of Improvement
+        if min_E is None:
+            msg = "PI style needs to know the minimum energy"
+            return ValueError(msg)
+        
+        mean, cov = model.predict(data, total_E=True, stress=False, return_cov=True)
+        if model.base_potential is not None:
+            for i, struc in enumerate(structures):
+                energy_off, _, _ = model.compute_base_potential(struc)
+                mean[i] += energy_off
+                mean[i] /= len(struc)
+                # Covariance / atom**2
+                cov[i,:] /= len(struc)
+                cov[:,i] /= len(struc)
+        std_per_atom = np.sqrt(np.diag(cov))
+        samples = norm.cdf((mean-min_E)/(std_per_atom+1E-9))
+
     else:
-        indices = np.argsort(samples)[:n_indices]
+        msg = "The acquisition function style is not equipped."
+        raise NotImplementedError(msg)
+    
+    indices = np.argsort(samples)
     return indices
 
 #--------- DFT related ------------------
@@ -113,6 +168,7 @@ def dft_run(struc, path, clean=False):
     """
     perform dft calculation and get energy and forces
     """
+
     cwd = os.getcwd()
     os.chdir(path)
     try:
@@ -176,7 +232,7 @@ def LJ_fit(rs, engs, eng_cut=5.0, p1=12, p2=6):
 
 #---------------------- Main Program -------------------
 # --------- DFT calculator set up
-calc_folder = 'vasp_tmp'
+calc_folder = 'vasp_tmp_2'
 if not os.path.exists(calc_folder):
     os.makedirs(calc_folder)
 species = ["Si"]
@@ -241,12 +297,17 @@ if not os.path.exists(train_db):
         struc2.set_calculator(set_vasp('single', 0.20))
         eng, forces = dft_run(struc2, path=calc_folder)
         data.append((struc2, eng, forces))
+
     add_GP_train(data, train_db)
 else:
     with connect(train_db) as db:
         for row in db.select():
             struc = db.get_atoms(row.id)
             data.append((struc, row.data['dft_energy'], row.data['dft_forces'].copy()))
+
+# The current minimum energy from DFT calc
+min_E = min([d[1]/len(d[0]) for d in data])
+print("The minimum energy in DFT is {:6.3f}".format(min_E))
 
 ##----------- Fit the GP model
 from cspbo.kernels.RBF_mb import RBF_mb
@@ -280,28 +341,41 @@ sgs = range(16, 231)
 numIons = [8]
 gen_max = 50
 N_pop = 10
-alpha = 0.5
-n_bo_select = max([1,int(N_pop/5)])
+alpha = 1
+n_bo_select = max([1,N_pop//3])
+BO_style = 'Thompson'
+
+logfile = 'opt.log2'
+Current_data = {"struc": [None] * N_pop,
+                "E": 100000*np.ones(N_pop),
+                "E_var": np.zeros(N_pop),
+               }
+calc = GPR(ff=model, stress=True, return_std=True)
 
 for gen in range(gen_max):
     data = {'energy': [], 'force': []}
     structures = []
     Es = []
     E_vars = []
+    ids = []
+    
     for pop in range(N_pop):
-        # generate and relax the structure
         t0 = time()
-        struc = PyXtal(sgs, species, numIons) 
-        calc = GPR(ff=model, stress=True, return_std=True)
-        struc.set_calculator(calc)
+        # generate the initial structure
+        if Current_data["struc"][pop] is None:
+            struc = PyXtal(sgs, species, numIons) 
+        else:
+            struc = Current_data["struc"][pop]
+            # print("Continue relaxation with the updated GP model")  
 
         # fix cell opt
-        dyn = FIRE(struc, logfile='opt.log')
+        struc.set_calculator(calc) # set calculator
+        dyn = FIRE(struc, logfile=logfile)
         dyn.run(fmax=0.05, steps=100)
 
         # variable cell opt
         ecf = ExpCellFilter(struc)
-        dyn = FIRE(ecf, logfile='opt.log')
+        dyn = FIRE(ecf, logfile=logfile)
         dyn.run(fmax=0.05, steps=100)
         E = struc.get_potential_energy()/len(struc) #per atom
         E_var = struc._calc.get_var_e()
@@ -321,58 +395,76 @@ for gen in range(gen_max):
             structures.append(struc)
             Es.append(E)
             E_vars.append(E_var)
-            
-            # QZ: This should be outside the for loop
-            F = struc.get_forces()
-            data = collect_data(model, data, struc, E, F)
-            # save the structures to a db
-            # we probably need to re-evaluate the structures after the GP model is converged
-            # add_structures(structures, 'all.db')
+            ids.append(pop)
+            Current_data["struc"][pop] = struc
+            Current_data["E"][pop] = E
+            Current_data["E_var"][pop] = E_var
         else:
             print("skip the duplicate structures")
 
-    #------------------- BO selection ------------------------------
-    # The following loop should have only one python process
+    data = collect_data(model, data, structures)
+    # remove unnecessary logfile
+    os.remove(logfile)
 
-    # The idea of BO selection is to let us quickly find low-energy structures with low uncertainties
-    # With this, we will need to add many new points to GP training database
-    # then we hope to see less appearing low energy structures when the generation evloves
-    # An overall pattern is that the overall uncertainties will decrease for the low-energy structures
-    # We don't need to worry about appearing high energy structures with high uncertainties
-    # However, the current scheme seems to select only structures with high uncertainties
-    # Therefore, each generation will still generate many appearing low energy structures
-    # Perhaps, we need to play with alpha, or revise the selection rule
-    
-    indices = BO_select(model, data, alpha=alpha, n_indices=n_bo_select)
+    #------------------- BO selection ------------------------------
+    indices = BO_select(model, data, structures, min_E, alpha=alpha, style=BO_style)
     total_pts = 0
-    for ix in indices:
+    for ix in indices[:n_bo_select]:
         best_struc = structures[ix]
         best_struc.set_calculator(set_vasp('single', 0.20))
-        strs = "Struc {:4d} is picked: {:8.3f}[{:8.3f}]".format(ix, Es[ix], E_vars[ix])
+        strs = "Struc {:4d} is picked: {:8.3f}[{:8.3f}]".format(ids[ix], Es[ix], E_vars[ix])
 
-        # perform single point DFT
-        t0 = time()
-        best_eng, best_forces = dft_run(best_struc, path=calc_folder)
-        cputime = (time() - t0)/60
-        # sometimes the vasp calculation will fail
-        if best_eng is not None:
-            strs += " -> DFT energy: {:8.3f} eV/atom ".format(best_eng/len(best_struc))
-            strs += "in {:6.2f} minutes".format(cputime)
-            # update GPR model
-            pts, N_pts, _ = model.add_structure((best_struc, best_eng, best_forces), tol_e_var=1.2)
-            if N_pts > 0:
-                model.set_train_pts(pts, mode="a+")
-                model.fit(show=False)
-                total_pts += N_pts
-        else:
-            strs += " !!!skipped due to error in vasp calculation"
-        print(strs)
+        if E_vars[ix] > 1e-5:
+            best_struc = structures[ix]
+            best_struc.set_calculator(set_vasp('single', 0.20))
+            strs = "Struc {:4d} is picked: {:8.3f}[{:8.3f}]".format(ids[ix], Es[ix], E_vars[ix])
 
-    # Let's do update once a generation
+            # perform single point DFT
+            t0 = time()
+            best_eng, best_forces = dft_run(best_struc, path=calc_folder)
+            cputime = (time() - t0)/60
+            # sometimes the vasp calculation will fail
+            if best_eng is not None:
+                E = best_eng/len(best_struc)
+                strs += " -> DFT energy: {:8.3f} eV/atom ".format(E)
+                strs += "in {:6.2f} minutes".format(cputime)
+                # update GPR model
+                pts, N_pts, _ = model.add_structure((best_struc, best_eng, best_forces), tol_e_var=1.2)
+                if N_pts > 0:
+                    model.set_train_pts(pts, mode="a+")
+                    model.fit(show=False)
+                    total_pts += N_pts
+                if E < min_E:
+                    min_E = E
+            else:
+                E = 100000
+                strs += " !!!skipped due to error in vasp calculation"
+            print(strs)
+
+        # update energy
+        Current_data['E'][ids[ix]] = E
+        Current_data['E_var'][ids[ix]] = 0.02
+
+    # clean up some duplicate train data
+
     model.sparsify()
     print(model)
 
-    # some metrics here to quickly show the improvement, e.g?
-    # the average uncertainties for low energy structures?
-    # the list of best structures (i.e., both low E and E_var structure)?
-    # or some metrics from typical BO optimization?
+    # reset the structures if 
+    # 1, the structure has 0 variance
+    # 2, the structure has very high energies
+    Es = np.array([e for e, s in zip(Current_data['E'], Current_data['struc']) if e<10000])
+    e_median = np.median(Es)
+    for pop in range(N_pop):
+        struc = Current_data['struc'][pop]
+        e = Current_data['E'][pop]
+        e_var = Current_data['E_var'][pop]
+        #print(pop, e, e_var, e_median)
+        if struc is not None:
+            if e > e_median or e_var < 1e-4:
+                Current_data['struc'][pop] = None
+
+    kept_ids = [pop for pop in range(N_pop) if Current_data['struc'][pop] is not None]
+    print("The following structures will be kept for further optimization")
+    print(kept_ids)
+    print("The minimum energy in DFT is {:6.3f}".format(min_E))

@@ -50,12 +50,22 @@ class RBF_mb():
         C_ee, C_ff = None, None
                
         if "energy" in data:
-            NE = len(data["energy"])
-            C_ee = np.zeros(NE)
-            for i in range(NE):
-                (x1, ele1) = data["energy"][i]
-                mask = get_mask(ele1, ele1)
-                C_ee[i] = K_ee(x1, x1, sigma2, l2, zeta, mask) 
+            try:
+                NE = len(data["energy"])
+                C_ee = np.zeros(NE)
+                for i in range(NE):
+                    (x1, ele1) = data["energy"][i]
+                    mask = get_mask(ele1, ele1)
+                    C_ee[i] = K_ee(x1, x1, sigma2, l2, zeta, mask) 
+            except:
+                NE = data['energy'][-1]
+                C_ee = np.zeros(len(NE))
+                count = 0
+                for i, ne in enumerate(NE):
+                    x1, ele1 = data['energy'][0][count:count+ne], data['energy'][1][count:count+ne]
+                    mask = get_mask(ele1, ele1)
+                    C_ee[i] = K_ee(x1, x1, sigma2, l2, zeta, mask)
+                    count += ne
 
         if "force" in data:
             NF = len(data["force"])

@@ -212,7 +212,7 @@ def BO_select(model, data, structures, min_E=None, alpha=0.5, zeta=0.01, style='
             msg = "Please insert positive number for zeta."
             return ValueError(msg)
         
-        samples = norm.cdf((mean-min_E)/(std+1E-9))
+        samples = norm.cdf((mean-min_E+zeta)/(std+1E-9))
     
     elif style== 'LCB':
         if zeta < 0:
@@ -422,10 +422,10 @@ from ase.spacegroup.symmetrize import FixSymmetry
 sgs = range(16, 231)
 numIons = [4, 12]
 gen_max = 100
-N_pop = 32
-alpha, zeta = 2, 0.1
+N_pop = 50
+alpha, zeta = 2, 0.01
 n_bo_select = max([1,N_pop//8])
-BO_style = 'Thompson' #'Thompson'
+BO_style = 'LCB' #'Thompson'
 
 Current_data = {"struc": [None] * N_pop,
                 "E": 100000*np.ones(N_pop),

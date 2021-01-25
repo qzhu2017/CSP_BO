@@ -47,35 +47,43 @@ def opt_struc(struc, calcs, sgs, species, numIons):
             numIons = [choice(numIons)]
         else:
             numIons = [numIons]
-        struc = PyXtal(sgs, species, numIons) 
+        struc = PyXtal(sgs, species, numIons, conventional=False) 
         struc.relax = "normal"
 
+    calc1 = calcs[0]
+    calc2 = calcs[1]
     steps = [0, 0]
     if struc.relax == "normal":
         steps = [100, 25]
     elif struc.relax == "medium":
         # single point by DFT
         steps = [10, 5]
+        calc1 = calcs[1]
     elif struc.relax == "Light":
         # already relaxed by DFT
         steps = [3, 1]
+        calc1 = calcs[1]
 
     # fix cell opt
-    struc.set_calculator(calcs[0]) # set calculator
+    struc.set_calculator(calc1) # set calculator
     if steps[0]>0:
         struc.set_constraint(FixSymmetry(struc))
         dyn = FIRE(struc, logfile=logfile)
-        dyn.run(fmax=0.05, steps=steps[0])
+        dyn.run(fmax=0.01, steps=steps[0])
         #print("Fix cell", time()-t0)
 
     # variable cell opt
-    struc.set_calculator(calcs[1]) # set calculator
+    struc.set_calculator(calc2) # set calculator
     if steps[1]>0:
         ecf = ExpCellFilter(struc)
         dyn = FIRE(ecf, logfile=logfile)
-        dyn.run(fmax=0.05, steps=steps[1])
+        dyn.run(fmax=0.01, steps=steps[1])
         #print("var cell", time()-t0)
 
+    fmax = np.max(np.abs(struc.get_forces()).flatten())
+    smax = np.max(np.abs(struc.get_stress()).flatten())
+    if max([fmax, smax])<0.25:
+        dyn.run(fmax=0.01, steps=25)
     ## symmetrize the final struc, 
     # useful for later dft calculation
     # also save some space for force points in GPR

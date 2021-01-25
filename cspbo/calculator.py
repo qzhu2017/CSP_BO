@@ -23,13 +23,22 @@ class GPR(Calculator):
             stress = self.parameters.stress
         else:
             stress = False
-        return_std=self.parameters.return_std
+        if hasattr(self.parameters, 'f_tol'):
+            f_tol = self.parameters.f_tol
+        else:
+            f_tol = 1e-12
+
+        if hasattr(self.parameters, 'return_std'):
+            return_std=self.parameters.return_std
+        else:
+            return_std=False
+
         if return_std:
-            res = self.parameters.ff.predict_structure(atoms, stress, True)
+            res = self.parameters.ff.predict_structure(atoms, stress, True, f_tol=f_tol)
             self.results['var_e'] = res[3]
             self.results['var_f'] = res[4]
         else:
-            res = self.parameters.ff.predict_structure(atoms, stress, False)
+            res = self.parameters.ff.predict_structure(atoms, stress, False, f_tol=f_tol)
 
         self.results['energy'] = res[0]
         self.results['free_energy'] = res[0]

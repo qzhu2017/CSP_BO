@@ -84,7 +84,7 @@ class RBF_mb():
         else:
             return np.hstack((C_ee, C_ff))
 
-    def k_total(self, data1, data2=None):
+    def k_total(self, data1, data2=None, tol=1e-10):
         """
         Compute the covairance for train data
         Used for energy/force prediction
@@ -113,7 +113,7 @@ class RBF_mb():
                         else:
                             C_fe = C_ef.T 
                     elif key1 == 'force' and key2 == 'force':
-                        C_ff = kff_C(d1, d2, sigma, l, zeta)
+                        C_ff = kff_C(d1, d2, sigma, l, zeta, tol=tol)
         # print("C_ee", C_ee)               
         # print("C_ef", C_ef)               
         # import sys; sys.exit()
@@ -147,7 +147,7 @@ class RBF_mb():
         C_l = build_covariance(C_ee_l, C_ef_l, C_fe_l, C_ff_l, None, None)
         return C, np.dstack((C_s, C_l))
 
-    def k_total_with_stress(self, data1, data2):
+    def k_total_with_stress(self, data1, data2, tol=1e-10):
         """
         Compute the covairance
         Used for energy/force/stress prediction
@@ -166,7 +166,7 @@ class RBF_mb():
                     elif key1 == 'force' and key2 == 'energy':
                         C_fe, C_se = kef_C(d2, d1, sigma, l, zeta, stress=True, transpose=True)
                     elif key1 == 'force' and key2 == 'force':
-                        C_ff, C_sf = kff_C(d1, d2, sigma, l, zeta, stress=True)
+                        C_ff, C_sf = kff_C(d1, d2, sigma, l, zeta, stress=True, tol=tol)
         C = build_covariance(C_ee, C_ef, C_fe, C_ff)
         C1 = build_covariance(None, None, C_se, C_sf)
         return C, C1

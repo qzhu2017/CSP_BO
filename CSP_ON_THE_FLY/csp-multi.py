@@ -1,6 +1,7 @@
 from ase import Atoms
+from copy import deepcopy
 import numpy as np
-import os
+import os, sys
 from time import time
 from scipy.stats import norm
 from spglib import get_symmetry_dataset
@@ -28,21 +29,24 @@ def symmetrize(struc, sym_tol=1e-3):
     numbers = dataset['std_types']
 
     return Atoms(numbers, scaled_positions=pos, cell=cell, pbc=[1,1,1])
- 
-def opt_struc(struc, calc, sgs, species, numIons):
+
+def opt_struc(struc, calcs, sgs, species, numIons):
     """
     Prepare and perform the structural relaxation for each individual
 
     Args:
-        struc: 
-        calc:
+        struc: ase structure
+        calcs: [raw, high] calculator
         sgs: 
         species:
         numIons:
     """
     t0 = time()
     if struc is None:
-        numIons = [choice(range(numIons[0], numIons[1]+1))]
+        if isinstance(numIons, list):
+            numIons = [choice(numIons)]
+        else:
+            numIons = [numIons]
         struc = PyXtal(sgs, species, numIons) 
         struc.relax = "normal"
 
@@ -57,7 +61,7 @@ def opt_struc(struc, calc, sgs, species, numIons):
         steps = [3, 1]
 
     # fix cell opt
-    struc.set_calculator(calc) # set calculator
+    struc.set_calculator(calcs[0]) # set calculator
     if steps[0]>0:
         struc.set_constraint(FixSymmetry(struc))
         dyn = FIRE(struc, logfile=logfile)
@@ -65,6 +69,7 @@ def opt_struc(struc, calc, sgs, species, numIons):
         #print("Fix cell", time()-t0)
 
     # variable cell opt
+    struc.set_calculator(calcs[1]) # set calculator
     if steps[1]>0:
         ecf = ExpCellFilter(struc)
         dyn = FIRE(ecf, logfile=logfile)
@@ -74,10 +79,11 @@ def opt_struc(struc, calc, sgs, species, numIons):
     ## symmetrize the final struc, 
     # useful for later dft calculation
     # also save some space for force points in GPR
+    # struc.set_calculator(calc) # set calculator
     struc = symmetrize(struc)
-    struc.set_calculator(calc) # set calculator
     cpu_time = (time() - t0)/60
     return (struc, cpu_time)
+
 
 #--------- Database related ------------------
 from ase.db import connect
@@ -212,7 +218,7 @@ def BO_select(model, data, structures, min_E=None, alpha=0.5, zeta=0.01, style='
             msg = "Please insert positive number for zeta."
             return ValueError(msg)
         
-        samples = norm.cdf((mean-min_E+zeta)/(std+1E-9))
+        samples = norm.cdf((mean-min_E)/(std+1E-9))
     
     elif style== 'LCB':
         if zeta < 0:
@@ -398,7 +404,7 @@ else:
     model = gpr(kernel=kernel, 
                 descriptor=des, 
                 base_potential=lj,
-                noise_e=[1e-2, 5e-3, 5e-2], 
+                noise_e=[1e-2, 1e-2, 5e-2], 
                 f_coef=20)
     for d in data:
         pts, N_pts, error = model.add_structure(d)
@@ -419,59 +425,92 @@ from ase.optimize import FIRE
 from ase.constraints import ExpCellFilter
 from ase.spacegroup.symmetrize import FixSymmetry
 #from pyxtal import pyxtal
-sgs = range(16, 231)
-numIons = [4, 12]
-gen_max = 100
-N_pop = 50
-alpha, zeta = 2, 0.01
-n_bo_select = max([1,N_pop//8])
-BO_style = 'LCB' #'Thompson'
+#sgs = range(16, 231)
+sgs = [166]
+#numIons = [4, 6, 8, 9, 10, 12]
+if len(sys.argv) >1:
+    numIons = int(sys.argv[1])
+    if len(sys.argv) >2:
+        # 16-231
+        strs = sys.argv[2]
+        if strs.find('-') > -1:
+            tmp = strs.split('-')
+            sgs = range(int(tmp[0]), int(tmp[1]))
+        elif strs.find(',') > -1:
+            tmp = strs.split(',')
+            sgs = [int(t) for t in tmp]
+        else:
+            sgs = [int(strs)]
+    else:
+        sgs = range(16, 231)
+else:
+    numIons = 12
+
+print("sgs", sgs)
+print("numIons", numIons)
+
+gen_max = 10
+N_pop = 32
+alpha, zeta = 2, 0.1
+n_bo_select = max([1,N_pop//10])
+BO_style = 'LCB' #'EI' #'Thompson'
 
 Current_data = {"struc": [None] * N_pop,
                 "E": 100000*np.ones(N_pop),
+                "fmax": 100000*np.ones(N_pop),
+                "smax": 100000*np.ones(N_pop),
                 "E_var": np.zeros(N_pop),
                 "E_DFT": [None] *N_pop,
                 "spg": ['P1'] *N_pop,
                 "relax": ["normal"] *N_pop,
                 "survival": [0] *N_pop,
                }
-calc = GPR(ff=model, stress=True, return_std=True)
+calc_raw =  GPR(ff=model, stress=True, f_tol=1e-0)
+calc_high = GPR(ff=model, stress=True, f_tol=1e-4)
+calc_std =  GPR(ff=model, stress=True, return_std=True, f_tol=1e-6)
 
 for gen in range(gen_max):
-    t0 = time()
+
+    print("\n================ GPR Relaxation ===============")
+    total_gpr_time = 0
+    t0_gen = time()
     if ncpu > 1:
         with Pool(ncpu) as p:
-            func = partial(opt_struc, calc=calc, sgs=sgs, species=species, numIons=numIons)
+            func = partial(opt_struc, calcs=[calc_raw, calc_high], sgs=sgs, species=species, numIons=numIons)
             res = p.map(func, Current_data['struc'])
     else:
         res = []
-        for struc in Current_data['struc']:
-            res.append(opt_struc(struc, calc, sgs, species, numIons))
-    print("\nTotal time for GPR calls {:6.3f} minutes in gen {:d}".format((time()-t0)/60, gen))
+        for i, struc in enumerate(Current_data['struc']):
+            print(i)
+            res.append(opt_struc(struc, [calc_raw, calc_high], sgs, species, numIons))
+    total_gpr_time += (time()-t0_gen)/60
+    os.remove(logfile) # remove unnecessary logfile
 
     # unpack the results
-    data = {'energy': [], 'force': []}
     structures = []
     ids = []
-
+    
     for pop, d in enumerate(res):
         (struc, cputime) = d
+        struc.set_calculator(calc_std)
         E = struc.get_potential_energy()/len(struc) #per atom
         E_var = struc._calc.get_var_e()
+        fmax = np.max(np.abs(struc.get_forces()).flatten())
+        smax = np.max(np.abs(struc.get_stress()).flatten())
         vol = struc.get_volume()/len(struc)
         try:
             spg = get_symmetry_dataset(struc, symprec=sym_tol)['international']
         except:
             spg = 'N/A'
         formula = struc.get_chemical_formula()
-        strs = "{:3d} {:3d}[{:2d}] {:6s} {:16s} {:8.3f}[{:8.4f}] {:6.2f} {:6.2f}".format(\
-        gen, pop, Current_data["survival"][pop], formula, spg, E, E_var, vol, cputime)
+        strs = "{:3d} {:2d}[{:2d}] {:4s} {:9s} {:8.3f}[{:6.3f}] {:5.2f} {:5.2f} {:5.2f} {:5.2f} {:6s}".format( 
+        gen, pop, Current_data["survival"][pop], formula, spg, E, E_var, vol, fmax, smax, cputime, Current_data['relax'][pop])
 
         if Current_data['E_DFT'][pop] is not None:
             strs += "{:8.3f}".format(Current_data['E_DFT'][pop])
 
-        if vol > 60:
-            strs += " discarded (large volume)"
+        if vol > 50:
+            strs += " discarded"
             Current_data["struc"][pop] = None
             Current_data['relax'][pop] = "normal"
             Current_data['survival'][pop] = 0
@@ -481,6 +520,8 @@ for gen in range(gen_max):
                 ids.append(pop)
                 Current_data["struc"][pop] = struc
                 Current_data["E"][pop] = E
+                Current_data["fmax"][pop] = fmax
+                Current_data["smax"][pop] = smax
                 Current_data["E_var"][pop] = E_var
                 Current_data['survival'][pop] += 1
             else:
@@ -494,71 +535,98 @@ for gen in range(gen_max):
 
         if E < min_E:
             strs += ' +++++'
-
         print(strs)
 
-    os.remove(logfile) # remove unnecessary logfile
-
-    #------------------- BO selection ------------------------------
+    print("\n================ BO selection ================")
     t0 = time()
+    data = {'energy': [], 'force': []}
     data = collect_data(model, data, structures)
-    indices = BO_select(model, data, structures, min_E, alpha=alpha, zeta=zeta, style=BO_style)
-    print("Total time for BO selection: {:6.3f} miniutes".format((time()-t0)/60))
-    total_pts = 0
-    total_time = 0
+    indices = BO_select(model, data, structures, min_E, alpha=alpha, style=BO_style)
+    total_gpr_time += (time()-t0)/60
+
+    total_dft_pts = 0
+    total_dft_time = 0
+    add_dft_pts = []
     for ix in indices[:n_bo_select]:
-        best_struc = structures[ix]
-        E = best_struc.get_potential_energy()/len(best_struc)
-        E_var = best_struc._calc.get_var_e()
+        struc = structures[ix]
+        formula = struc.get_chemical_formula()
+        E = struc._calc.get_e()
+        E_var = struc._calc.get_var_e()
         N_pts = None
-        if E_var > 1e-3:
+        if E_var > model.noise_e/2:
             spg = Current_data['spg'][ids[ix]]
-            best_struc = structures[ix]
-            best_struc.set_constraint()
-            best_struc.set_calculator(set_vasp('single', 0.20))
-            formula = best_struc.get_chemical_formula()
-            strs = "Struc {:4d}[{:8s} {:12s}]: {:8.3f}[{:8.4f}]".format(ids[ix], formula, spg, E, E_var)
+            struc.set_constraint()
+            struc.set_calculator(set_vasp('single', 0.20))
+            strs = "{:2d}[{:8s} {:9s}]: {:7.3f}[{:7.3f}]".format(ids[ix], formula, spg, E, E_var)
 
             # perform single point DFT
             t0 = time()
-            best_eng, best_forces = dft_run(best_struc, path=calc_folder)
+            eng, forces = dft_run(struc, path=calc_folder)
             cputime = (time() - t0)/60
-            total_time += cputime
+            total_dft_time += cputime
             # sometimes the vasp calculation will fail
-            if best_eng is not None:
-                E = best_eng/len(best_struc)
-                strs += " -> DFT energy: {:8.3f} eV/atom ".format(E)
-                strs += "in {:6.2f} minutes".format(cputime)
+            if eng is not None:
+                E = eng/len(struc)
+                strs += " -> DFT energy: {:6.3f} eV/atom ".format(E)
+                strs += "in {:5.2f} minutes".format(cputime)
                 # update GPR model
-                pts, N_pts, _ = model.add_structure((best_struc.copy(), best_eng, best_forces), tol_e_var=1.2)
+                if E > min_E + 1.0:
+                    add_force = False
+                else:
+                    add_force = True
+                pts, N_pts, _ = model.add_structure((struc.copy(), eng, forces), 
+                                            tol_e_var=1.2, add_force=add_force)
                 if N_pts > 0:
-                    model.set_train_pts(pts, mode="a+")
-                    model.fit(show=False)
-                    total_pts += N_pts
+                    add_dft_pts.append(pts)
+                    total_dft_pts += N_pts
                 Current_data['E_DFT'][ids[ix]] = E
                 Current_data['relax'][ids[ix]] = "medium"
             else:
                 E = 100000
                 strs += " !!!skipped due to error in vasp calculation"
             print(strs)
+            #print(struc)
+            #print(struc.get_scaled_positions())
 
-            if N_pts is not None and E < min_E + 0.6:
+            if N_pts is not None and E < min_E + 0.75:
                 strs = "Switch to DFT relaxation, energy: "
                 t0 = time()
-                best_struc.set_calculator(set_vasp('opt', 0.3))
-                eng, forces = dft_run(best_struc, path=calc_folder, max_time=10)
-                best_struc.set_calculator(set_vasp('single', 0.20))
-                eng, forces = dft_run(best_struc, path=calc_folder)
-                E = eng/len(best_struc)
+                struc.set_calculator(set_vasp('opt', 0.3))
+                eng, forces = dft_run(struc, path=calc_folder, max_time=10)
+                struc.set_calculator(set_vasp('single', 0.20))
+                eng, forces = dft_run(struc, path=calc_folder)
+                E = eng/len(struc)
+                #update data
                 Current_data['E_DFT'][ids[ix]] = E
                 Current_data['relax'][ids[ix]] = "light"
-                pts, N_pts, _ = model.add_structure((best_struc.copy(), eng, forces), tol_e_var=1.2)
+                pts, N_pts, _ = model.add_structure((struc.copy(), eng, forces))
                 cputime = (time() - t0)/60
-                strs += "{:8.3f} eV/atom in {:6.2f} minutes".format(E, cputime)
+                total_dft_time += cputime
+                #print(struc)
+                #print(struc.get_scaled_positions())
                 if N_pts > 0:
-                    model.set_train_pts(pts, mode="a+")
-                    model.fit(show=False)
-                    total_pts += N_pts
+                    add_dft_pts.append(pts)
+                    total_dft_pts += N_pts
+                    #deformation to learn the energy basin
+                    for fac in [0.80, 0.90, 0.95, 0.98, 1.02, 1.05, 1.1, 1.2]:   
+                        t0 = time()
+                        struc1 = struc.copy()
+                        pos = struc1.get_scaled_positions().copy()
+                        struc1.set_cell(fac*struc.cell)
+                        struc1.set_scaled_positions(pos)
+                        struc1.set_calculator(set_vasp('single', 0.20))
+                        eng, forces = dft_run(struc1, path=calc_folder)
+                        pts, N_pts, _ = model.add_structure((struc1.copy(), eng, forces))
+                        cputime = (time() - t0)/60
+                        total_dft_time += cputime
+                        print("Deformation: {:6.2f}, DFT {:7.3f} eV/atom in {:5.2f} minutes".format(fac, eng/len(struc1), cputime))
+                        #print(struc1)
+                        #print(struc1.get_scaled_positions())
+                        if N_pts > 0:
+                            add_dft_pts.append(deepcopy(pts))
+                            total_dft_pts += deepcopy(N_pts)
+
+                    strs += "{:8.3f} eV/atom in {:5.2f} minutes".format(E, cputime)
                 else:
                     Current_data['relax'][ids[ix]] = "freeze"
                     strs += ' freeze, no update'
@@ -566,56 +634,106 @@ for gen in range(gen_max):
 
                 if E < min_E:
                     min_E = E
-                Current_data['struc'][ids[ix]] = best_struc
+                Current_data['struc'][ids[ix]] = struc
             #strs += "{:8.3f}".format(Current_data['E_DFT'][pop])
 
-        # update energy
+        # update energy and make sure E-var is large
+        #Current_data["E_var"][ids[ix]] = model.noise_e*1.5 
         Current_data['E'][ids[ix]] = E
 
-    print("Total time for DFT calls {:6.3f} minutes in gen {:d}".format(total_time, gen))
-    if total_pts > 0:
-        model.sparsify(e_tol=1e-5, f_tol=1e-3)
-        model.save("models/test.json", "models/test.db")
-        print(model)
-    else:
-        print("No updates on the GP model in gen {:d}".format(gen))
-
-    # reset the structures if the structure has 0 variance
-    # Es = np.array([e for e, s in zip(Current_data['E'], Current_data['struc']) if e<10000])
-    # e_median = np.median(Es)
+    print("\n================ Postprocessing ===============")
     for pop in range(N_pop):
         struc = Current_data['struc'][pop]
         e_var = Current_data['E_var'][pop]
         eng = Current_data['E'][pop]
+        fmax = Current_data['fmax'][pop]
+        smax = Current_data['smax'][pop]
         spg = Current_data['spg'][pop]
         if struc is not None:
-            reset = False
             deposit = False
+            reset = False
+            dft_calc = False
             formula = struc.get_chemical_formula()
-            strs = "Struc {:2d}[{:8s} {:12s}] {:8.3f}[{:8.3f}]".format(pop, formula, spg, eng, e_var)
-            if e_var < 1.2*model.noise_e:
-                print(strs, " Deposited")
-                reset = True
-                deposit = True
-            # gave up some unlikely high energy structures?
-            elif e_var < 20*model.noise_e and eng > min_E + 1.5:
-                print(strs, " Discarded due to high energy")
-                reset=True
-            elif eng > min_E + 0.5 and Current_data['survival'][pop] > 20:
-                print(strs, " Discarded due to long survival")
-                reset=True
-            else:
-                Current_data['struc'][pop].relax = Current_data['relax'][pop]
+            strs = "{:2d}[{:6s} {:9s}] {:7.3f}[{:7.3f}] {:7.3f} {:7.3f}".format(\
+            pop, formula, spg, eng, e_var, fmax, smax)
 
-            if reset:
-                Current_data['struc'][pop] = None
-                Current_data['E_DFT'][pop] = None
-                Current_data['relax'][pop] = "normal"
-                Current_data['survival'][pop] = 0
+            if fmax<5e-2 and smax<2e-2:
+                if e_var < 1.2*model.noise_e:
+                    deposit = True
+                    reset = True
+                    print(strs, " Deposited")
+                else:
+                    if eng < min_E + 2.5:
+                        dft_calc = True
+                    else:
+                        reset = True
+                        print(strs, " discard due to high energy")
+                    
+            else:
+                if e_var > 10:
+                    Current_data['struc'][pop].relax = "light"
+                elif e_var > 5:
+                    Current_data['struc'][pop].relax = "medium"
+                else:
+                    Current_data['struc'][pop].relax = Current_data['relax'][pop]
+
+            if dft_calc:
+                t0 = time()
+                struc.set_constraint()
+                struc.set_calculator(set_vasp('single', 0.20))
+                eng, forces = dft_run(struc, path=calc_folder)
+                cputime = (time() - t0)/60
+                total_dft_time += cputime
+                # sometimes the vasp calculation will fail
+                if eng is not None:
+                    E = eng/len(struc)
+                    strs += " -> DFT energy: {:6.3f} eV/atom ".format(E)
+                    strs += "in {:5.2f} minutes".format(cputime)
+                    if E > min_E + 0.5:
+                        add_force = False
+                    else:
+                        add_force = True
+                    pts, N_pts, _ = model.add_structure((struc.copy(), eng, forces), add_force=add_force)
+                    if N_pts > 0:
+                        add_dft_pts.append(pts)
+                        total_dft_pts += N_pts
+                    Current_data['E_DFT'][pop] = E
+                    Current_data['relax'][pop] = "medium"
+                    Current_data['struc'][pop].relax = "medium"
+                    print(strs)
+                else:
+                    E = 100000
+                    strs += " !!!skipped due to error in vasp calculation"
+                    print(strs)
 
             if deposit:
                 struc.set_calculator()
                 struc.set_constraint()
                 add_structures((struc, eng, spg, e_var, gen), 'all.db')
 
-    print("The minimum energy in DFT is {:6.3f} eV/atom in gen {:d}".format(min_E, gen))
+            if reset:
+                Current_data['struc'][pop] = None
+                Current_data['relax'][pop] = "normal"
+                Current_data['E_DFT'][pop] = None
+                Current_data['survival'][pop] = 0
+
+
+    if total_dft_pts > 0:
+        for pt in add_dft_pts:
+            model.set_train_pts(pt, mode="a+")
+        if gen % 2 == 0:
+            model.fit(show=False)
+            model.sparsify(e_tol=1e-5, f_tol=1e-2)
+        else: #we don't update the model too frequently since it becomes expansive
+            model.fit(show=False, opt=False)
+        model.save("models/test.json", "models/test.db")
+        print(model)
+    else:
+        print("No updates on the GP model in gen {:d}".format(gen))
+    
+    print("================ Summary ===================")
+    print("Total GPR time {:6.3f} minutes in gen {:d}".format(total_gpr_time, gen))
+    print("Total DFT time {:6.3f} minutes in gen {:d}".format(total_dft_time, gen))
+    print("Total Run time {:6.3f} minutes in gen {:d}".format((time()-t0_gen)/60, gen))
+    print("The minimum DFT energy is {:6.3f} eV/atom in gen {:d}".format(min_E, gen))
+

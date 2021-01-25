@@ -184,7 +184,7 @@ def kef_C(X1, X2, sigma=1.0, l=1.0, zeta=2.0, grad=False, stress=False, transpos
     else:
         return C
 
-def kff_C(X1, X2, sigma=1.0, l=1.0, zeta=2.0, grad=False, stress=False):
+def kff_C(X1, X2, sigma=1.0, l=1.0, zeta=2.0, grad=False, stress=False, tol=1e-12):
     """
     Compute the force-force relation through RBF kernel.
     Args:
@@ -247,7 +247,7 @@ def kff_C(X1, X2, sigma=1.0, l=1.0, zeta=2.0, grad=False, stress=False):
     if stress:
         pdat_dx1dr=ffi.new('double['+str(m1p*d*9)+']', list(dx1dr.ravel()))
         pout=ffi.new('double['+str(m1*9*m2*3)+']')
-        lib.kff_many_stress(m1p, m2p, m2p_start, m2p_end, d, m2, zeta, sigma2, l2, 
+        lib.kff_many_stress(m1p, m2p, m2p_start, m2p_end, d, m2, zeta, sigma2, l2, tol, 
                      pdat_x1, pdat_dx1dr, pdat_ele1, pdat_x1_inds,
                      pdat_x2, pdat_dx2dr, pdat_ele2, pdat_x2_inds,
                      pout)
@@ -268,7 +268,7 @@ def kff_C(X1, X2, sigma=1.0, l=1.0, zeta=2.0, grad=False, stress=False):
         pdat_dx1dr = ffi.new('double['+str(m1p*d*3)+']', dx1dr.ravel().tolist())
         pout = ffi.new('double['+str(m1*3*m2*3*2)+']')
         dpout_dl = ffi.new('double['+str(m1*3*m2*3*2)+']')
-        lib.kff_many_with_grad(m1p, m2p, m2p_start, m2p_end, d, m2, zeta, sigma2, l,
+        lib.kff_many_with_grad(m1p, m2p, m2p_start, m2p_end, d, m2, zeta, sigma2, l, 
                                pdat_x1, pdat_dx1dr, pdat_ele1, pdat_x1_inds,
                                pdat_x2, pdat_dx2dr, pdat_ele2, pdat_x2_inds,
                                pout, dpout_dl)
@@ -299,7 +299,7 @@ def kff_C(X1, X2, sigma=1.0, l=1.0, zeta=2.0, grad=False, stress=False):
     else:
         pdat_dx1dr=ffi.new('double['+str(m1p*d*3)+']', dx1dr.ravel().tolist())
         pout=ffi.new('double['+str(m1*3*m2*3)+']')
-        lib.kff_many(m1p, m2p, m2p_start, m2p_end, d, m2, zeta, sigma2, l2,
+        lib.kff_many(m1p, m2p, m2p_start, m2p_end, d, m2, zeta, sigma2, l2, tol,
                      pdat_x1, pdat_dx1dr, pdat_ele1, pdat_x1_inds,
                      pdat_x2, pdat_dx2dr, pdat_ele2, pdat_x2_inds,
                      pout)

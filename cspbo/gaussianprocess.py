@@ -309,9 +309,15 @@ class GaussianProcess():
                 F_Pred = self.predict(test_X_F)
             return E, E_Pred, F, F_Pred
 
-    def predict_structure(self, struc, stress=True, return_std=False):
+    def predict_structure(self, struc, stress=True, return_std=False, f_tol=1e-8):
         """
         make prediction for a given structure
+
+        Args:
+            struc:
+            stress: bool, compute stress or not
+            return_std: bool, return variance or not
+            f_tol: float, precision to compute force
         """
         d = self.descriptor.calculate(struc) 
         ele = [Element(ele).z for ele in d['elements']]
@@ -331,9 +337,9 @@ class GaussianProcess():
             else:
                 data["force"].append((_x, _dxdr, ele0))
         if stress:
-            K_trans, K_trans1 = self.kernel.k_total_with_stress(data, self.train_x)
+            K_trans, K_trans1 = self.kernel.k_total_with_stress(data, self.train_x, f_tol)
         else:
-            K_trans = self.kernel.k_total(data, self.train_x)
+            K_trans = self.kernel.k_total(data, self.train_x, f_tol)
 
         pred = K_trans.dot(self.alpha_)
         y_mean = pred[:, 0]
@@ -632,7 +638,7 @@ class GaussianProcess():
 
         self.set_train_pts(pts_to_add, "w")
 
-    def add_structure(self, data, N_max=10, tol_e_var=1.2, tol_f_var=1.2):
+    def add_structure(self, data, N_max=10, tol_e_var=1.2, tol_f_var=1.2, add_force=True):
         """
         add the training points from a given structure base on the followings:
             1, compute the (E, F, E_var, F_var) based on the current model
@@ -677,24 +683,25 @@ class GaussianProcess():
         #energy_in = False
 
         force_in = []
-
-        xs_added = []
-        for f_id in range(len(atoms)):
-            include = False
-            if np.max(F_std[f_id]) > tol_f_var: 
-                X = my_data["energy"][0][0][f_id]
-                _ele = my_data["energy"][0][2][f_id]
-                if len(xs_added) == 0:
-                    include = True
-                else:
-                    if new_pt((X, _ele), xs_added):
+        
+        if add_force:
+            xs_added = []
+            for f_id in range(len(atoms)):
+                include = False
+                if np.max(F_std[f_id]) > tol_f_var: 
+                    X = my_data["energy"][0][0][f_id]
+                    _ele = my_data["energy"][0][2][f_id]
+                    if len(xs_added) == 0:
                         include = True
-            if include:
-                force_in.append(f_id)
-                xs_added.append((X, _ele))
-                pts_to_add["force"].append(my_data["force"][f_id])
-            if len(force_in) == N_max:
-                break
+                    else:
+                        if new_pt((X, _ele), xs_added):
+                            include = True
+                if include:
+                    force_in.append(f_id)
+                    xs_added.append((X, _ele))
+                    pts_to_add["force"].append(my_data["force"][f_id])
+                if len(force_in) == N_max:
+                    break
 
         N_forces = len(force_in)
         N_pts = N_energy + N_forces

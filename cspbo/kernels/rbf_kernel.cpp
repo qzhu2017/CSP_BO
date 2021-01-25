@@ -338,7 +338,7 @@ void kef_many_stress(int n1, int n2, int d, int x2i, double zeta, double sigma2,
 
 
 extern "C"
-void kff_many(int n1, int n2, int n2_start, int n2_end, int d, int x2i, double zeta, double sigma2, double l2,
+void kff_many(int n1, int n2, int n2_start, int n2_end, int d, int x2i, double zeta, double sigma2, double l2, double tol,
               double* x1, double* dx1dr, int* ele1, int* x1_inds, 
               double* x2, double* dx2dr, int* ele2, int* x2_inds, double* pout){
     double eps=1e-8;
@@ -391,74 +391,76 @@ void kff_many(int n1, int n2, int n2_start, int n2_end, int d, int x2i, double z
                     D = pow(dx, zeta);
                     K = sigma2 * exp(-(1-D)/(2*l2));
                     dK_dD = K / (2*l2);
+                    if(dK_dD > tol){
 
-                    x1x2_dot_norm31 = x1x2_dot*_x1x2_norm31;
-                    x1x2_dot_norm13 = x1x2_dot*_x1x2_norm*_x2_norm2;
-                    x1x2_dot_norm02 = x1x2_dot*_x2_norm2;
+                        x1x2_dot_norm31 = x1x2_dot*_x1x2_norm31;
+                        x1x2_dot_norm13 = x1x2_dot*_x1x2_norm*_x2_norm2;
+                        x1x2_dot_norm02 = x1x2_dot*_x2_norm2;
 
-                    d2 = pow(dx,zeta-2);
-    	    	    d1 = dx*d2;
-    	    	    d2 = d2*(zeta-1);
+                        d2 = pow(dx,zeta-2);
+    	    	        d1 = dx*d2;
+    	    	        d2 = d2*(zeta-1);
 
-    	    	    for(i=0;i<d;i++){
-    	    	        for(j=0;j<d;j++){
-    	    	            if(i==j){
-                                dval=1.0;
-                            } else {
-    	    	    	        dval=0;
+    	    	        for(i=0;i<d;i++){
+    	    	            for(j=0;j<d;j++){
+    	    	                if(i==j){
+                                    dval=1.0;
+                                } else {
+    	    	        	        dval=0;
+                                }
+
+                                dddx1 = x2[jj*d+i]*_x1x2_norm - x1[ii*d+i]*x1x2_dot_norm31;
+                                dddx2 = x1[ii*d+j]*_x1x2_norm - x2[jj*d+j]*x1x2_dot_norm13;
+
+                                dDdx1 = zeta * d1 * dddx1;
+                                dDdx2 = zeta * d1 * dddx2;
+
+    	    	                d2d_dx1dx2 = (dval-x2[jj*d+i]*x2[jj*d+j]*_x2_norm2)*_x1x2_norm +
+    	    	                (x1[ii*d+i]*x2[jj*d+j]*x1x2_dot_norm02-x1[ii*d+i]*x1[ii*d+j])*_x1x2_norm31;
+
+                                d2Ddx1dx2 = zeta * (d1*d2d_dx1dx2 + d2 * dddx1 * dddx2);
+
+                                d2k_dx1dx2[i*d+j] = dK_dD * (d2Ddx1dx2 + ((1/(2*l2)) * dDdx1 * dDdx2)); 
+    	    	        	}
+    	    	        }
+                        
+                                
+
+                        C1 = C2 = C3 = C4 = C5 = C6 = C7 = C8 = C9 = 0;
+                        for(i=0;i<d;i++){
+                            C[i*3+0] = 0;
+                            C[i*3+1] = 0;
+                            C[i*3+2] = 0;
+                            for(j=0;j<d;j++){
+                                dval = d2k_dx1dx2[j*d+i];
+                                C[i*3+0] += dx1dr[(ii*d+j)*3 + 0] * dval;
+                                C[i*3+1] += dx1dr[(ii*d+j)*3 + 1] * dval;
+                                C[i*3+2] += dx1dr[(ii*d+j)*3 + 2] * dval;
                             }
-
-                            dddx1 = x2[jj*d+i]*_x1x2_norm - x1[ii*d+i]*x1x2_dot_norm31;
-                            dddx2 = x1[ii*d+j]*_x1x2_norm - x2[jj*d+j]*x1x2_dot_norm13;
-
-                            dDdx1 = zeta * d1 * dddx1;
-                            dDdx2 = zeta * d1 * dddx2;
-
-    	    	            d2d_dx1dx2 = (dval-x2[jj*d+i]*x2[jj*d+j]*_x2_norm2)*_x1x2_norm +
-    	    	            (x1[ii*d+i]*x2[jj*d+j]*x1x2_dot_norm02-x1[ii*d+i]*x1[ii*d+j])*_x1x2_norm31;
-
-                            d2Ddx1dx2 = zeta * (d1*d2d_dx1dx2 + d2 * dddx1 * dddx2);
-
-                            d2k_dx1dx2[i*d+j] = dK_dD * (d2Ddx1dx2 + ((1/(2*l2)) * dDdx1 * dDdx2)); 
-    	    	    	}
-    	    	    }
-                    
-                            
-
-                    C1 = C2 = C3 = C4 = C5 = C6 = C7 = C8 = C9 = 0;
-                    for(i=0;i<d;i++){
-                        C[i*3+0] = 0;
-                        C[i*3+1] = 0;
-                        C[i*3+2] = 0;
-                        for(j=0;j<d;j++){
-                            dval = d2k_dx1dx2[j*d+i];
-                            C[i*3+0] += dx1dr[(ii*d+j)*3 + 0] * dval;
-                            C[i*3+1] += dx1dr[(ii*d+j)*3 + 1] * dval;
-                            C[i*3+2] += dx1dr[(ii*d+j)*3 + 2] * dval;
                         }
+                        
+                        for(j=0;j<d;j++){
+                                C1 += C[j*3+0]*dx2dr[(jj*d+j)*3 + 0];
+                                C2 += C[j*3+1]*dx2dr[(jj*d+j)*3 + 0];
+                                C3 += C[j*3+2]*dx2dr[(jj*d+j)*3 + 0];
+                                C4 += C[j*3+0]*dx2dr[(jj*d+j)*3 + 1];
+                                C5 += C[j*3+1]*dx2dr[(jj*d+j)*3 + 1];
+                                C6 += C[j*3+2]*dx2dr[(jj*d+j)*3 + 1];
+                                C7 += C[j*3+0]*dx2dr[(jj*d+j)*3 + 2];
+                                C8 += C[j*3+1]*dx2dr[(jj*d+j)*3 + 2];
+                                C9 += C[j*3+2]*dx2dr[(jj*d+j)*3 + 2];
+                        }
+                        
+                        pout[((0+_i*3)*x2i+_j)*3+0] += C1;
+                        pout[((1+_i*3)*x2i+_j)*3+0] += C2;
+                        pout[((2+_i*3)*x2i+_j)*3+0] += C3;
+                        pout[((0+_i*3)*x2i+_j)*3+1] += C4;
+                        pout[((1+_i*3)*x2i+_j)*3+1] += C5;
+                        pout[((2+_i*3)*x2i+_j)*3+1] += C6;
+                        pout[((0+_i*3)*x2i+_j)*3+2] += C7;
+                        pout[((1+_i*3)*x2i+_j)*3+2] += C8;
+                        pout[((2+_i*3)*x2i+_j)*3+2] += C9;
                     }
-                    
-                    for(j=0;j<d;j++){
-                            C1 += C[j*3+0]*dx2dr[(jj*d+j)*3 + 0];
-                            C2 += C[j*3+1]*dx2dr[(jj*d+j)*3 + 0];
-                            C3 += C[j*3+2]*dx2dr[(jj*d+j)*3 + 0];
-                            C4 += C[j*3+0]*dx2dr[(jj*d+j)*3 + 1];
-                            C5 += C[j*3+1]*dx2dr[(jj*d+j)*3 + 1];
-                            C6 += C[j*3+2]*dx2dr[(jj*d+j)*3 + 1];
-                            C7 += C[j*3+0]*dx2dr[(jj*d+j)*3 + 2];
-                            C8 += C[j*3+1]*dx2dr[(jj*d+j)*3 + 2];
-                            C9 += C[j*3+2]*dx2dr[(jj*d+j)*3 + 2];
-                    }
-                    
-                    pout[((0+_i*3)*x2i+_j)*3+0] += C1;
-                    pout[((1+_i*3)*x2i+_j)*3+0] += C2;
-                    pout[((2+_i*3)*x2i+_j)*3+0] += C3;
-                    pout[((0+_i*3)*x2i+_j)*3+1] += C4;
-                    pout[((1+_i*3)*x2i+_j)*3+1] += C5;
-                    pout[((2+_i*3)*x2i+_j)*3+1] += C6;
-                    pout[((0+_i*3)*x2i+_j)*3+2] += C7;
-                    pout[((1+_i*3)*x2i+_j)*3+2] += C8;
-                    pout[((2+_i*3)*x2i+_j)*3+2] += C9;
     	    	} 
             }
     	    }
@@ -470,7 +472,7 @@ void kff_many(int n1, int n2, int n2_start, int n2_end, int d, int x2i, double z
 };
 
 extern "C"
-void kff_many_with_grad(int n1, int n2, int n2_start, int n2_end, int d, int x2i, double zeta, double sigma2, double l,
+void kff_many_with_grad(int n1, int n2, int n2_start, int n2_end, int d, int x2i, double zeta, double sigma2, double l, 
                         double* x1, double* dx1dr, int* ele1, int* x1_inds, 
                         double* x2, double* dx2dr, int* ele2, int* x2_inds, double* pout, double* dpout_dl){
     double eps=1e-8;
@@ -625,7 +627,7 @@ void kff_many_with_grad(int n1, int n2, int n2_start, int n2_end, int d, int x2i
                     dpout_dl[((0+_i*3)*x2i+_j)*3+2] -= (C7 * ((D-1) * _l3 + 2 * _l) + (_l*2) * C16 * dK_dD);
                     dpout_dl[((1+_i*3)*x2i+_j)*3+2] -= (C8 * ((D-1) * _l3 + 2 * _l) + (_l*2) * C17 * dK_dD);
                     dpout_dl[((2+_i*3)*x2i+_j)*3+2] -= (C9 * ((D-1) * _l3 + 2 * _l) + (_l*2) * C18 * dK_dD);
-                            
+                        
     	    	} 
             }
     	    }
@@ -637,7 +639,7 @@ void kff_many_with_grad(int n1, int n2, int n2_start, int n2_end, int d, int x2i
 };
 
 extern "C"
-void kff_many_stress(int n1, int n2, int n2_start, int n2_end, int d, int x2i, double zeta, double sigma2, double l2,
+void kff_many_stress(int n1, int n2, int n2_start, int n2_end, int d, int x2i, double zeta, double sigma2, double l2, double tol,
                      double* x1, double* dx1dr, int* ele1, int* x1_inds, 
                      double* x2, double* dx2dr, int* ele2, int* x2_inds, double* pout){
     double eps=1e-8;
@@ -692,122 +694,124 @@ void kff_many_stress(int n1, int n2, int n2_start, int n2_end, int d, int x2i, d
                     K = sigma2 * exp(-(1-D)/(2*l2));
                     dK_dD = K / (2*l2);
 
-                    x1x2_dot_norm31 = x1x2_dot*_x1x2_norm31;
-                    x1x2_dot_norm13 = x1x2_dot*_x1x2_norm*_x2_norm2;
-                    x1x2_dot_norm02 = x1x2_dot*_x2_norm2;
+                    if(dK_dD>tol){
 
-                    d2 = pow(dx,zeta-2);
-    	    	    d1 = dx*d2;
-    	    	    d2 = d2*(zeta-1);
+                        x1x2_dot_norm31 = x1x2_dot*_x1x2_norm31;
+                        x1x2_dot_norm13 = x1x2_dot*_x1x2_norm*_x2_norm2;
+                        x1x2_dot_norm02 = x1x2_dot*_x2_norm2;
 
-    	    	    for(i=0;i<d;i++){
-    	    	        for(j=0;j<d;j++){
-    	    	            if(i==j){
-                                dval=1.0;
-                            } else {
-    	    	    	        dval=0;
+                        d2 = pow(dx,zeta-2);
+    	    	        d1 = dx*d2;
+    	    	        d2 = d2*(zeta-1);
+
+    	    	        for(i=0;i<d;i++){
+    	    	            for(j=0;j<d;j++){
+    	    	                if(i==j){
+                                    dval=1.0;
+                                } else {
+    	    	        	        dval=0;
+                                }
+                                dddx1 = x2[jj*d+i]*_x1x2_norm - x1[ii*d+i]*x1x2_dot_norm31;
+                                dddx2 = x1[ii*d+j]*_x1x2_norm - x2[jj*d+j]*x1x2_dot_norm13;
+
+                                dDdx1 = zeta * d1 * dddx1;
+                                dDdx2 = zeta * d1 * dddx2;
+
+    	    	                d2d_dx1dx2 = (dval-x2[jj*d+i]*x2[jj*d+j]*_x2_norm2)*_x1x2_norm +
+    	    	                (x1[ii*d+i]*x2[jj*d+j]*x1x2_dot_norm02-x1[ii*d+i]*x1[ii*d+j])*_x1x2_norm31;
+                                
+                                d2Ddx1dx2 = zeta * (d1*d2d_dx1dx2 + d2 * dddx1 * dddx2);
+
+                                d2k_dx1dx2[i*d+j] = dK_dD * (d2Ddx1dx2 + ((1/(2*l2)) * dDdx1 * dDdx2)); 
+    	    	        	}
+    	    	        }
+
+                        for(i=0;i<d;i++){
+                            C[i*9+0] = 0;
+                            C[i*9+1] = 0;
+                            C[i*9+2] = 0;
+                            C[i*9+3] = 0;
+                            C[i*9+4] = 0;
+                            C[i*9+5] = 0;
+                            C[i*9+6] = 0;
+                            C[i*9+7] = 0;
+                            C[i*9+8] = 0;
+                            for(j=0;j<d;j++){
+                                dval = d2k_dx1dx2[j*d+i];
+                                C[i*9+0] += dx1dr[(ii*d+j)*9 + 0] * dval;
+                                C[i*9+1] += dx1dr[(ii*d+j)*9 + 1] * dval;
+                                C[i*9+2] += dx1dr[(ii*d+j)*9 + 2] * dval;
+                                C[i*9+3] += dx1dr[(ii*d+j)*9 + 3] * dval;
+                                C[i*9+4] += dx1dr[(ii*d+j)*9 + 4] * dval;
+                                C[i*9+5] += dx1dr[(ii*d+j)*9 + 5] * dval;
+                                C[i*9+6] += dx1dr[(ii*d+j)*9 + 6] * dval;
+                                C[i*9+7] += dx1dr[(ii*d+j)*9 + 7] * dval;
+                                C[i*9+8] += dx1dr[(ii*d+j)*9 + 8] * dval;
                             }
-                            dddx1 = x2[jj*d+i]*_x1x2_norm - x1[ii*d+i]*x1x2_dot_norm31;
-                            dddx2 = x1[ii*d+j]*_x1x2_norm - x2[jj*d+j]*x1x2_dot_norm13;
-
-                            dDdx1 = zeta * d1 * dddx1;
-                            dDdx2 = zeta * d1 * dddx2;
-
-    	    	            d2d_dx1dx2 = (dval-x2[jj*d+i]*x2[jj*d+j]*_x2_norm2)*_x1x2_norm +
-    	    	            (x1[ii*d+i]*x2[jj*d+j]*x1x2_dot_norm02-x1[ii*d+i]*x1[ii*d+j])*_x1x2_norm31;
-                            
-                            d2Ddx1dx2 = zeta * (d1*d2d_dx1dx2 + d2 * dddx1 * dddx2);
-
-                            d2k_dx1dx2[i*d+j] = dK_dD * (d2Ddx1dx2 + ((1/(2*l2)) * dDdx1 * dDdx2)); 
-    	    	    	}
-    	    	    }
-
-                    for(i=0;i<d;i++){
-                        C[i*9+0] = 0;
-                        C[i*9+1] = 0;
-                        C[i*9+2] = 0;
-                        C[i*9+3] = 0;
-                        C[i*9+4] = 0;
-                        C[i*9+5] = 0;
-                        C[i*9+6] = 0;
-                        C[i*9+7] = 0;
-                        C[i*9+8] = 0;
-                        for(j=0;j<d;j++){
-                            dval = d2k_dx1dx2[j*d+i];
-                            C[i*9+0] += dx1dr[(ii*d+j)*9 + 0] * dval;
-                            C[i*9+1] += dx1dr[(ii*d+j)*9 + 1] * dval;
-                            C[i*9+2] += dx1dr[(ii*d+j)*9 + 2] * dval;
-                            C[i*9+3] += dx1dr[(ii*d+j)*9 + 3] * dval;
-                            C[i*9+4] += dx1dr[(ii*d+j)*9 + 4] * dval;
-                            C[i*9+5] += dx1dr[(ii*d+j)*9 + 5] * dval;
-                            C[i*9+6] += dx1dr[(ii*d+j)*9 + 6] * dval;
-                            C[i*9+7] += dx1dr[(ii*d+j)*9 + 7] * dval;
-                            C[i*9+8] += dx1dr[(ii*d+j)*9 + 8] * dval;
                         }
-                    }
-                    
-                    C1 = C2 = C3 = C4 = C5 = C6 = C7 = C8 = C9 = 0;
-                    C10 = C11 = C12 = C13 = C14 = C15 = C16 = C17 = C18 = 0;
-                    C19 = C20 = C21 = C22 = C23 = C24 = C25 = C26 = C27 = 0;
+                        
+                        C1 = C2 = C3 = C4 = C5 = C6 = C7 = C8 = C9 = 0;
+                        C10 = C11 = C12 = C13 = C14 = C15 = C16 = C17 = C18 = 0;
+                        C19 = C20 = C21 = C22 = C23 = C24 = C25 = C26 = C27 = 0;
 
-                    for(j=0;j<d;j++){
-                            C1 +=  C[j*9+0] * dx2dr[(jj*d+j)*3 + 0];
-                            C2 +=  C[j*9+1] * dx2dr[(jj*d+j)*3 + 0];
-                            C3 +=  C[j*9+2] * dx2dr[(jj*d+j)*3 + 0];
-                            C4 +=  C[j*9+3] * dx2dr[(jj*d+j)*3 + 0];
-                            C5 +=  C[j*9+4] * dx2dr[(jj*d+j)*3 + 0];
-                            C6 +=  C[j*9+5] * dx2dr[(jj*d+j)*3 + 0];
-                            C7 +=  C[j*9+6] * dx2dr[(jj*d+j)*3 + 0];
-                            C8 +=  C[j*9+7] * dx2dr[(jj*d+j)*3 + 0];
-                            C9 +=  C[j*9+8] * dx2dr[(jj*d+j)*3 + 0];
-                            C10 += C[j*9+0] * dx2dr[(jj*d+j)*3 + 1];
-                            C11 += C[j*9+1] * dx2dr[(jj*d+j)*3 + 1];
-                            C12 += C[j*9+2] * dx2dr[(jj*d+j)*3 + 1];
-                            C13 += C[j*9+3] * dx2dr[(jj*d+j)*3 + 1];
-                            C14 += C[j*9+4] * dx2dr[(jj*d+j)*3 + 1];
-                            C15 += C[j*9+5] * dx2dr[(jj*d+j)*3 + 1];
-                            C16 += C[j*9+6] * dx2dr[(jj*d+j)*3 + 1];
-                            C17 += C[j*9+7] * dx2dr[(jj*d+j)*3 + 1];
-                            C18 += C[j*9+8] * dx2dr[(jj*d+j)*3 + 1];
-                            C19 += C[j*9+0] * dx2dr[(jj*d+j)*3 + 2];
-                            C20 += C[j*9+1] * dx2dr[(jj*d+j)*3 + 2];
-                            C21 += C[j*9+2] * dx2dr[(jj*d+j)*3 + 2];
-                            C22 += C[j*9+3] * dx2dr[(jj*d+j)*3 + 2];
-                            C23 += C[j*9+4] * dx2dr[(jj*d+j)*3 + 2];
-                            C24 += C[j*9+5] * dx2dr[(jj*d+j)*3 + 2];
-                            C25 += C[j*9+6] * dx2dr[(jj*d+j)*3 + 2];
-                            C26 += C[j*9+7] * dx2dr[(jj*d+j)*3 + 2];
-                            C27 += C[j*9+8] * dx2dr[(jj*d+j)*3 + 2];
-                    }
+                        for(j=0;j<d;j++){
+                                C1 +=  C[j*9+0] * dx2dr[(jj*d+j)*3 + 0];
+                                C2 +=  C[j*9+1] * dx2dr[(jj*d+j)*3 + 0];
+                                C3 +=  C[j*9+2] * dx2dr[(jj*d+j)*3 + 0];
+                                C4 +=  C[j*9+3] * dx2dr[(jj*d+j)*3 + 0];
+                                C5 +=  C[j*9+4] * dx2dr[(jj*d+j)*3 + 0];
+                                C6 +=  C[j*9+5] * dx2dr[(jj*d+j)*3 + 0];
+                                C7 +=  C[j*9+6] * dx2dr[(jj*d+j)*3 + 0];
+                                C8 +=  C[j*9+7] * dx2dr[(jj*d+j)*3 + 0];
+                                C9 +=  C[j*9+8] * dx2dr[(jj*d+j)*3 + 0];
+                                C10 += C[j*9+0] * dx2dr[(jj*d+j)*3 + 1];
+                                C11 += C[j*9+1] * dx2dr[(jj*d+j)*3 + 1];
+                                C12 += C[j*9+2] * dx2dr[(jj*d+j)*3 + 1];
+                                C13 += C[j*9+3] * dx2dr[(jj*d+j)*3 + 1];
+                                C14 += C[j*9+4] * dx2dr[(jj*d+j)*3 + 1];
+                                C15 += C[j*9+5] * dx2dr[(jj*d+j)*3 + 1];
+                                C16 += C[j*9+6] * dx2dr[(jj*d+j)*3 + 1];
+                                C17 += C[j*9+7] * dx2dr[(jj*d+j)*3 + 1];
+                                C18 += C[j*9+8] * dx2dr[(jj*d+j)*3 + 1];
+                                C19 += C[j*9+0] * dx2dr[(jj*d+j)*3 + 2];
+                                C20 += C[j*9+1] * dx2dr[(jj*d+j)*3 + 2];
+                                C21 += C[j*9+2] * dx2dr[(jj*d+j)*3 + 2];
+                                C22 += C[j*9+3] * dx2dr[(jj*d+j)*3 + 2];
+                                C23 += C[j*9+4] * dx2dr[(jj*d+j)*3 + 2];
+                                C24 += C[j*9+5] * dx2dr[(jj*d+j)*3 + 2];
+                                C25 += C[j*9+6] * dx2dr[(jj*d+j)*3 + 2];
+                                C26 += C[j*9+7] * dx2dr[(jj*d+j)*3 + 2];
+                                C27 += C[j*9+8] * dx2dr[(jj*d+j)*3 + 2];
+                        }
 
-                    pout[((0+_i*9)*x2i+_j)*3+0] += C1;
-                    pout[((1+_i*9)*x2i+_j)*3+0] += C2;
-                    pout[((2+_i*9)*x2i+_j)*3+0] += C3;
-                    pout[((3+_i*9)*x2i+_j)*3+0] += C4;
-                    pout[((4+_i*9)*x2i+_j)*3+0] += C5;
-                    pout[((5+_i*9)*x2i+_j)*3+0] += C6;
-                    pout[((6+_i*9)*x2i+_j)*3+0] += C7;
-                    pout[((7+_i*9)*x2i+_j)*3+0] += C8;
-                    pout[((8+_i*9)*x2i+_j)*3+0] += C9;
-                    pout[((0+_i*9)*x2i+_j)*3+1] += C10;
-                    pout[((1+_i*9)*x2i+_j)*3+1] += C11;
-                    pout[((2+_i*9)*x2i+_j)*3+1] += C12;
-                    pout[((3+_i*9)*x2i+_j)*3+1] += C13;
-                    pout[((4+_i*9)*x2i+_j)*3+1] += C14;
-                    pout[((5+_i*9)*x2i+_j)*3+1] += C15;
-                    pout[((6+_i*9)*x2i+_j)*3+1] += C16;
-                    pout[((7+_i*9)*x2i+_j)*3+1] += C17;
-                    pout[((8+_i*9)*x2i+_j)*3+1] += C18;
-                    pout[((0+_i*9)*x2i+_j)*3+2] += C19;
-                    pout[((1+_i*9)*x2i+_j)*3+2] += C20;
-                    pout[((2+_i*9)*x2i+_j)*3+2] += C21;
-                    pout[((3+_i*9)*x2i+_j)*3+2] += C22;
-                    pout[((4+_i*9)*x2i+_j)*3+2] += C23;
-                    pout[((5+_i*9)*x2i+_j)*3+2] += C24;
-                    pout[((6+_i*9)*x2i+_j)*3+2] += C25;
-                    pout[((7+_i*9)*x2i+_j)*3+2] += C26;
-                    pout[((8+_i*9)*x2i+_j)*3+2] += C27;
-                            
+                        pout[((0+_i*9)*x2i+_j)*3+0] += C1;
+                        pout[((1+_i*9)*x2i+_j)*3+0] += C2;
+                        pout[((2+_i*9)*x2i+_j)*3+0] += C3;
+                        pout[((3+_i*9)*x2i+_j)*3+0] += C4;
+                        pout[((4+_i*9)*x2i+_j)*3+0] += C5;
+                        pout[((5+_i*9)*x2i+_j)*3+0] += C6;
+                        pout[((6+_i*9)*x2i+_j)*3+0] += C7;
+                        pout[((7+_i*9)*x2i+_j)*3+0] += C8;
+                        pout[((8+_i*9)*x2i+_j)*3+0] += C9;
+                        pout[((0+_i*9)*x2i+_j)*3+1] += C10;
+                        pout[((1+_i*9)*x2i+_j)*3+1] += C11;
+                        pout[((2+_i*9)*x2i+_j)*3+1] += C12;
+                        pout[((3+_i*9)*x2i+_j)*3+1] += C13;
+                        pout[((4+_i*9)*x2i+_j)*3+1] += C14;
+                        pout[((5+_i*9)*x2i+_j)*3+1] += C15;
+                        pout[((6+_i*9)*x2i+_j)*3+1] += C16;
+                        pout[((7+_i*9)*x2i+_j)*3+1] += C17;
+                        pout[((8+_i*9)*x2i+_j)*3+1] += C18;
+                        pout[((0+_i*9)*x2i+_j)*3+2] += C19;
+                        pout[((1+_i*9)*x2i+_j)*3+2] += C20;
+                        pout[((2+_i*9)*x2i+_j)*3+2] += C21;
+                        pout[((3+_i*9)*x2i+_j)*3+2] += C22;
+                        pout[((4+_i*9)*x2i+_j)*3+2] += C23;
+                        pout[((5+_i*9)*x2i+_j)*3+2] += C24;
+                        pout[((6+_i*9)*x2i+_j)*3+2] += C25;
+                        pout[((7+_i*9)*x2i+_j)*3+2] += C26;
+                        pout[((8+_i*9)*x2i+_j)*3+2] += C27;
+                    }       
     	    	} 
     	    }
     	}

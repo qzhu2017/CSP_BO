@@ -11,7 +11,7 @@ mpl.use("Agg")
 import matplotlib.pyplot as plt
 plt.style.use("ggplot")
 
-def PyXtal(sgs, species, numIons):
+def PyXtal(sgs, species, numIons, conventional=True):
     """ 
     PyXtal interface for the followings,
 
@@ -25,7 +25,7 @@ def PyXtal(sgs, species, numIons):
     """
     while True:
         struc = pyxtal()
-        struc.from_random(3, choice(sgs), species, numIons, force_pass=True)
+        struc.from_random(3, choice(sgs), species, numIons, conventional=conventional, force_pass=True)
         if struc.valid:
             return struc.to_ase()
 

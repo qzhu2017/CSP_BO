@@ -32,7 +32,6 @@ else: #pick a model from the previous calcs
     #model.load(m_file, N_max=2, opt=True, device=device)
     model.load(m_file, N_max=None, opt=True, device=device)
     model.sparsify()
-    
     db_file = sys.argv[2]
 
 E, E1, F, F1 = model.validate_data()

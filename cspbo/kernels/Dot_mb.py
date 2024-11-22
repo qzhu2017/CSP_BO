@@ -3,7 +3,7 @@ from .base import build_covariance, get_mask
 from .dot_kernel import kee_C, kff_C, kef_C
 
 class Dot_mb():
-    """
+    r"""
     .. math::
         k(x_i, x_j) = \sigma ^2 * (\sigma_0 ^ 2 + x_i \cdot x_j)
     """

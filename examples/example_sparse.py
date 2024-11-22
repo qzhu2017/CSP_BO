@@ -2,14 +2,14 @@ import sys
 import numpy as np
 from time import time
 from cspbo.utilities import metric_single
-from cspbo.gaussianprocess_ef import GaussianProcess as gpr
+from cspbo.gaussianprocess import GaussianProcess as gpr
 
 np.set_printoptions(formatter={'float': '{: 5.2f}'.format})
 
-device = 'gpu'
+# 
 m_file = sys.argv[1]
 model = gpr()
-model.load(m_file, N_max=None, device=device, opt=False)
+model.load(m_file, N_max=None, opt=False)
 
 t0 = time()
 train_E, train_E1, train_F, train_F1 = model.validate_data()

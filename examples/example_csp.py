@@ -6,8 +6,8 @@ import numpy as np
 from cspbo.gaussianprocess import GaussianProcess as gpr
 from cspbo.calculator import GPR
 from ase.optimize import BFGS, FIRE
-from ase.constraints import ExpCellFilter
-from ase.spacegroup.symmetrize import FixSymmetry
+from ase.constraints import FixSymmetry
+from ase.filters import ExpCellFilter
 
 from spglib import get_symmetry_dataset
 from pyxtal.interface.gulp import GULP
@@ -33,7 +33,7 @@ for i in range(50):
     # structure from Pyxtal
     struc = PyXtal(sgs, species, numIons) 
     struc.set_constraint(FixSymmetry(struc)) 
-    struc.set_calculator(calc_gp)
+    struc.calc = calc_gp
 
     # opt1: relaxation with the constant cell
     dyn = FIRE(struc, logfile='results.log')

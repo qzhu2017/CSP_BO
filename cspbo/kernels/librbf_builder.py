@@ -14,7 +14,10 @@ ffibuilder.cdef("""
 
 ffibuilder.set_source("cspbo.kernels._rbf_kernel", "",
                     sources=["cspbo/kernels/rbf_kernel.cpp"],
-                    include_dirs=["cspbo/kernels/"],)
+                    include_dirs=["cspbo/kernels/"],
+                    #extra_compile_args=["-std=c99"],
+                    #extra_compile_args=["-std=c++11"],
+                    )
 
 if __name__ == "__main__":
     ffibuilder.compile(verbose=True)

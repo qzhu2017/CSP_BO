@@ -29,15 +29,7 @@ l2 = metric_single(train_F, train_F1, "Train Forces")
 # get _structures
 strucs, values = get_strucs(db_file, N_max=N_max)
 (E0, F0, S0) = values[0]
-stress = True  #False
-#stress = False  #False
-#if isinstance(S0, np.ndarray):
-#    try:
-#        if S0[0] is not None:
-#            stress = True
-#    except:
-#        if S0 !=  None:
-#            stress = True
+stress = False  #False
 
 # set calculator
 calc = GPR(ff=model, return_std=False, stress=stress)
@@ -50,9 +42,8 @@ t0 = time()
 count = 0
 for struc, val in zip(strucs, values):
     count += 1
-    #E, F, S = model.predict_structure(struc)
     (E0, F0, S0) = val
-    struc.set_calculator(calc)
+    struc.calc = calc
     E = struc.get_potential_energy()/len(struc)
     F = struc.get_forces()
 

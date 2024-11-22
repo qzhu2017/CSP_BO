@@ -91,11 +91,11 @@ def metric_single(y_train, y_train_pred, header, show_max=False):
 
 def build_desc(method='SO3', rcut=5.0, lmax=4, nmax=4, alpha=2.0):
     if method == "SO3":
-        from cspbo.descriptors.SO3 import SO3
+        from cspbo.SO3 import SO3
         des = SO3(nmax=nmax, lmax=lmax, rcut=rcut, alpha=alpha, derivative=True, stress=True)
-    elif method == "SO4":
-        from cspbo.descriptors.SO4 import SO4_Bispectrum
-        des = SO4_Bispectrum(lmax=lmax, rcut=rcut, derivative=True, stress=True) 
+    #elif method == "SO4":
+    #    from cspbo.descriptors.SO4 import SO4_Bispectrum
+    #    des = SO4_Bispectrum(lmax=lmax, rcut=rcut, derivative=True, stress=True) 
 
     return des
 

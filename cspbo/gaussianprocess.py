@@ -535,7 +535,7 @@ class GaussianProcess():
         self.kernel.load_from_dict(dict0["kernel"])
 
         if dict0["descriptor"]["_type"] == "SO3":
-            from .descriptors.SO3 import SO3
+            from cspbo.SO3 import SO3
             self.descriptor = SO3()
             self.descriptor.load_from_dict(dict0["descriptor"])
         else:
@@ -586,6 +586,7 @@ class GaussianProcess():
                         "energy_in": energy_in,
                         "force_in": force_in,
                        }
+                print(actual_forces)
                 kvp = {"dft_energy": actual_energy/len(force),
                        "dft_fmax": np.max(np.abs(actual_forces.flatten())),
                       }

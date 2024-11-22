@@ -4,8 +4,8 @@ from ase.build import bulk
 from cspbo.gaussianprocess import GaussianProcess as gpr
 from cspbo.calculator import GPR
 from ase.optimize import FIRE
-from ase.constraints import ExpCellFilter
-from ase.spacegroup.symmetrize import FixSymmetry
+from ase.filters import ExpCellFilter
+from ase.constraints import FixSymmetry
 from cspbo.utilities import rmse, metric_single, get_strucs, plot
 
 
@@ -14,9 +14,8 @@ parser.add_option("-f", "--file", dest="file",
                   help="gp model file, REQUIRED",
                   metavar="file")
 parser.add_option("-d", "--device", dest="device", default='cpu',
-                  help="gp model file, REQUIRED",
+                  help="device, optional",
                   metavar="device")
-
 
 (options, args) = parser.parse_args()
 
@@ -33,14 +32,8 @@ calc = GPR(ff=model, stress=True, return_std=False) #, lj={"rc": 2.5, "sigma": 0
 si = bulk('Si', 'diamond', a=5.459*1.2, cubic=True)
 
 # --------------------------- Example of Geometry Optimization
-si.set_calculator(calc)
+si.calc = calc 
 si.set_constraint(FixSymmetry(si))
-ecf = ExpCellFilter(si)
-dyn = FIRE(ecf)
-dyn.run(fmax=0.005, steps=50)
-print(si)
-print(si.get_potential_energy())
-
 ecf = ExpCellFilter(si, scalar_pressure=0.05) #0.05 eV/A^3 = 8.0 GPa
 dyn = FIRE(ecf)
 dyn.run(fmax=0.05, steps=50)
@@ -71,7 +64,7 @@ calc = GPR(ff=model, stress=False, return_std=True)
 si.set_constraint()
 si = si*2
 print("MD simulation for ", len(si), " atoms")
-si.set_calculator(calc)
+si.calc = calc
 
 MaxwellBoltzmannDistribution(si, 300*units.kB)
 dyn = VelocityVerlet(si, 1*units.fs)  # 2 fs time step.

@@ -4,19 +4,15 @@ from cspbo.Dot_mb import Dot_mb
 from cspbo.gaussianprocess import GaussianProcess as gpr
 from cspbo.calculator import GPR, LJ
 from ase.optimize import FIRE
-from ase.constraints import ExpCellFilter
-from ase.spacegroup.symmetrize import FixSymmetry
+from ase.filters import ExpCellFilter
+from ase.constraints import FixSymmetry
 from cspbo.utilities import PyXtal, metric_single, convert_train_data, build_desc
-from ase.db import connect
 from spglib import get_symmetry_dataset
-from pyxtal.interface.gulp import GULP
 
-   
 zeta, ncpu, fac = 2, 4, 2.0
 sgs = range(16, 231)
 species = ["Si"]
 numIons = [8]
-ff = "edip_si.lib" 
 des = build_desc("SO3", lmax=3, nmax=3, rcut=4.0)
 kernel = Dot_mb(para=[1, 0.5], zeta=zeta, ncpu=ncpu)
 lj = LJ(parameters={"rc": 5.0, "sigma": 2.13})

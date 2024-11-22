@@ -3,7 +3,7 @@ from .base import build_covariance, get_mask
 from .rbf_kernel import kee_C, kff_C, kef_C
 
 class RBF_mb():
-    """
+    r"""
     .. math::
         k(x_i, x_j) = \sigma ^2 * \\exp\\left(- \\frac{d(x_i, x_j)^2}{2l^2} \\right)
     """

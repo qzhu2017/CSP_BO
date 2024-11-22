@@ -20,12 +20,10 @@ setup(
     packages=[
         "cspbo",
         "cspbo.kernels",
-        "cspbo.descriptors",
     ],
 
     package_data={
         "cspbo.kernels": ["*.cpp"],
-        "cspbo.descriptors": ["*.npy"],
     },
     classifiers=[
         "Programming Language :: Python :: 3",
@@ -33,14 +31,11 @@ setup(
         "Operating System :: OS Independent",
     ],
     install_requires=[
-        'numpy>=1.13.3', 
-        'scipy>=1.1.0', 
         'cffi>=1.0.0',
         'mpi4py>=3.0.3',
-        "pyxtal>=0.1.4",
-        'numba>=0.50.1',
+        "pyxtal>=1.0.4",
     ],
-    python_requires=">=3.6.1",
+    python_requires=">=3.8.1",
     license="MIT",
     setup_requires=['cffi>=1.0.0'],
     cffi_modules=[

@@ -91,6 +91,8 @@ def metric_single(y_train, y_train_pred, header, show_max=False):
 
 def build_desc(method='SO3', rcut=5.0, lmax=4, nmax=4, alpha=2.0):
     if method == "SO3":
+        #from cspbo.SO3-a import SO3
+        #des = SO3(nmax=nmax, lmax=lmax, rcut=rcut, alpha=alpha)
         from cspbo.SO3 import SO3
         des = SO3(nmax=nmax, lmax=lmax, rcut=rcut, alpha=alpha, derivative=True, stress=True)
     #elif method == "SO4":
@@ -197,9 +199,9 @@ def convert_struc(db_file, des, ids=None, N=None, ncpu=1, stress=False):
             if include:
                 s = db.get_atoms(id=row.id)
                 train_Y['energy'].append(row.data.energy)
-                train_Y['forces'].append(row.data.force)
+                train_Y['forces'].append(np.array(row.data.force))
                 if stress:
-                    train_Y['stress'].append(row.data.stress)
+                    train_Y['stress'].append(np.array(row.data.stress))
                 structures.append(s)
 
                 if N is not None and len(structures) == N:

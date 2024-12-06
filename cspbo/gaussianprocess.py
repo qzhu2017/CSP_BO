@@ -586,7 +586,6 @@ class GaussianProcess():
                         "energy_in": energy_in,
                         "force_in": force_in,
                        }
-                print(actual_forces)
                 kvp = {"dft_energy": actual_energy/len(force),
                        "dft_fmax": np.max(np.abs(actual_forces.flatten())),
                       }

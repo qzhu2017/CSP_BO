@@ -84,10 +84,11 @@ class Dot_mb():
         else:
             return np.hstack((C_ee, C_ff))
 
-    def k_total(self, data1, data2=None):
+    def k_total(self, data1, data2=None, tol=1e-12):
         """
         Compute the covairance for train data
         Used for energy/force prediction
+        # tol is not used
         """
         sigma, sigma0, zeta = self.sigma, self.sigma0, self.zeta
 
@@ -145,10 +146,11 @@ class Dot_mb():
         C2 = build_covariance(C_ee2, C_ef2, C_fe2, C_ff2, None, None)
         return C, np.dstack((C1, C2))
 
-    def k_total_with_stress(self, data1, data2):
+    def k_total_with_stress(self, data1, data2, tol=1e-10):
         """
         Compute the covairance
         Used for energy/force/stress prediction
+        # tol is not used
         """
         sigma, sigma0, zeta = self.sigma, self.sigma0, self.zeta
         C_ee, C_ef, C_fe, C_ff = None, None, None, None

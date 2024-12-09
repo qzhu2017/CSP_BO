@@ -93,7 +93,7 @@ class GaussianProcess():
             self.kernel.update(params[:-1])
             self.noise_e = params[-1]
             self.noise_f = self.f_coef*params[-1]
-        K = self.kernel.k_total(self.train_x)
+        K = self.kernel.k_total(self.train_x)#; print(K)
 
         # add noise matrix
         #K[np.diag_indices_from(K)] += self.noise

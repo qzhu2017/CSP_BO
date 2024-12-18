@@ -3,13 +3,12 @@ import numpy as np
 import os
 import matplotlib.pyplot as plt
 from time import time
-from ase import Atoms # this may not be necessary
 from ase.calculators.emt import EMT
 from ase.optimize import BFGS
-from ase.constraints import FixAtoms
 from ase.io import read
 from ase.mep import NEB
 from ase.db import connect
+
 from cspbo.utilities import metric_single, build_desc, get_data, get_train_data, rmse
 from cspbo.gaussianprocess import GaussianProcess as gpr
 from cspbo.calculator import GPR
@@ -20,7 +19,7 @@ from scipy.interpolate import CubicSpline, make_interp_spline
 #from sklearn.gaussian_process.kernels import RBF
 
 """
-This module is to perform a Gaussian Process Regression (GPR) aided NEB calculation.
+Perform a Gaussian Process Regression (GPR) aided NEB calculation.
 The module is designed to be used in the ASE package.
 The module will use SO3 as the descriptor for the GPR model.
 Can opt for RBF or Dot product kernel for the GPR model.
@@ -28,31 +27,66 @@ Dot product kernel is the default kernel used if not specified.
 
 """
 print(".............GPRANEB module loaded.............\n")
-print("YOu're welcome to modify the code to suit your needs\n")
+print("You're welcome to modify the code to suit your needs\n")
 print("..........Good luck with your calculations..........\n")
 
 class GP_NEB:
-    def __init__(self, initial_state, final_state, num_images, k_spring = 0.1, iterMax = 100, k_Dot = True, f_cov = 0.05, useCalc=EMT()):
+    def __init__(self, initial_state, final_state, 
+                 num_images = 5, 
+                 k_spring = 0.1, 
+                 iterMax = 100, 
+                 k_Dot = True, 
+                 f_cov = 0.05, 
+                 useCalc=EMT()):
+
         self.initial_state = read(initial_state)
         self.final_state = read(final_state)
         self.num_atoms = len(self.initial_state)
         self.num_images = num_images
-        self.useCalc = useCalc
         self.k_spring = k_spring
         self.iterMax = iterMax
         self.k_Dot = k_Dot
         self.f_cov = f_cov
+        self.model = None
+        self.gpr_json = 'gpr_model.json'
+        self.gpr_db = 'gpr_model.db'
+        self.set_GPR()
+        self.calc = GPR(ff=self.model, return_std=True)
+        self.useCalc = useCalc
         #self.add_to_db = add_to_db
         # The initial and final states are ase trajectory files
         # For example, initial.traj and final.traj
+
+    def set_GPR(self, lm=3, nm=3, rcut=4.0, zeta=2.0, device='cpu'):
+        """
+        Setup GPR model
+        """
+        if os.path.exists(self.gpr_json):
+            self.model = gpr()
+            self.model.load(self.gpr_json)
+        else:
+            des = build_desc("SO3", lmax=lm, nmax=nm, rcut=rcut)
+            if self.k_Dot:
+                kernel = Dot_mb(para=[2, 0.5], zeta=zeta, device=device)
+            else:
+                kernel = RBF_mb(para=[1, 0.5], zeta=zeta, device=device)
+
+            self.model = gpr(kernel=kernel, 
+                             descriptor=des, 
+                             noise_e=[0.01, 0.01, 0.03], 
+                             f_coef=20)
 
     # Start with a function to generate the images
     # This function will take advantage of the ASE NEB module
     # The number of images generated is n-2 where n is the number of images specified
     def generate_images(self, IDPP = False):
+        """
+        Generate initial images from ASE's NEB module
+        """
         initial = self.initial_state
         final = self.final_state
         num_images = self.num_images
+
         # Add the initial image
         images = [initial]
         imgCount = 0
@@ -71,72 +105,16 @@ class GP_NEB:
         # We definitely implement our own interpolation method
         return images
     
-    # Assign the generated images an ab initio or semiempirical calculator
-    def ab_initio_calc(self, images):
-        for image in images:
-            image.calc = self.useCalc
-        return images
-
     # Function to train the GPR model
-    def train_gpr_model(self, images, zeta=2, device='cpu', lm=3, nm=3, rcut=4.0):
-        print("Training the GPR model\n")
-        # The images should've been assigned an ab initio or simiempirical calculator
-        for image in images:
-            image.calc = self.useCalc
-            #energies.append(image.get_potential_energy())
-        # we may need to save the images and energies/forces in a database
-        with connect('neb_geoms.db') as db:
-            for image in images:
-                db.write(image, data={'energy': image.get_potential_energy(), 'force': image.get_forces()})
-                # data is a dictionary that can store any information about the image
-                # data may not be necessary, it may be already stored in the image object
+    def train_gpr_model(self, pts):
+        self.model.set_train_pts(pts, mode='a+')
+        self.model.fit(opt=True)
+        train_E, train_E1, train_F, train_F1 = self.model.validate_data()
+        l1 = metric_single(train_E, train_E1, "Train Energy")
+        l2 = metric_single(train_F, train_F1, "Train Forces")
+        print(self.model)
 
-        # Now use the database as the training data
-        # This is specific to the GPR implementation
-
-        des = build_desc("SO3", lmax=lm, nmax=nm, rcut=rcut)
-        if self.k_Dot:
-            kernel = Dot_mb(para=[2, 0.5], zeta=zeta, device=device)
-        else:
-            kernel = RBF_mb(para=[1, 0.5], zeta=zeta, device=device)
-        #kernel = Dot_mb(para=[2, 0.5], zeta=zeta, device=device)
-
-
-        model = gpr(kernel=kernel, descriptor=des, noise_e=[0.01, 0.01, 0.03], f_coef=20)
-        db_file = 'neb_geoms.db'
-        #db_ids = range(N_start)
-        train_data = get_data(db_file, des) #, N_force=5, lists=db_ids, select=True)
-        #train_data = db_file
-        model.fit(train_data)
-        #save the model as a .json file to use in the GPR calculator
-        model.save("gpr_model.json", "gpr_model.db") # Specific to the implementation of the GPR object
-        return model 
-    
-    # Assign the GPR calculator to the images. 
-    # This calculator should switch between the GPR model and the ab initio calculator
-    def gpr_calculator(self, images, Emax_std = 0.05, fmax_std = 0.05):
-        
-        model = gpr()
-        model.load("gpr_model.json")
-        calc = GPR(ff=model, return_std=True)
-
-        for image in images:
-            image.calc = calc
-        
-        # Check the standard deviation of the energies and forces
-        # This is to ensure that the GPR model is accurate and retrains if necessary
-        Estd_list, Fstd_list = zip(*[model.predict_structure(image, stress=False, return_std=True)[3:5] for struc in images])
-        # For the forces, we may need to flatten the list and get the maximum value
-        Fstd_list = [np.max(np.abs(Fstd)) for Fstd in Fstd_list]
-        if np.max(Estd_list) > Emax_std or np.max(Fstd_list) > fmax_std:
-            model = self.train_gpr_model(images)
-            calc = GPR(ff=model, return_std=True)
-            for image in images:
-                image.calc = calc
-        else:
-            pass # This line may not be necessary but it's here for clarity and safety
-        return images
-    
+   
     # Now we write the NEB algorithm to get the neb forces
     # These forces will be used to optimize the images
     """
@@ -218,6 +196,7 @@ class GP_NEB:
         
         """
         return fin_neb_forces
+
     # Path update function. Either steepest descent or Quick-min
     def path_update(self, images, neb_forces, velocity_vec, n_reset = 0, alpha = 0.1, SD=True, step_size=0.1):
         # The path update method is either steepest descent or Quick-min
@@ -320,21 +299,38 @@ class GP_NEB:
                 images[i].set_positions(new_positions[i-1])
             
             return images, velocity_vec, n_reset, alpha
+
     # Now let's the driver function to run the NEB calculation
     # call it run_neb
-    def run_neb(self, IDPP = False, SD=True, step_size=0.1, Emax_std = 0.05, fmax_std = 0.05, velocity_vec = None, n_reset = 0, alpha = 0.1):
+    def run_neb(self, IDPP = False, SD=True, 
+                step_size=0.1, 
+                Emax_std = 0.05, 
+                fmax_std = 0.05, 
+                velocity_vec = None, 
+                n_reset = 0, 
+                alpha = 0.1,
+                on_the_fly=True):
+
         images = self.generate_images(IDPP)
-        print(np.array(images).shape)
         log_file = open('neb_log.txt', 'w')
         log_file.write('..................NEB log file..................\n')
         log_file.write('....................Welcome.....................\n')
         log_file.write('............Starting the NEB calculation........\n')
 
-        images = self.ab_initio_calc(images)
-        model = self.train_gpr_model(images)
-        images = self.gpr_calculator(images, Emax_std, fmax_std)
-        modelDiffCount = 0
-        initial_model = os.path.getmtime('gpr_model.json')
+        num_useCalc = 0
+        for image in images: 
+            image.calc = self.useCalc
+            num_useCalc += 1
+            if on_the_fly:
+                data = (image, image.get_potential_energy(), image.get_forces())
+                pts, N_pts, _ = self.model.add_structure(data)
+                if N_pts > 0:
+                    self.model.set_train_pts(pts, mode="a+") 
+        if on_the_fly:
+            self.model.fit()
+            for image in images:
+                image.calc = self.calc
+ 
         for i in range(self.iterMax):
             neb_forces = self.calculate_neb_forces(images)
             if SD:
@@ -343,44 +339,43 @@ class GP_NEB:
                 images, velocity_vec, n_reset, alpha = self.path_update(images, neb_forces, velocity_vec, n_reset, alpha, SD, step_size)
             log_file.write(f'Iteration {i+1} completed\n')
             log_file.write(f'Images updated\n')
-            # Check if to switch between the GPR model and the ab initio calculator every 10 steps
-            if i%10 == 0:
-                images = self.gpr_calculator(images, Emax_std, fmax_std)
-                log_file.write(f'Check for GPR model update\n')
-                # Count the number of times the GPR model is updated
-                # Might be easier checking for update in the gpr_model.json file
-            else:
-                pass # This line may not be necessary but it's here for clarity and safety
-            # Check if the images are converged. make sure neb_forces is a numpy array
-            neb_forces = np.array(neb_forces)
+            for j, image in enumerate(images):
+                if on_the_fly:
+                    E, F, _, E_std, F_std = self.model.predict_structure(image, stress=False, return_std=True)
+                    log_file.write(f'Image {j} E: {E}/{E_std}; forces: {F} F_std_max {F_std.max()}\n')
+                    #if E_std > Emax_std or F_std.max() > fmax_std:
+                    if E_std > 1.2*self.model.noise_e or F_std.max() > 1.2*self.model.noise_f:
+                        num_useCalc += 1
+                        image.calc = self.useCalc
+                        data = (image, image.get_potential_energy(), image.get_forces())
+                        pts, N_pts, _ = self.model.add_structure(data)
+                        if N_pts > 0:
+                            self.train_gpr_model(pts)
+                        image.calc = self.calc
+                        log_file.write(f'Image {j} E: {E}/{E_std}; forces: {F} F_std_max {F_std.max()}\n')
+                else:
+                    num_useCalc += 1
+                    image_calc = self.useCalc
+
             # Use max of the l2 norm of the force on each image
             #nf = neb_forces.reshape((self.num_images-2, self.num_atoms*3))
             #fnorm = np.linalg.norm(nf, axis=1)
             #fmax_c = fnorm.max()
+            neb_forces = np.array(neb_forces)
             fmax_c = np.sqrt((neb_forces ** 2).sum(axis=1).max())
-            if fmax_c < self.f_cov:
-                log_file.write('\n................NEB calculation converged..................\n\n')
-                break
-            else:
-                pass
             log_file.write(f'Number of iterations: {i+1}\n')
             log_file.write(f'Max force: {fmax_c}\n')
             log_file.write('....................................................\n')
             log_file.write('Force on the atoms\n')
-            for j, image in enumerate(images):
-                log_file.write(f'Image {j} forces: {image.get_forces()}\n')
-            Estd_list = [image._calc.get_var_e() for image in images]
-            Fstd_list = [image._calc.get_var_f() for image in images]
-            # Is calling the gpr_calculator function necessary here?
-            #Estd_list, Fstd_list = zip(*[self.gpr_calculator([image], switchCalc=False)[0].predict_structure(image, return_std=True)[3:5] for image in images])
-            log_file.write(f'Energy std deviations: {Estd_list}\n')
-            log_file.write(f'Force std deviations: {Fstd_list}\n')
-            
-            # Check if the GPR model has been updated
-            if os.path.getmtime('gpr_model.json') > initial_model:
-                modelDiffCount += 1
-                log_file.write(f'GPR model updated {modelDiffCount} times\n')
-                initial_model = os.path.getmtime('gpr_model.json')
+
+            print(f'Iteration {i+1} completed, Max force: {fmax_c}')
+
+            if fmax_c < self.f_cov:
+                log_file.write('\n................NEB calculation converged..................\n\n')
+                print(f"\nNEB calculation converged {fmax_c}/{self.f_cov}")
+                break
+
+
 
         # Final log entries
         log_file.write(f'Number of iterations: {i}\n')
@@ -393,14 +388,14 @@ class GP_NEB:
         #log_file.write('Final NEB forces ............\n')
         log_file.write('..................End of NEB log file..................\n')
         log_file.close()
-
+        print(f"\nTotal Number of useCalc calls: {num_useCalc}")
             
         #neb_forces = self.calculate_neb_forces(images)
         #images = self.path_update(images, neb_forces, velocity_vec, method, step_size)
         return images
     
     # Function to plot the NEB path
-    def plot_neb_path(self, images, unit='eV'):
+    def plot_neb_path(self, images, unit='eV', figname='neb_path.png'):
         """
         This is just to show what it looks like
         There are more elegant ways to plot the path
@@ -427,7 +422,7 @@ class GP_NEB:
         plt.legend()
         plt.grid(True)
         #plt.show()
-        plt.savefig('neb_path.png')
+        plt.savefig(figname)
 
         #pass
         

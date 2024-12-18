@@ -9,14 +9,38 @@ final_state = 'N_final.traj'
 num_images = 5
 k_spring = 0.1
 iterMax = 80
-Emax_std = 0.05
+Emax_std = 0.005
 fmax_std = 0.05
-neb_gp = GP_NEB(initial_state, final_state, num_images=num_images, k_spring=k_spring, iterMax=iterMax)
-#neb_gp.usage_instructions()
+
+neb_gp = GP_NEB(initial_state, final_state, 
+                num_images=num_images, 
+                k_spring=k_spring, 
+                iterMax=iterMax,
+                k_Dot = False,
+                )
 images = neb_gp.generate_images()
 velocity_vec = np.zeros((num_images-2)*neb_gp.num_atoms*3)
-#model = neb_gp.train_gpr_model(images)
-refined_images = neb_gp.run_neb(IDPP = True, SD=False, Emax_std=Emax_std, fmax_std=fmax_std, velocity_vec=velocity_vec, n_reset=0, alpha=0.1)
+images = neb_gp.run_neb(IDPP = True, SD=False, 
+                        Emax_std=Emax_std, 
+                        fmax_std=fmax_std, 
+                        velocity_vec=velocity_vec, 
+                        n_reset=0, 
+                        alpha=0.1,
+                        on_the_fly=False)
+neb_gp.plot_neb_path(images, figname='EMT.png')
+
+images = neb_gp.generate_images()
+velocity_vec = np.zeros((num_images-2)*neb_gp.num_atoms*3)
+images = neb_gp.run_neb(IDPP = True, SD=False, 
+                        Emax_std=Emax_std, 
+                        fmax_std=fmax_std, 
+                        velocity_vec=velocity_vec, 
+                        n_reset=0, 
+                        alpha=0.1)
+neb_gp.plot_neb_path(images, figname='onthefly.png')
+
+
+
 # convert the images to cif files for visualization
 # using ase built-in function
 # Convert each refined image to a CIF file and save it in a directory
@@ -29,7 +53,6 @@ for i, image in enumerate(refined_images):
     # add the file file to directory
     os.rename(filename, f'N_Diffgpr_images/{filename}')
 """
-neb_gp.plot_neb_path(refined_images)
 
 # If neb.traj file is available for comparison
 # Read the trajectory file

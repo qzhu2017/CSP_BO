@@ -137,13 +137,14 @@ class Dot_mb():
                     if key1 == 'energy' and key2 == 'energy':
                         C_ee, C_ee1, C_ee2 = kee_C(d1, d2, sigma, sigma0, zeta, grad=True)
                     elif key1 == 'energy' and key2 == 'force':
-                        C_ef, C_ef1, C_ef2 = kef_C(d1, d2, sigma, zeta, grad=True)
+                        C_ef, C_ef1, C_ef2 = kef_C(d1, d2, sigma, sigma0, zeta, grad=True)
                         C_fe, C_fe1, C_fe2 = C_ef.T, C_ef1.T, C_ef2.T
                     elif key1 == 'force' and key2 == 'force':
-                        C_ff, C_ff1, C_ff2 = kff_C(d1, d2, sigma, zeta, grad=True)
+                        C_ff, C_ff1, C_ff2 = kff_C(d1, d2, sigma, sigma0, zeta, grad=True)
         C = build_covariance(C_ee, C_ef, C_fe, C_ff, None, None)
         C1 = build_covariance(C_ee1, C_ef1, C_fe1, C_ff1, None, None)
         C2 = build_covariance(C_ee2, C_ef2, C_fe2, C_ff2, None, None)
+        #print('\nC', C, '\nC1', C1, '\nC2', C2)
         return C, np.dstack((C1, C2))
 
     def k_total_with_stress(self, data1, data2, tol=1e-10):

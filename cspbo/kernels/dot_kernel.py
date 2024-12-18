@@ -19,7 +19,6 @@ def kee_C(X1, X2, sigma=1.0, sigma0=1.0, zeta=2.0, grad=False):
         X1 = list_to_tuple(X1, mode='energy')
     (x1, ele1, x1_indices) = X1
     (x2, ele2, x2_indices) = X2
-
     x1_inds = []
     for i, ind in enumerate(x1_indices):
         x1_inds.extend([i]*ind)
@@ -54,14 +53,16 @@ def kee_C(X1, X2, sigma=1.0, sigma0=1.0, zeta=2.0, grad=False):
     ffi.release(pout)    
 
     if grad:
-        C_s = 2*C/sigma
-        C_l = np.zeros([m1, m2])
-        return C, C_s, C_l
+        C1 = 2 * C / sigma
+        C2 = 0.8 * 2 * sigma2 * sigma0 * np.ones([m1, m2])
+        #C2 /= (np.array(x1_indices)[:,None]*np.array(x2_indices)[None,:])
+        #print('kee_dot', np.array(x1_indices)[:,None]*np.array(x2_indices)[None,:])
+        return C, C1, C2
     else:
         return C
 
 
-def kef_C(X1, X2, sigma=1.0, zeta=2.0, grad=False, stress=False, transpose=False):
+def kef_C(X1, X2, sigma=1.0, sigma0=1.0, zeta=2.0, grad=False, stress=False, transpose=False):
     """
     Compute the energy-force kernel between structures and atoms
 
@@ -69,6 +70,7 @@ def kef_C(X1, X2, sigma=1.0, zeta=2.0, grad=False, stress=False, transpose=False
         X1: stacked ([X, ele, indices])
         X2: stacked ([X, dXdR, ele, indices])
         sigma:
+        sigma0:
         zeta:
         grad:
         transpose:
@@ -149,13 +151,14 @@ def kef_C(X1, X2, sigma=1.0, zeta=2.0, grad=False, stress=False, transpose=False
     if grad:
         C1 = 2*C/sigma
         C2 = np.zeros([m1, m2*3])
+        #C2 = 2 * sigma**2 * sigma0 * np.ones([m1, m2 * 3])
         return C, C1, C2
     elif stress:
         return C, Cs
     else:
         return C
 
-def kff_C(X1, X2, sigma=1.0, zeta=2.0, grad=False, stress=False):
+def kff_C(X1, X2, sigma=1.0, sigma0=1.0, zeta=2.0, grad=False, stress=False):
     """
     Compute the energy-force kernel between structures and atoms
     Args:
@@ -262,6 +265,7 @@ def kff_C(X1, X2, sigma=1.0, zeta=2.0, grad=False, stress=False):
  
     if grad:
         C1 = 2*C/sigma
+        #C2 = 2 * sigma**2 * sigma0 * np.ones([m1*3, m2*3])
         C2 = np.zeros([m1*3, m2*3])
         return C, C1, C2
     elif stress:

@@ -23,7 +23,10 @@ class GaussianProcess():
         noise_e (list): define the energy noise
     """
 
-    def __init__(self, kernel=None, descriptor=None, base_potential=None, f_coef=10, noise_e=[5e-3, 2e-3, 1e-1]):
+    def __init__(self, kernel, descriptor, 
+                 base_potential=None, 
+                 f_coef=10, 
+                 noise_e=[5e-3, 2e-3, 1e-1]):
         
         self.noise_e = noise_e[0]
         self.f_coef = f_coef
@@ -75,13 +78,11 @@ class GaussianProcess():
                     strs = "Loss: {:12.3f} ".format(-lml)
                     for para in params:
                         strs += "{:6.3f} ".format(para)
+                    print(strs)
                     #from scipy.optimize import approx_fprime
-                    #print("from ", grad)
+                    #print("from ", grad, lml)
                     #print("scipy", approx_fprime(params, self.log_marginal_likelihood, 1e-3))
                     #print("scipy", approx_fprime(params, self.log_marginal_likelihood, 1e-4))
-                    #print("scipy", approx_fprime(params, self.log_marginal_likelihood, 1e-5))
-                    #print("scipy", approx_fprime(params, self.log_marginal_likelihood, 1e-6))
-                    print(strs)
                     #import sys; sys.exit()
                 return (-lml, -grad)
             else:
@@ -427,10 +428,12 @@ class GaussianProcess():
         else:
             kernel = self.kernel
             kernel.update(params[:-1])
+
         if eval_gradient:
             K, K_gradient = kernel.k_total_with_grad(self.train_x)
         else:
             K = kernel.k_total(self.train_x)
+
         #print(K[:5,:5])
         # add noise matrix
         #K[np.diag_indices_from(K)] += self.noise
@@ -458,8 +461,8 @@ class GaussianProcess():
 
         if eval_gradient:  # compare Equation 5.9 from GPML
             base = np.zeros([len(K), len(K), 1]) #for energy and force noise
-            base[:NE,:NE, 0] += 2*params[-1]*np.eye(NE)
-            base[NE:,NE:, 0] += 2*self.f_coef**2*params[-1]*np.eye(len(K)-NE)
+            base[:NE,:NE, 0] += 2 * params[-1]*np.eye(NE)
+            base[NE:,NE:, 0] += 2 * self.f_coef**2 * params[-1] * np.eye(len(K)-NE)
             K_gradient = np.concatenate((K_gradient, base), axis=2)
             tmp = np.einsum("ik,jk->ijk", alpha, alpha)  # k: output-dimension
             tmp -= cho_solve((L, True), np.eye(K.shape[0]))[:, :, np.newaxis]

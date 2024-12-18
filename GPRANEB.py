@@ -35,7 +35,7 @@ class GP_NEB:
                  num_images = 5, 
                  k_spring = 0.1, 
                  iterMax = 100, 
-                 k_Dot = True, 
+                 kernel = 'Dot', 
                  f_cov = 0.05, 
                  useCalc=EMT()):
 
@@ -45,7 +45,7 @@ class GP_NEB:
         self.num_images = num_images
         self.k_spring = k_spring
         self.iterMax = iterMax
-        self.k_Dot = k_Dot
+        self.kernel = kernel
         self.f_cov = f_cov
         self.model = None
         self.gpr_json = 'gpr_model.json'
@@ -57,7 +57,7 @@ class GP_NEB:
         # The initial and final states are ase trajectory files
         # For example, initial.traj and final.traj
 
-    def set_GPR(self, lm=3, nm=3, rcut=4.0, zeta=2.0, device='cpu'):
+    def set_GPR(self, lm=4, nm=3, rcut=5.0, zeta=2.0, device='cpu'):
         """
         Setup GPR model
         """
@@ -66,10 +66,15 @@ class GP_NEB:
             self.model.load(self.gpr_json)
         else:
             des = build_desc("SO3", lmax=lm, nmax=nm, rcut=rcut)
-            if self.k_Dot:
-                kernel = Dot_mb(para=[2, 0.5], zeta=zeta, device=device)
+            if self.kernel == 'Dot':
+                kernel = Dot_mb(para=[2, 2.0], 
+                                bounds=[[0.01, 5.0], [0.01, 10]],
+                                zeta=zeta, 
+                                device=device)
             else:
-                kernel = RBF_mb(para=[1, 0.5], zeta=zeta, device=device)
+                kernel = RBF_mb(para=[1, 0.5], 
+                                zeta=zeta, 
+                                device=device)
 
             self.model = gpr(kernel=kernel, 
                              descriptor=des, 

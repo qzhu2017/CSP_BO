@@ -52,7 +52,17 @@ class GaussianProcess():
             s += " {:d} energy ({:.3f})".format(self.N_energy, self.noise_e)
             s += " {:d} forces ({:.3f})\n".format(self.N_forces, self.noise_f)
         return s
-
+    
+    def todict(self):
+        """
+        Convert the GaussianProcess object to a JSON-serializable dictionary.
+        """
+        return {
+            #'param1': self.param1,
+            #'param2': self.param2,
+            # Add other parameters and attributes as needed
+        }
+    
     def __repr__(self):
         return str(self)
 

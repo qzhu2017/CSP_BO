@@ -42,19 +42,15 @@ class GaussianProcess():
         self.train_y = None
         self.train_db = None
         self.alpha_ = None
+        self.N_energy = 0
+        self.N_forces = 0
 
     def __str__(self):
         s = "------Gaussian Process Regression------\n"
         s += "Kernel: {:s}".format(str(self.kernel))
         if hasattr(self, "train_x"):
-            N_energy, N_force = 0, 0
-            if len(self.train_x["energy"]) > 0:
-                N_energy = len(self.train_x["energy"][-1])
-            if len(self.train_x["force"]) > 0:
-                N_force = len(self.train_x["force"][-1])
-
-            s += " {:d} energy ({:.3f})".format(N_energy, self.noise_e)
-            s += " {:d} forces ({:.3f})\n".format(N_force, self.noise_f)
+            s += " {:d} energy ({:.3f})".format(self.N_energy, self.noise_e)
+            s += " {:d} forces ({:.3f})\n".format(self.N_forces, self.noise_f)
         return s
 
     def __repr__(self):
@@ -215,6 +211,8 @@ class GaussianProcess():
                 if len(data[key])>0:
                     self.add_train_pts_force(data[key])
         self.update_y_train()
+        self.N_energy = N_E
+        self.N_forces = N_F
 
     
     def remove_train_pts(self, e_ids, f_ids):

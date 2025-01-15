@@ -4,6 +4,9 @@ from ase.calculators.calculator import Calculator, all_changes#, PropertyNotImpl
 from ase.neighborlist import NeighborList
 from ase.constraints import full_3x3_to_voigt_6_stress
 from cspbo.utilities import metric_single
+from pyscf.pbc.tools.pyscf_ase import atoms_from_ase
+import jsonpickle
+
 
 eV2GPa = 160.21766
 
@@ -211,3 +214,119 @@ class LJ():
         energy = energies.sum()
         #print(energy)
         return energy, forces, stress
+
+
+class SCFparameters():
+    # holds the calculation mode and user-chosen attributes of post-HF objects
+    def __init__(self):
+        self.mode = 'hf'
+    def show(self):
+        print('------------------------')
+        print('calculation-specific parameters set by the user')
+        print('------------------------')
+        for v in vars(self):
+            print('{}:  {}'.format(v,vars(self)[v]))
+        print('\n\n')
+                                                         
+
+class PYSCF(Calculator):
+
+    implemented_properties = ['energy', 'forces']
+    
+    
+    def __init__(self, restart=None, ignore_bad_restart_file=False,
+                 label='PySCF', atoms=None, directory='.', **kwargs):
+        # constructor
+        Calculator.__init__(self, restart, ignore_bad_restart_file,
+                            label, atoms, directory, **kwargs)
+        self.initialize(**kwargs)
+
+
+    def initialize(self, mf=None, p=None):
+        # attach the mf object to the calculator
+        # add the todict functionality to enable ASE trajectories:
+        # https://github.com/pyscf/pyscf/issues/624
+        def todict(x):
+            return jsonpickle.encode(x, unpicklable=False)
+        self.mf = mf
+        self.p = p
+        self.mf.todict = lambda: todict(self.mf)
+        self.p.todict = lambda: todict(self.p)
+
+    def set(self, **kwargs):
+        # allow for a calculator reset
+        changed_parameters = Calculator.set(self, **kwargs)
+        if changed_parameters:
+            self.reset()
+    
+    def calculate(self, atoms=None, 
+                  properties=['energy'], 
+                  system_changes=all_changes):
+        
+        Calculator.calculate(self, atoms=atoms, 
+                             properties=properties, 
+                             system_changes=system_changes)
+        
+        # update your mf object with new structural information
+        if atoms.pbc.any():
+            cell = mf.cell.copy()
+            cell.atom = atoms_from_ase(atoms)
+            cell.a = atoms.cell.copy()
+            cell.build()
+            mf.reset(cell=cell.copy())
+        else:
+            mol = mf.mol.copy()
+            mol.atom = atoms_from_ase(atoms)
+            mol.build()
+            mf.reset(mol=mol.copy())
+
+        # further update your mf object for post-HF methods
+        if hasattr(self.mf,'_scf'):
+            self.mf._scf.kernel()
+            self.mf.__init__(self.mf._scf)
+            for v in vars(self.p):
+                if v != 'mode':
+                    setattr(self.mf, v, vars(self.p)[v])
+        self.mf.kernel()
+        e = self.mf.e_tot
+        
+        self.results['energy'] = e * units.Ha
+        
+        if 'forces' in properties:
+            gf = self.mf.nuc_grad_method()
+            gf.verbose = self.mf.verbose
+            if self.p.mode.lower() == 'dft':
+                gf.grid_response = True
+            forces = -1. * gf.kernel() * (units.Ha / units.Bohr)
+            totalforces = []
+            totalforces.extend(forces)
+            totalforces = np.array(totalforces)
+            self.results['forces'] = totalforces
+        
+if __name__ == '__main__':
+
+    import pyscf
+    from ase import Atoms
+    from ase.optimize import LBFGS
+    
+    atoms = Atoms('H2', [(0, 0, 0), (0, 0, 1)])
+    mol = pyscf.M(atom=atoms_from_ase(atoms),
+                  basis='cc-pVDZ',
+                  spin=0,
+                  charge=0)
+
+    mf = mol.UHF()
+    mf.verbose = 3
+    mf.kernel() 
+    
+
+    index = 0
+    p = SCFparameters()
+    p.mode = ['hf', 'mp2', 'cisd'][index]
+    mf = [mf, mf.MP2(), mf.CISD()][index]
+
+    atoms.calc = PYSCF(mf=mf, p=p)
+    fmax = 1e-3 * (units.Ha / units.Bohr)
+    
+    dyn = LBFGS(atoms, trajectory='opt.traj')
+    dyn.run(fmax=fmax)

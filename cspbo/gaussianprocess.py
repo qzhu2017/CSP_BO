@@ -25,7 +25,7 @@ class GaussianProcess():
 
     def __init__(self, kernel, descriptor, 
                  base_potential=None, 
-                 f_coef=10, 
+                 f_coef=5, 
                  noise_e=[5e-3, 2e-3, 1e-1]):
         
         self.noise_e = noise_e[0]
@@ -44,6 +44,8 @@ class GaussianProcess():
         self.alpha_ = None
         self.N_energy = 0
         self.N_forces = 0
+        self.N_energy_queue = 0
+        self.N_forces_queue = 0
 
     def __str__(self):
         s = "------Gaussian Process Regression------\n"
@@ -123,6 +125,8 @@ class GaussianProcess():
             raise
 
         self.alpha_ = cho_solve((self.L_, True), self.y_train)  # Line 3
+        self.N_energy_queue = 0
+        self.N_forces_queue = 0
         
         return self
 
@@ -179,7 +183,7 @@ class GaussianProcess():
         else:
             return y_mean
     
-    def set_train_pts(self, data, mode="w"):
+    def set_train_pts(self, data, mode="w", add=True):
         """
         Set the training pts for the GPR mode
         two modes ("write" and "append") are allowed
@@ -192,12 +196,8 @@ class GaussianProcess():
             self.train_x = {'energy': [], 'force': []}
             self.train_y = {'energy': [], 'force': []}
             self.train_db = []
-            N_E = 0
-            N_F = 0
-        else:
-            N_E = len(self.train_x['energy'][-1])
-            N_F = len(self.train_x['force'][-1])
 
+        N_E, N_F = 0, 0
         for d in data["db"]:
             (atoms, energy, force, energy_in, force_in) = d
             if energy_in:
@@ -220,9 +220,13 @@ class GaussianProcess():
             elif key == 'force':
                 if len(data[key])>0:
                     self.add_train_pts_force(data[key])
+
         self.update_y_train()
-        self.N_energy = N_E
-        self.N_forces = N_F
+        self.N_energy += N_E
+        self.N_forces += N_F
+        self.N_energy_queue += N_E
+        self.N_forces_queue += N_F
+        #print(self.train_y['energy'], N_E, N_F, self.N_energy_queue)
 
     
     def remove_train_pts(self, e_ids, f_ids):
@@ -345,10 +349,12 @@ class GaussianProcess():
                 data["force"].append((_x, np.concatenate((_dxdr, _rdxdr), axis=2), ele0))
             else:
                 data["force"].append((_x, _dxdr, ele0))
+
+        train_x = self.get_train_x()
         if stress:
-            K_trans, K_trans1 = self.kernel.k_total_with_stress(data, self.train_x, f_tol)
+            K_trans, K_trans1 = self.kernel.k_total_with_stress(data, train_x, f_tol)
         else:
-            K_trans = self.kernel.k_total(data, self.train_x, f_tol)
+            K_trans = self.kernel.k_total(data, train_x, f_tol)
 
         pred = K_trans.dot(self.alpha_)
         y_mean = pred[:, 0]
@@ -382,6 +388,21 @@ class GaussianProcess():
             return E, F, S, E_std, F_std
         else:
             return E, F, S
+
+    def get_train_x(self):
+        if self.N_energy_queue + self.N_forces_queue > 0:
+            train_x = {}
+
+            (_X, _ELE, _indices) = self.train_x['energy']
+            NE = self.N_energy - self.N_energy_queue
+            train_x['energy'] = (_X[:NE], _ELE[:NE], _indices[:NE])
+
+            NF = self.N_forces - self.N_forces_queue
+            (_X, _dXdR, _ELE, _indices) = self.train_x['force']
+            train_x['force'] = (_X[:NF], _dXdR[:NF], _ELE[:NF], _indices[:NF])
+            return train_x
+        else:
+            return self.train_x
 
     def add_train_pts_energy(self, energy_data):
         """

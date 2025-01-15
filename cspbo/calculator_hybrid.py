@@ -29,18 +29,25 @@ class GPR(Calculator):
 
         if E_std > e_tol or F_std > f_tol:
             # update model
+            E = self.results['energy']
             atoms.calc = self.parameters.base_calculator
             data = (atoms, atoms.get_potential_energy(), atoms.get_forces())
+            print("Switch to base calculator, E_std: {:.3f}/{:.3f}/{:.3f}, F_std: {:.3f}".format(E_std, E, data[1], F_std))
             pts, N_pts, _ = self.parameters.ff.add_structure(data)
             if N_pts > 0:
                 self.parameters.ff.set_train_pts(pts, mode='a+')
-                self.parameters.ff.fit(opt=True)
-                train_E, train_E1, train_F, train_F1 = self.parameters.ff.validate_data()
-                l1 = metric_single(train_E, train_E1, "Train Energy")
-                l2 = metric_single(train_F, train_F1, "Train Forces")
-                print(self.parameters.ff)
+                self.parameters.ff.fit(opt=True, show=False)
+                #train_E, train_E1, train_F, train_F1 = self.parameters.ff.validate_data()
+                #l1 = metric_single(train_E, train_E1, "Train Energy")
+                #l2 = metric_single(train_F, train_F1, "Train Forces")
+                #self.parameters.ff.sparsify()
+                #print(self.parameters.ff)
+                #atoms.write('test.cif', format='cif')
+                #import sys; sys.exit()
             self._calculate(atoms, properties)
             atoms.calc = self
+        else:
+            print("Using the surrogate model, E_std: {:.3f}, F_std: {:.3f}".format(E_std, F_std))
 
     def _calculate(self, atoms, properties,
                   system_changes=all_changes):
@@ -65,6 +72,7 @@ class GPR(Calculator):
             res = self.parameters.ff.predict_structure(atoms, stress, True, f_tol=f_tol)
             self.results['var_e'] = res[3]
             self.results['var_f'] = res[4]
+
         else:
             res = self.parameters.ff.predict_structure(atoms, stress, False, f_tol=f_tol)
 

@@ -79,8 +79,8 @@ class GP_NEB:
 
             self.model = gpr(kernel=kernel, 
                              descriptor=des, 
-                             noise_e=[0.01, 0.01, 0.03], 
-                             f_coef=20)
+                             noise_e=[0.01, 0.01, 0.05], 
+                             f_coef=10)
 
     # Start with a function to generate the images
     # This function will take advantage of the ASE NEB module
@@ -141,15 +141,12 @@ class GP_NEB:
             pts, N_pts, _ = self.model.add_structure(data)
             if N_pts > 0:
                 self.model.set_train_pts(pts, mode="a+") 
-            self.model.fit()
+        self.model.fit()
 
-        #self.calc = GPR(base_calculator=self.useCalc,
-                        #ff=self.model, return_std=True)
-        
         for image in images:
-            #image.calc = self.calc
-            image.calc = GPR(base_calculator=self.useCalc,ff=self.model, return_std=True)
-            #image.calc = EMT()
+            image.calc = GPR(base_calculator=self.useCalc,
+                             ff=self.model, 
+                             return_std=True)
         # Now we can use the BFGS optimizer to optimize the images
         neb = NEB(images)
         opt = BFGS(neb, trajectory='neb.traj') ###

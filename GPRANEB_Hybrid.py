@@ -73,12 +73,13 @@ class GP_NEB:
                                 zeta=zeta, 
                                 device=device)
             else:
-                kernel = RBF_mb(para=[1, 0.5], 
+                kernel = RBF_mb(para=[1.0, 0.1], 
                                 zeta=zeta, 
                                 device=device)
 
             self.model = gpr(kernel=kernel, 
                              descriptor=des, 
+                             #noise_e=[0.001, 0.001, 0.005], 
                              noise_e=[0.01, 0.01, 0.05], 
                              f_coef=10)
 

@@ -56,7 +56,7 @@ class RBF_mb():
                 for i in range(NE):
                     (x1, ele1) = data["energy"][i]
                     mask = get_mask(ele1, ele1)
-                    C_ee[i] = K_ee(x1, x1, sigma2, l2, zeta, mask) 
+                    C_ee[i] = K_ee(x1, x1, sigma2, l2, zeta, mask=mask) 
             except:
                 NE = data['energy'][-1]
                 C_ee = np.zeros(len(NE))
@@ -64,7 +64,7 @@ class RBF_mb():
                 for i, ne in enumerate(NE):
                     x1, ele1 = data['energy'][0][count:count+ne], data['energy'][1][count:count+ne]
                     mask = get_mask(ele1, ele1)
-                    C_ee[i] = K_ee(x1, x1, sigma2, l2, zeta, mask)
+                    C_ee[i] = K_ee(x1, x1, sigma2, l2, zeta, mask=mask)
                     count += ne
 
         if "force" in data:
@@ -73,8 +73,8 @@ class RBF_mb():
             for i in range(NF):
                 (x1, dx1dr, ele1) = data["force"][i]
                 mask = get_mask(ele1, ele1)
-                #tmp = K_ff(x1, x1, dx1dr, dx1dr, sigma2, l2, zeta, mask)
-                tmp = K_ff(x1, x1, dx1dr[:,:,:3], dx1dr[:,:,:3], sigma2, l2, zeta, mask)
+                tmp = K_ff(x1, x1, dx1dr, dx1dr, sigma2, l2, zeta, mask)
+                #tmp = K_ff(x1, x1, dx1dr[:,:,:3], dx1dr[:,:,:3], sigma2, l2, zeta, mask=mask)
                 C_ff[i*3:(i+1)*3] = np.diag(tmp)
 
         if C_ff is None:

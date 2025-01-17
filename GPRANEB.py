@@ -11,7 +11,7 @@ from ase.db import connect
 
 from cspbo.utilities import metric_single, build_desc, get_data, get_train_data, rmse
 from cspbo.gaussianprocess import GaussianProcess as gpr
-from cspbo.calculator import GPR
+from cspbo.calculator_hybrid import GPR
 from cspbo.kernels.RBF_mb import RBF_mb
 from cspbo.kernels.Dot_mb import Dot_mb # recommended at the moment
 from scipy.interpolate import CubicSpline, make_interp_spline
@@ -51,7 +51,8 @@ class GP_NEB:
         self.gpr_json = 'gpr_model.json'
         self.gpr_db = 'gpr_model.db'
         self.set_GPR()
-        self.calc = GPR(ff=self.model, return_std=True)
+        #self.calc = GPR(base_calculator=useCalc,
+                        #ff=self.model, return_std=True)
         self.useCalc = useCalc
         #self.add_to_db = add_to_db
         # The initial and final states are ase trajectory files
@@ -72,14 +73,15 @@ class GP_NEB:
                                 zeta=zeta, 
                                 device=device)
             else:
-                kernel = RBF_mb(para=[1, 0.5], 
+                kernel = RBF_mb(para=[1.0, 0.1], 
                                 zeta=zeta, 
                                 device=device)
 
             self.model = gpr(kernel=kernel, 
                              descriptor=des, 
-                             noise_e=[0.01, 0.01, 0.03], 
-                             f_coef=20)
+                             #noise_e=[0.001, 0.001, 0.005], 
+                             noise_e=[0.01, 0.001, 0.05], 
+                             f_coef=10)
 
     # Start with a function to generate the images
     # This function will take advantage of the ASE NEB module
@@ -132,6 +134,27 @@ class GP_NEB:
     There is also the issue of assing each image a calculator in a way that ASE recognizes
 
     """
+    def useBFGS(self, images):
+        
+        for image in images: 
+            image.calc = self.useCalc
+            data = (image, image.get_potential_energy(), image.get_forces())
+            pts, N_pts, _ = self.model.add_structure(data)
+            if N_pts > 0:
+                self.model.set_train_pts(pts, mode="a+") 
+        self.model.fit()
+
+        for image in images:
+            image.calc = GPR(base_calculator=self.useCalc,
+                             ff=self.model, 
+                             return_std=True)
+        # Now we can use the BFGS optimizer to optimize the images
+        neb = NEB(images)
+        opt = BFGS(neb, trajectory='neb.traj') ###
+        opt.run(fmax=0.05)
+        #pass
+
+
     def calculate_neb_forces(self, images, ase_nebLib = False):
         # Ideally, we would use the ASE NEB module to get the neb forces
         # The images should have been assigned the a calculator
@@ -269,7 +292,7 @@ class GP_NEB:
             # Parameters needed
             # dt is the time step, lets make it equal to the step_size
             dt = step_size # Redundant but here for clarity
-            alpha_initial = alpha
+            alpha_initial = 0.1 #alpha
             f_inc = 1.1
             f_dec = 0.5
             f_acc = 0.99
@@ -314,7 +337,7 @@ class GP_NEB:
                 velocity_vec = None, 
                 n_reset = 0, 
                 alpha = 0.1,
-                on_the_fly=True):
+                ):
 
         images = self.generate_images(IDPP)
         log_file = open('neb_log.txt', 'w')
@@ -325,42 +348,25 @@ class GP_NEB:
         num_useCalc = 0
         for image in images: 
             image.calc = self.useCalc
-            num_useCalc += 1
-            if on_the_fly:
-                data = (image, image.get_potential_energy(), image.get_forces())
-                pts, N_pts, _ = self.model.add_structure(data)
-                if N_pts > 0:
-                    self.model.set_train_pts(pts, mode="a+") 
-        if on_the_fly:
-            self.model.fit()
-            for image in images:
-                image.calc = self.calc
+            data = (image, image.get_potential_energy(), image.get_forces())
+            pts, N_pts, _ = self.model.add_structure(data)
+            if N_pts > 0:
+                self.model.set_train_pts(pts, mode="a+") 
+        self.model.fit()
+
+        self.calc = GPR(base_calculator=self.useCalc,
+                        ff=self.model, return_std=True)
+        for image in images:
+            image.calc = self.calc
  
         for i in range(self.iterMax):
-            neb_forces = self.calculate_neb_forces(images)
+            neb_forces = self.calculate_neb_forces(images)#, ase_nebLib = False)
             if SD:
                 images = self.path_update(images, neb_forces, velocity_vec, SD, step_size)
             else:
                 images, velocity_vec, n_reset, alpha = self.path_update(images, neb_forces, velocity_vec, n_reset, alpha, SD, step_size)
             log_file.write(f'Iteration {i+1} completed\n')
             log_file.write(f'Images updated\n')
-            for j, image in enumerate(images):
-                if on_the_fly:
-                    E, F, _, E_std, F_std = self.model.predict_structure(image, stress=False, return_std=True)
-                    log_file.write(f'Image {j} E: {E}/{E_std}; forces: {F} F_std_max {F_std.max()}\n')
-                    #if E_std > Emax_std or F_std.max() > fmax_std:
-                    if E_std > 1.2*self.model.noise_e or F_std.max() > 1.2*self.model.noise_f:
-                        num_useCalc += 1
-                        image.calc = self.useCalc
-                        data = (image, image.get_potential_energy(), image.get_forces())
-                        pts, N_pts, _ = self.model.add_structure(data)
-                        if N_pts > 0:
-                            self.train_gpr_model(pts)
-                        image.calc = self.calc
-                        log_file.write(f'Image {j} E: {E}/{E_std}; forces: {F} F_std_max {F_std.max()}\n')
-                else:
-                    num_useCalc += 1
-                    image_calc = self.useCalc
 
             # Use max of the l2 norm of the force on each image
             #nf = neb_forces.reshape((self.num_images-2, self.num_atoms*3))
